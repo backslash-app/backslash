@@ -4,8 +4,7 @@
 
 **The Raycast Clone Your Linux Desktop Deserves**
 
-> **"The failed uncle of the family"**  
-> _Because every family has that one uncle... you know, the one who's a bit of a screw-up but still kind of lovable in his own tragic way. That's Backslash, and Raycast is the golden child. But deep down, we all have a soft spot for the underdog. Right?_
+> **"The failed uncle of the family"** > _Because every family has that one uncle... you know, the one who's a bit of a screw-up but still kind of lovable in his own tragic way. That's Backslash, and Raycast is the golden child. But deep down, we all have a soft spot for the underdog. Right?_
 
 <p align="center"><img src="https://github.com/user-attachments/assets/408460b0-08f1-48ef-abbf-ad3a4004ffe2" width="30%"/> <img src="https://github.com/user-attachments/assets/3e5ecc6f-f108-4590-b64d-57be598417ad" width="30%"/> <img src="https://github.com/user-attachments/assets/67c812d9-4355-4de9-8c70-943676e0fc16" width="30%"/></p>
 
@@ -65,7 +64,7 @@ Then, simply point Backslash to your new plugins folder. Voila! You've just tran
 
 ### **Q: Will Backslash be available for macOS or Windows?**
 
-**A:** Hahaha… You're funny. No, it won't. And here’s why: **Linux users deserve nice things too, and we’re tired of sharing.** You see, there are far too many gorgeous, well-polished apps that come out for macOS first, sometimes _maybe_ Windows, but they never give us a second thought. Well, Backslash is here for **us**, and we're keeping it that way.  
+**A:** Hahaha… You're funny. No, it won't. And here’s why: **Linux users deserve nice things too, and we’re tired of sharing.** You see, there are far too many gorgeous, well-polished apps that come out for macOS first, sometimes _maybe_ Windows, but they never give us a second thought. Well, Backslash is here for **us**, and we're keeping it that way.
 So if you want your pretty little `.App` file, feel free to check out Raycast, and leave us to our grumbling and bash scripting. No hard feelings. _Kiss, kiss._
 
 ### **Q: Is Backslash stable?**
@@ -84,7 +83,8 @@ As for Mac users... Look, we don’t hate you either. It’s just that we, Linux
 
 ## Contributing
 
-Contributions are more than welcome! We don't have guidelines for contributing just yet, so it's going to be a bit of a wild ride at first. But don't worry, we'll figure it out together. For now, just fork the repo, make your changes, and submit a pull request. We'll work together to make Backslash the best it can be. And if you have any questions or just want to chat about Backslash, feel free to join the [Backslash Discord server](https://discord.gg/sTzwBzDkK9). We can't wait to see what you do!
+Contributions are more than welcome!
+See the [CONTRIBUTING.md](./CONTRIBUTING.md) file for more information.
 
 ## License
 
