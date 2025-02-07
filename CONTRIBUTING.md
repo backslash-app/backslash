@@ -24,5 +24,5 @@ You will be needing the following tools to run the project locally:
 3. Run `yarn install` to install the dependencies
 4. Run `yarn start` to run the project
 
-And viola! You have the project running locally like a boss.
+And voilà! You have the project running locally like a boss.
 Now you can make your changes and submit a pull request, good luck!.
