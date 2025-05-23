@@ -1,6 +1,6 @@
 {
   "name": "backslash",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "A lightning-fast command launcher that helps you launch commands, run apps, and streamline your workflow—all while embracing the quirky spirit of Linux!",
   "main": "./out/main/index.js",
   "author": "backslash",
