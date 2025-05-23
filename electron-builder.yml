@@ -15,6 +15,7 @@ linux:
   target:
     - AppImage
     - deb
+    - pacman
   maintainer: Steven Persia <persia.steven8@gmail.com>
   icon: build/icon.png
   category: Utility
