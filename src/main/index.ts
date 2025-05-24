@@ -44,7 +44,7 @@ const createWindow = async () => {
   ipcMain.on('disable-global-shortcuts', () => globalShortcut.unregisterAll())
   ipcMain.on('enable-global-shortcuts', registerGlobalShortcut)
 
-  mainWindow.on('blur', () => {
+  mainWindow.on('blur-sm', () => {
     if (!is.dev) mainWindow.hide()
   })
 
