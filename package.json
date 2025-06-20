@@ -35,6 +35,7 @@
     "electron-json-storage": "^4.6.0",
     "electron-store": "^10.0.0",
     "electron-updater": "^6.1.7",
+    "ini": "^5.0.0",
     "js-yaml": "^4.1.0",
     "lodash.shuffle": "^4.2.0",
     "lucide-react": "^0.462.0",

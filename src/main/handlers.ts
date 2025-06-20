@@ -7,6 +7,8 @@ import { exec } from 'child_process'
 import axios from 'axios'
 import cheerio from 'cheerio'
 import yaml from 'js-yaml'
+import ini from 'ini'
+import { readdir, readFile } from 'fs/promises'
 
 storage.setDataPath(os.tmpdir())
 
@@ -69,55 +71,84 @@ export const getCommands = async () => {
  * @returns promise resolved with an array of application objects, each
  * containing the application name and command
  */
-export const listInstalledApplications = async () => {
-  const formatAppName = (name: string): string => {
-    return name
-      .replace(/-/g, ' ')
-      .split(' ')
-      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-      .join(' ')
-  }
 
-  const getAppCommand = (appPath: string): null | string => {
-    const content = fs.readFileSync(appPath, 'utf-8')
-    const execLine = content.split('\n').find((line) => line.startsWith('Exec='))
+interface Application {
+  name: string
+  command: string
+  isImmediate: boolean
+}
+const parseDesktopFile = (content: string, filePath: string): Application | null => {
+  try {
+    const parsed = ini.parse(content)
+    const desktopEntry = parsed['Desktop Entry']
 
-    if (execLine) {
-      let command = execLine.replace('Exec=', '').trim()
-      command = command.replace(/%\w+/g, '').trim()
-      command = command.replace(/\s+/g, ' ')
-      return command
+    if (!desktopEntry?.Type || desktopEntry.Type !== 'Application') {
+      return null
     }
 
+    if (!desktopEntry.Name || desktopEntry.NoDisplay === true) {
+      return null
+    }
+
+    if (!desktopEntry.Exec) {
+      return null
+    }
+
+    const cleanCommand = desktopEntry.Exec.replace(/@@[uf]\s+%[uf]\s+@@/g, '') // Remove Flatpak file forwarding
+      .replace(/%\w+/g, '') // Remove field codes
+      .replace(/\s+/g, ' ') // Normalize whitespace
+      .trim()
+
+    return {
+      name: desktopEntry.Name,
+      command: cleanCommand,
+      isImmediate: true
+    }
+  } catch (error) {
+    console.warn(`Failed to parse desktop file ${filePath}:`, error)
     return null
   }
+}
 
-  return new Promise((resolve, reject) => {
-    const commands = DIRECTORIES.map((dir) => `ls ${dir}/*.desktop 2>/dev/null`).join(' || ')
+const readDesktopFiles = async (directory: string): Promise<string[]> => {
+  try {
+    const files = await readdir(directory)
+    return files
+      .filter((file) => file.endsWith('.desktop'))
+      .map((file) => path.join(directory, file))
+  } catch (error) {
+    // Directory doesn't exist or is not accessible
+    return []
+  }
+}
 
-    exec(commands, (error, stdout, stderr) => {
-      if (error) return reject(error)
-      if (stderr) return reject(new Error(stderr))
+export const listInstalledApplications = async (): Promise<Application[]> => {
+  try {
+    // Get all .desktop files from all directories
+    const allFileLists = await Promise.all(DIRECTORIES.map(readDesktopFiles))
 
-      const applications = stdout
-        .split('\n')
-        .filter((app) => app)
-        .map((appPath) => {
-          const appName = formatAppName(
-            appPath
-              .split('/')
-              .pop()
-              ?.replace(/\.desktop$/, '') || ''
-          )
+    const allDesktopFiles = allFileLists.flat()
 
-          const appCommand = getAppCommand(appPath)
-          return { name: appName, command: appCommand, isImmediate: true }
-        })
-        .filter((app) => !EXCLUDED_PATTERNS.some((pattern) => pattern.test(app.name)))
-
-      resolve(applications)
+    // Process each desktop file
+    const applicationPromises = allDesktopFiles.map(async (filePath) => {
+      try {
+        const content = await readFile(filePath, 'utf-8')
+        return parseDesktopFile(content, filePath)
+      } catch (error) {
+        console.warn(`Failed to read desktop file ${filePath}:`, error)
+        return null
+      }
     })
-  })
+
+    const applications = await Promise.all(applicationPromises)
+
+    return applications
+      .filter((app): app is Application => app !== null)
+      .filter((app) => !EXCLUDED_PATTERNS.some((pattern) => pattern.test(app.name)))
+  } catch (error) {
+    console.error('Failed to list installed applications:', error)
+    return []
+  }
 }
 
 /**
