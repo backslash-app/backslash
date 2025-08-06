@@ -9,6 +9,7 @@ import { CommandApplications } from '@renderer/components/CommandApplications'
 import { CommandShortcuts } from '@renderer/components/CommandShortcuts'
 import { useScrollToTop } from '@renderer/hooks'
 import { Settings } from '@renderer/components/Settings'
+import { CommandColor } from './components/CommandColor'
 
 const App = () => {
   const [selectedCommand, setSelectedCommand] = useState<CommandT | null>(null)
@@ -54,6 +55,7 @@ const App = () => {
 
           <CommandList ref={commandListRef}>
             <CommandEmpty />
+            <CommandColor commandSearch={commandSearch} />
             <Commands commandSearch={commandSearch} setSelectedCommand={setSelectedCommand} />
             <CommandApplications commandSearch={commandSearch} />
             <CommandShortcuts commandSearch={commandSearch} setCurrentBang={setCurrentBangName} />
