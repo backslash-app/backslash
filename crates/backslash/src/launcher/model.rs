@@ -20,6 +20,7 @@ pub enum Builtin {
     Theme,
     Settings,
     Store,
+    Welcome,
 }
 
 impl Builtin {
@@ -31,6 +32,7 @@ impl Builtin {
             Self::Theme => "Theme",
             Self::Settings => "Settings",
             Self::Store => "Extensions",
+            Self::Welcome => "Welcome to Backslash",
         }
     }
 
@@ -40,7 +42,7 @@ impl Builtin {
             Self::Clipboard => ("Nothing copied yet", "Text you copy will show up here."),
             Self::Files => ("Search your files", "Type at least two letters. Recent files appear here."),
             Self::Windows => ("No open windows", ""),
-            Self::Theme | Self::Settings => ("", ""),
+            Self::Theme | Self::Settings | Self::Welcome => ("", ""),
             Self::Store => ("No extensions found", "Check your connection, then open the store again."),
         }
     }
@@ -53,6 +55,7 @@ impl Builtin {
             Self::Theme => "Choose a theme…",
             Self::Settings => "Search settings…",
             Self::Store => "Search extensions…",
+            Self::Welcome => "Set up Backslash…",
         }
     }
 }
@@ -97,6 +100,10 @@ pub enum Op {
     InstallEntry(String),
     /// Updates every extension whose update asks for no new permission.
     UpdateAll,
+    /// Starts a program (desktop settings panels).
+    Spawn(String, Vec<String>),
+    /// Leaves the welcome screen for the search.
+    FinishWelcome,
     UninstallEntry(String),
     /// Download Deno, then run the command that needed it.
     InstallRuntime,

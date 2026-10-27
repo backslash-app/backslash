@@ -250,6 +250,15 @@ fn builtin_commands(s: &State) -> Vec<(Entry, Row)> {
         "Find, install and update extensions. You see what each one is allowed to do before installing.",
     );
     add(
+        "welcome",
+        "Welcome to Backslash",
+        &["setup", "onboarding", "getting started", "tour", "bienvenue", "configurer", "help"],
+        "help-about",
+        "teal",
+        Op::OpenBuiltin(Builtin::Welcome),
+        "Set up the shortcut, theme, clipboard history and extensions.",
+    );
+    add(
         "settings",
         "Settings",
         &["preferences", "extensions", "quicklinks", "snippets", "réglages", "configure"],
@@ -669,6 +678,20 @@ pub fn builtin_rows(s: &mut State, builtin: Builtin, query: &str) -> Vec<Row> {
         }
         Builtin::Store => {
             let entries = super::store::rows(s)
+                .into_iter()
+                .map(|row| {
+                    let keywords = [row.subtitle.clone()].into_iter().flatten().collect();
+                    (Entry { key: row.key.clone(), title: row.title.clone(), keywords, subtitle: None }, row)
+                })
+                .collect();
+            let mut rows = ranked_rows(&mut s.ranker, query, entries);
+            if !query.trim().is_empty() {
+                rows.iter_mut().for_each(|r| r.section = None);
+            }
+            rows
+        }
+        Builtin::Welcome => {
+            let entries = super::welcome::rows(s, &s.desktop)
                 .into_iter()
                 .map(|row| {
                     let keywords = [row.subtitle.clone()].into_iter().flatten().collect();

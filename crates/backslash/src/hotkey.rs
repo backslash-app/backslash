@@ -116,6 +116,17 @@ struct Active {
     subscription: gio::SignalSubscriptionId,
 }
 
+/// Where the shortcuts stand, for the welcome screen.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Status {
+    /// Nothing to register (no shortcut set, or a development instance).
+    Disabled,
+    Pending,
+    Active,
+    /// The desktop has no GlobalShortcuts portal, or refused.
+    Unavailable,
+}
+
 /// The shortcuts registered with the portal. Binding again replaces them
 /// (a new portal session, as a session's shortcuts can only be bound once).
 #[derive(Default)]
@@ -124,9 +135,22 @@ pub struct Shortcuts {
     /// Bumped on each `bind`, so a slow, outdated setup gives up.
     generation: Cell<u64>,
     bound: RefCell<Vec<Binding>>,
+    failed: Cell<bool>,
 }
 
 impl Shortcuts {
+    pub fn status(&self) -> Status {
+        if self.active.borrow().is_some() {
+            Status::Active
+        } else if self.failed.get() {
+            Status::Unavailable
+        } else if self.bound.borrow().is_empty() {
+            Status::Disabled
+        } else {
+            Status::Pending
+        }
+    }
+
     /// Registers `bindings`, calling `on_activate(id)` when one is pressed.
     /// `on_status` receives a short human-readable outcome (for logs).
     pub fn bind(
@@ -141,6 +165,7 @@ impl Shortcuts {
             return;
         }
         self.bound.replace(bindings.clone());
+        self.failed.set(false);
         let generation = self.generation.get() + 1;
         self.generation.set(generation);
         if let Some(old) = self.active.take() {
@@ -156,12 +181,16 @@ impl Shortcuts {
             match setup(&app_id, &bindings, on_activate).await {
                 Ok(active) if this.generation.get() == generation => {
                     this.active.replace(Some(active));
+                    this.failed.set(false);
                     on_status(format!("global shortcuts {summary} registered through the desktop portal"));
                 }
                 Ok(stale) => close(stale),
-                Err(e) => on_status(format!(
-                    "global shortcut portal unavailable ({e}); bind `backslash` to a key in your desktop settings"
-                )),
+                Err(e) => {
+                    this.failed.set(this.generation.get() == generation);
+                    on_status(format!(
+                        "global shortcut portal unavailable ({e}); bind `backslash` to a key in your desktop settings"
+                    ))
+                }
             }
         });
     }

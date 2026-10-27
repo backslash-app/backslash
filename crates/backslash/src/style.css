@@ -160,6 +160,14 @@ window.launcher {
 .accent-purple { color: @bs_purple; }
 .accent-gray { color: @bs_gray; }
 
+/* Colored pills: tinted background, colored text. */
+.accent-red .tag { color: @bs_red; background-color: @bs_red_bg; }
+.accent-orange .tag { color: @bs_orange; background-color: @bs_orange_bg; }
+.accent-yellow .tag { color: @bs_yellow; background-color: @bs_yellow_bg; }
+.accent-green .tag { color: @bs_green; background-color: @bs_green_bg; }
+.accent-blue .tag { color: @bs_blue; background-color: @bs_blue_bg; }
+.accent-purple .tag { color: @bs_purple; background-color: @bs_purple_bg; }
+
 .answer {
   padding: 12px 6px;
 }

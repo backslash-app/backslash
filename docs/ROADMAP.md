@@ -39,6 +39,7 @@ the CLI and two bundled extensions. Next steps, roughly in order.
 - [ ] Python SDK.
 
 ## Quality
+- [x] Welcome checklist on first launch, with the real state of each step on this desktop.
 - [ ] Settings window for theme and window size; more themes.
 - [ ] Localization (French first).
 - [ ] UI tests driving the window under a virtual display in CI.
