@@ -179,7 +179,9 @@ Built in:
 
 - **Calculator and conversions**: `12*(3+4)`, `5 km in miles`, `72 f to c`,
   `2 GiB en MB`, `20 € en $` (European Central Bank rates, cached).
-- **Clipboard History**: searchable, with pins. Recorded in the background on
+- **Clipboard History**: searchable, with pins; Enter pastes into the app you
+  were in (xdotool on X11, the desktop's permission once on GNOME and KDE,
+  `wtype` on Sway/Hyprland/niri). Recorded in the background on
   wlroots compositors, KDE and Hyprland (install `wl-clipboard`) and on X11; on
   GNOME, each time Backslash opens. Password managers' copies are skipped.
 - **Search Files**: in your home folder (`fd` if installed), recent files first,

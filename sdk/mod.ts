@@ -187,6 +187,7 @@ export type Action =
   & (
     | { readonly [KIND]: "open"; target: string }
     | { readonly [KIND]: "copy"; text: string }
+    | { readonly [KIND]: "paste"; text: string }
     | { readonly [KIND]: "callback"; run: (ctx: Context) => Awaitable<Outcome> }
   );
 
@@ -198,6 +199,14 @@ export function open(target: string, title = "Open", options: ActionOptions = {}
 /** Copies text to the clipboard and closes the launcher. */
 export function copy(text: string, title = "Copy to Clipboard", options: ActionOptions = {}): Action {
   return { icon: "edit-copy", ...options, title, text, [KIND]: "copy" };
+}
+
+/**
+ * Pastes text into the app the user was in, then closes the launcher. Where
+ * the desktop doesn't allow it, the text is copied instead.
+ */
+export function paste(text: string, title = "Paste", options: ActionOptions = {}): Action {
+  return { icon: "edit-paste", ...options, title, text, [KIND]: "paste" };
 }
 
 /**
@@ -278,6 +287,10 @@ export const clipboard = {
   },
   /** Requires `clipboard-read = true` in `[permissions]`. */
   read: async (): Promise<string> => String(await rpc().request("clipboard/read") ?? ""),
+  /** Pastes into the app the user was in and closes the launcher (copies where it can't). */
+  paste: async (text: string): Promise<void> => {
+    await rpc().request("clipboard/paste", { text });
+  },
 };
 
 /** Opens a URL, file or folder with the default application. */

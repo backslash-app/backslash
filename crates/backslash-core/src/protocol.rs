@@ -118,6 +118,8 @@ pub enum ActionKind {
     Open { target: String },
     /// Copy text to the clipboard and close the window.
     Copy { text: String },
+    /// Paste text into the app that had the focus (copies it where that is not possible).
+    Paste { text: String },
     /// Handled by the extension (`action` request), which answers with an [`Effect`].
     Callback,
 }

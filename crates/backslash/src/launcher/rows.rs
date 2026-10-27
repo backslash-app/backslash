@@ -289,7 +289,12 @@ fn builtin_commands(s: &State) -> Vec<(Entry, Row)> {
     out
 }
 
-fn snippet_row(snippet: &Snippet) -> Row {
+fn snippet_row(snippet: &Snippet, can_paste: bool) -> Row {
+    let mut actions = Vec::new();
+    if can_paste {
+        actions.push(UiAction::new("Paste Snippet", Op::Snippet(snippet.text.clone(), true)).icon("edit-paste"));
+    }
+    actions.push(UiAction::new("Copy Snippet", Op::Snippet(snippet.text.clone(), false)).icon("edit-copy"));
     Row {
         key: format!("snippet:{}", snippet.name),
         title: snippet.name.clone(),
@@ -300,7 +305,7 @@ fn snippet_row(snippet: &Snippet) -> Row {
         icon: Some(Icon::Spec("insert-text".into())),
         tint: Some("green"),
         section: Some("Commands".into()),
-        actions: vec![UiAction::new("Copy Snippet", Op::Snippet(snippet.text.clone())).icon("edit-copy")],
+        actions,
         preview: Some(Preview {
             icon: Some(Icon::Spec("insert-text".into())),
             title: snippet.name.clone(),
@@ -320,7 +325,7 @@ pub fn row_for_key(s: &State, key: &str) -> Option<Row> {
         "cmd" => s.commands.iter().find(|c| c.id == id).map(|c| command_row(s, c)),
         "builtin" => builtin_commands(s).into_iter().map(|(_, r)| r).find(|r| r.key == key),
         "quicklink" => s.config.quicklinks.iter().find(|l| l.name == id).map(quicklink_row),
-        "snippet" => s.config.snippets.iter().find(|n| n.name == id).map(snippet_row),
+        "snippet" => s.config.snippets.iter().find(|n| n.name == id).map(|n| snippet_row(n, s.paste.is_some())),
         _ => None,
     }
 }
@@ -481,7 +486,7 @@ pub fn root_rows(s: &mut State, query: &str) -> Vec<Row> {
             extra.push((Entry { key: row.key.clone(), title: link.name.clone(), keywords: kw, subtitle: None }, row));
         }
         for snippet in &s.config.snippets {
-            let row = snippet_row(snippet);
+            let row = snippet_row(snippet, s.paste.is_some());
             let keywords = snippet.keyword.iter().cloned().collect();
             extra.push((Entry { key: row.key.clone(), title: snippet.name.clone(), keywords, subtitle: None }, row));
         }
@@ -595,8 +600,13 @@ pub fn builtin_rows(s: &mut State, builtin: Builtin, query: &str) -> Vec<Row> {
                         icon: Some(Icon::Spec(if e.pinned { "view-pin" } else { "edit-paste" }.into())),
                         tint: Some(if e.pinned { "orange" } else { "purple" }),
                         section: Some(if e.pinned { "Pinned" } else { "History" }.into()),
-                        actions: vec![
-                            UiAction::new("Copy to Clipboard", Op::ClipCopy(e.id)).icon("edit-copy"),
+                        actions: [
+                            s.paste.map(|_| UiAction::new("Paste", Op::Paste(e.text.clone())).icon("edit-paste")),
+                            Some(UiAction::new("Copy to Clipboard", Op::ClipCopy(e.id)).icon("edit-copy")),
+                        ]
+                        .into_iter()
+                        .flatten()
+                        .chain([
                             UiAction::new(pin_title, Op::ClipPin(e.id)).icon("view-pin").shortcut("<Ctrl><Shift>p"),
                             UiAction::new("Delete", Op::ClipDelete(e.id))
                                 .icon("edit-delete")
@@ -606,7 +616,8 @@ pub fn builtin_rows(s: &mut State, builtin: Builtin, query: &str) -> Vec<Row> {
                                 .icon("edit-clear-all")
                                 .destructive()
                                 .confirm("Delete all unpinned entries?"),
-                        ],
+                        ])
+                        .collect(),
                         preview: Some(Preview {
                             icon: Some(Icon::Spec("edit-paste".into())),
                             title: "Text".into(),

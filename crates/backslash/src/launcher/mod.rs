@@ -41,7 +41,7 @@ use crate::apps::{self, App};
 use crate::currency::Currency;
 use crate::icons::{self, Icon};
 use crate::theme::Styles;
-use crate::{autostart, clipboard, hotkey, layer, markdown, theme};
+use crate::{autostart, clipboard, hotkey, layer, markdown, paste, theme};
 
 pub use self::rows::now;
 
@@ -180,6 +180,10 @@ pub(super) struct State {
     runtime_busy: bool,
     /// Desktop facts shown by the welcome screen.
     desktop: welcome::Desktop,
+    /// How to paste into other apps here, if possible.
+    paste: Option<paste::Method>,
+    /// App id of the window focused before the launcher showed (paste target).
+    paste_target: Option<String>,
 }
 
 pub struct Launcher {
@@ -222,6 +226,7 @@ pub struct Launcher {
     monitors: RefCell<Vec<gio::FileMonitor>>,
     reload_timer: RefCell<Option<glib::SourceId>>,
     shortcuts: Rc<hotkey::Shortcuts>,
+    paster: Rc<paste::Paster>,
     _hold: gio::ApplicationHoldGuard,
 }
 
@@ -455,12 +460,15 @@ impl Launcher {
                 catalog: store::CatalogState::default(),
                 runtime_busy: false,
                 desktop: welcome::Desktop { shortcut: hotkey::Status::Disabled, layer_shell: false },
+                paste: paste::detect(),
+                paste_target: None,
             }),
             dev_dir,
             setting_query: Cell::new(false),
             monitors: RefCell::default(),
             reload_timer: RefCell::default(),
             shortcuts: Rc::default(),
+            paster: Rc::default(),
             _hold: app.hold(),
         });
         launcher.build_chips();
@@ -840,6 +848,12 @@ impl Launcher {
                 .map_or(1080, |m| m.geometry().height());
             layer::set_top_margin(&self.window, height / 6);
         }
+        // Where a paste will go: noted before the launcher takes the focus.
+        let target = {
+            let s = self.state.borrow();
+            s.paste.and_then(|_| paste::focused_app(s.window_backend))
+        };
+        self.state.borrow_mut().paste_target = target;
         self.render();
         self.window.present();
         self.entry.grab_focus();
@@ -1730,7 +1744,8 @@ impl Launcher {
                 Err(e) => self.fail(e),
             },
             Op::Callback(id) => self.callback(&id, None),
-            Op::Snippet(text) => self.copy_snippet(text),
+            Op::Snippet(text, paste) => self.copy_snippet(text, paste),
+            Op::Paste(text) => self.paste_text(text),
             Op::FillQuery(text) => {
                 self.entry.set_text(&text);
                 self.entry.set_position(-1);
@@ -2373,6 +2388,12 @@ impl Launcher {
                         self.window.clipboard().set_text(&text("text"));
                         Ok(Value::Null)
                     }
+                    "clipboard/paste" => {
+                        // Answer first: pasting hides the window.
+                        session.respond(id, Ok(Value::Null));
+                        self.paste_text(text("text"));
+                        return;
+                    }
                     "clipboard/read" => {
                         let allowed = self
                             .state
@@ -2676,22 +2697,54 @@ impl Launcher {
         });
     }
 
-    /// Copies a snippet, expanding `{date}`, `{time}` and `{clipboard}`.
-    fn copy_snippet(self: &Rc<Self>, text: String) {
+    /// Pastes (or copies) a snippet, expanding `{date}`, `{time}` and `{clipboard}`.
+    fn copy_snippet(self: &Rc<Self>, text: String, paste: bool) {
         let now = glib::DateTime::now_local().ok();
         let fmt = |f: &str| now.as_ref().and_then(|d| d.format(f).ok()).map(|s| s.to_string()).unwrap_or_default();
         let text = text.replace("{date}", &fmt("%x")).replace("{time}", &fmt("%H:%M"));
+        let deliver = move |l: &Rc<Self>, text: String| {
+            if paste {
+                l.paste_text(text);
+            } else {
+                l.window.clipboard().set_text(&text);
+                l.flash_and_hide("Snippet copied");
+            }
+        };
         if !text.contains("{clipboard}") {
-            self.window.clipboard().set_text(&text);
-            return self.flash_and_hide("Snippet copied");
+            return deliver(self, text);
         }
         let clipboard = self.window.clipboard();
         let weak = Rc::downgrade(self);
         glib::spawn_future_local(async move {
             let current = clipboard.read_text_future().await.ok().flatten().map(|t| t.to_string()).unwrap_or_default();
-            clipboard.set_text(&text.replace("{clipboard}", &current));
             if let Some(l) = weak.upgrade() {
-                l.flash_and_hide("Snippet copied");
+                deliver(&l, text.replace("{clipboard}", &current));
+            }
+        });
+    }
+
+    /// Puts `text` in the clipboard, hides, and pastes it into the app that
+    /// had the focus. Where pasting is not possible, it stays copied.
+    fn paste_text(self: &Rc<Self>, text: String) {
+        self.window.clipboard().set_text(&text);
+        let (method, terminal) = {
+            let s = self.state.borrow();
+            (s.paste, s.paste_target.as_deref().is_some_and(paste::is_terminal))
+        };
+        let Some(method) = method else {
+            return self.flash_and_hide("Copied: press Ctrl+V to paste");
+        };
+        self.hide();
+        let paster = self.paster.clone();
+        let app = self.window.application();
+        glib::spawn_future_local(async move {
+            if let Err(e) = paster.paste(method, terminal).await {
+                eprintln!("backslash: could not paste ({e}); the text is in the clipboard");
+                if let Some(app) = app {
+                    let n = gio::Notification::new("Copied, but could not paste");
+                    n.set_body(Some(&format!("Press Ctrl+V. ({e})")));
+                    app.send_notification(Some("paste"), &n);
+                }
             }
         });
     }
