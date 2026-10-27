@@ -1,0 +1,16 @@
+[extension]
+id = "npm"
+title = "npm"
+version = "1.0.0"
+description = "Search packages on the npm registry"
+author = "Backslash"
+icon = "package-x-generic"
+license = "MIT"
+
+[permissions]
+net = ["registry.npmjs.org"]
+
+[[commands]]
+name = "search"
+title = "Search npm Packages"
+keywords = ["node", "javascript", "package", "registry"]

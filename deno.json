@@ -1,0 +1,23 @@
+{
+  "imports": {
+    "@backslash/api": "./sdk/mod.ts"
+  },
+  "fmt": {
+    "lineWidth": 120,
+    "include": [
+      "sdk/",
+      "extensions/"
+    ]
+  },
+  "lint": {
+    "include": [
+      "sdk/",
+      "extensions/"
+    ],
+    "rules": {
+      "exclude": [
+        "no-explicit-any"
+      ]
+    }
+  }
+}

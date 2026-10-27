@@ -1,92 +1,220 @@
-![bs_banner](https://github.com/user-attachments/assets/ca33bf1a-9910-4d18-9bf4-bbfc62be8df3)
+<p align="center"><img src="data/icons/backslash.png" width="96" alt=""/></p>
 
-[Plugins](https://github.com/backslash-app/plugins) | [Documentation](https://github.com/backslash-app/backslash/blob/main/DOCUMENTATION.md) | [Releases](https://github.com/backslash-app/backslash/releases) | [Discord server](https://discord.gg/sTzwBzDkK9)
+<h1 align="center">Backslash</h1>
 
-**The Raycast Clone Your Linux Desktop Deserves**
+<p align="center"><b>A fast, keyboard-first launcher for Linux, with extensions you can write in five minutes.</b></p>
 
-> **"The failed uncle of the family"**
-> _Because every family has that one uncle... you know, the one who's a bit of a screw-up but still kind of lovable in his own tragic way. That's Backslash, and Raycast is the golden child. But deep down, we all have a soft spot for the underdog. Right?_
+<p align="center">
+  <a href="docs/EXTENSIONS.md">Write an extension</a> ·
+  <a href="docs/ARCHITECTURE.md">Architecture</a> ·
+  <a href="docs/ROADMAP.md">Roadmap</a> ·
+  <a href="https://discord.gg/sTzwBzDkK9">Discord</a>
+</p>
 
-<p align="center"><img src="https://github.com/user-attachments/assets/408460b0-08f1-48ef-abbf-ad3a4004ffe2" width="30%"/> <img src="https://github.com/user-attachments/assets/3e5ecc6f-f108-4590-b64d-57be598417ad" width="30%"/> <img src="https://github.com/user-attachments/assets/67c812d9-4355-4de9-8c70-943676e0fc16" width="30%"/></p>
+![Backslash](docs/screenshot.png)
 
 > [!IMPORTANT]
-> Backslash is currently in **ALPHA** and is subject to change. Be aware that any plugins you create may break in future updates. We appreciate your patience.
+> Backslash 0.3 is a ground-up rewrite (Rust + GTK4, Deno extensions). It is
+> young: expect rough edges, and see the [roadmap](docs/ROADMAP.md).
 
-## Table of Contents
+## Why Backslash
 
-1. [Introduction](#introduction)
-2. [Features](#features)
-3. [Installation](#installation)
-4. [Usage](#usage)
-5. [FAQ](#faq)
-6. [Contributing](#contributing)
-7. [License](#license)
+- **Native and instant.** One small Rust binary, GTK4, GPU-rendered. It stays
+  in the background and opens with no delay, on Wayland and X11.
+- **Made for Linux.** Applications come straight from your system (Flatpak and
+  Snap included), icons from your icon theme, light/dark from your desktop.
+- **Extensions that cannot hurt you.** Each extension declares what it needs
+  (`net = ["api.github.com"]`, `run = ["git"]`), you approve it once, and the
+  runtime enforces it. Tokens go to your system keyring.
+  Each command runs in its own process: a buggy extension can't freeze or
+  crash the launcher.
+- **Extensions that are easy to write.** TypeScript, no build step, no
+  `node_modules`. Describe a list, the launcher does the rest: fuzzy search,
+  keyboard navigation, action panel, cancellation of slow requests.
+- **Useful out of the box.** Calculator and unit/currency conversions as you
+  type, clipboard history, file search with previews, window switcher,
+  quicklinks and snippets.
+- **Scriptable.** Every command also runs from a terminal:
+  `backslash run npm/search react --json | jq`.
+- **Yours.** Open source (MIT), no account, no telemetry, no paywall. Config
+  and theme are plain files you can keep in your dotfiles.
 
-## Introduction
+## A complete extension
 
-Welcome to **Backslash** – the Linux-only, open-source alternative to Raycast that you didn't know you needed. It's a powerful productivity tool that allows users to quickly search, launch applications, and execute custom commands, all from a sleek, keyboard-driven interface. With its extensible plugin system, Backslash brings the flexibility and customization that Linux users love to the world of productivity launchers.
+`backslash.toml`:
 
-Sure, Raycast is slick, smooth, and sophisticated. But Backslash? Backslash has **character**. So get comfortable and give it a shot — because Linux users deserve nice things too (even if it’s held together by shell scripts and pure spite).
+```toml
+[extension]
+id = "npm"
+title = "npm"
 
-## Features
+[permissions]
+net = ["registry.npmjs.org"]
 
-Backslash has everything you need, and maybe some things you don’t, but hey, we’re here to impress:
+[[commands]]
+name = "search"
+title = "Search npm Packages"
+```
 
-- **Search Everything**: Quickly search through your apps, settings, and more. No more aimlessly clicking through directories like you're playing Minesweeper.
-- **Custom Commands**: Make your own commands and feel like a hacker in a 90s movie. It's all just a terminal at the end of the day, right?
-- **Snappy and Lightweight**: Just like Linux users like it. No bloat here. Raycast who?
-- **Integration-friendly**: Plug in your favorite Linux utilities and scripts. It won’t complain, promise.
-- **Keyboard-centric**: Mouse? We barely knew her. Navigate everything with your trusty keyboard like the Linux power user you are.
+`commands/search.ts`:
 
-## Installation
+```ts
+import { copy, list, open } from "@backslash/api";
 
-It's simple, really. Even your distro-hopping soul can handle this.
+export default list({
+  placeholder: "Search npm packages…",
+  async search(query, { signal }) {
+    const res = await fetch(`https://registry.npmjs.org/-/v1/search?text=${query}`, { signal });
+    const { objects } = await res.json();
+    return objects.map(({ package: pkg }) => ({
+      title: pkg.name,
+      subtitle: pkg.description,
+      tags: [`v${pkg.version}`],
+      actions: [open(pkg.links.npm), copy(`npm install ${pkg.name}`, "Copy Install Command")],
+    }));
+  },
+});
+```
 
-Download the latest release [here](https://github.com/backslash-app/backslash/releases).
+That's it. `backslash new <name>` scaffolds one, `backslash dev` loads it with
+logs in your terminal and reloads it when you save. `backslash publish` prepares
+its registry entry. Read the [extension guide](docs/EXTENSIONS.md).
 
-And just like that, you’re the proud user of Backslash.
+## Extensions
 
-## Usage
+Open **Browse Extensions** (or `backslash search`, `backslash install github`).
+The [registry](https://github.com/backslash-app/plugins) lists extensions that
+live in their authors' repositories, each pinned to a reviewed commit with a
+checksum: you see exactly what an extension may do before installing, and
+Backslash refuses any file that differs from what was reviewed. First-party
+extensions: GitHub, Packages (apt/dnf/pacman/zypper/Flathub), Services
+(systemd), Containers (Docker/Podman), Emoji & Symbols.
 
-Once installed, summon the great **Backslash** with a simple keystroke (control + space), and start typing away! You’ll feel like the Linux wizard you were always meant to be.
+## Install
 
-## No Commands? No Problem!
+Backslash needs GTK 4.14 or newer: Ubuntu 24.04+, Debian 13+, Fedora 40+,
+Arch, openSUSE Tumbleweed and other recent distributions.
 
-It's time to add some plugins. Just go to our [plugins repo](https://github.com/backslash-app/plugins), find some code that tickles your fancy, and copy it into a folder of your choosing. It's like grocery shopping, but for nerds.
+| Distribution | How |
+|---|---|
+| Debian, Ubuntu | `sudo apt install ./backslash_<version>_amd64.deb` from the [latest release](https://github.com/backslash-app/backslash/releases/latest) |
+| Fedora, openSUSE | `sudo dnf install ./backslash-<version>-1.x86_64.rpm` from the same page |
+| Arch | the `backslash` package from the AUR (`packaging/aur/PKGBUILD`) |
+| Anything else | `tar -xzf backslash-<version>-x86_64.tar.gz -C ~/.local` |
 
-Once you've got your digital goodies, fire up Backslash and click on that lonely button on the right (Don't worry, it's the only button there. Even a sleep-deprived developer couldn't mess this up).
+Extensions written in TypeScript run in [Deno](https://deno.com). If it isn't
+installed, Backslash offers to download it the first time you need it (or run
+`backslash install-runtime`); it comes from Deno's official npm package and is
+checked before use. `backslash doctor` checks that everything is in place.
 
-Then, simply point Backslash to your new plugins folder. Voila! You've just transformed your Backslash from a blank slate into a powerhouse of productivity (or procrastination, we don't judge).
+<details>
+<summary>Build from source</summary>
 
-> [!WARNING]
-> Remember, this plugins folder must contain plugins, only. We know your dog is adorable and your grandma's birthday bash was epic, but please, keep those photo folders on your personal drive. This is a strict no-pet-pics, no-family-reunion-snapshots zone.
+```sh
+# Debian/Ubuntu: sudo apt install libgtk-4-dev    Fedora: sudo dnf install gtk4-devel    Arch: sudo pacman -S gtk4
+git clone https://github.com/backslash-app/backslash && cd backslash
+make && sudo make install          # or: make install PREFIX=~/.local
+```
 
-## FAQ
+`make dist` builds the release files in `dist/` (it needs
+[nfpm](https://nfpm.goreleaser.com) for the `.deb` and `.rpm`). Pushing a tag
+such as `v0.3.0` builds them for x86_64 and aarch64 and publishes a release.
+</details>
 
-### **Q: Will Backslash be available for macOS or Windows?**
+Why no Flatpak? A launcher has to start other apps, read the list of
+installed ones, watch the clipboard and run the tools extensions ask for.
+Inside the Flatpak sandbox all of this goes through `flatpak-spawn --host`,
+which gives the whole system away anyway while making everything slower and
+harder to debug. Extensions get their own, finer sandbox from Deno instead.
 
-**A:** Hahaha… You're funny. No, it won't. And here’s why: **Linux users deserve nice things too, and we’re tired of sharing.** You see, there are far too many gorgeous, well-polished apps that come out for macOS first, sometimes _maybe_ Windows, but they never give us a second thought. Well, Backslash is here for **us**, and we're keeping it that way.
-So if you want your pretty little `.App` file, feel free to check out Raycast, and leave us to our grumbling and bash scripting. No hard feelings. _Kiss, kiss._
+### Open it with a shortcut
 
-### **Q: Is Backslash stable?**
+Backslash asks your desktop for <kbd>Super</kbd>+<kbd>Space</kbd> through the
+GlobalShortcuts portal (KDE Plasma, GNOME 48+, Hyprland…): confirm it once when
+asked. Change it with `hotkey = "Ctrl+Space"` in `config.toml`.
 
-**A:** Ah, stability... It's like asking if your cat will puke on your keyboard (it will). Backslash is currently in **ALPHA**, so, you know, it's stable for a cat that's still learning to walk. But hey, Linux users are known for their love of adventure and for living life on the edge, right? So, buckle up, and join the ride! (Or, you know, just wait until it's not in alpha anymore.)
+Without the portal, bind a key to the command `backslash` (running it again
+toggles the window):
 
-### **Q: Can I customize Backslash?**
+| Desktop | Where |
+|---|---|
+| GNOME | Settings → Keyboard → Custom Shortcuts → command `backslash` |
+| KDE Plasma | System Settings → Shortcuts → Add New → Command `backslash` |
+| Hyprland | `bind = SUPER, SPACE, exec, backslash` |
+| Sway / i3 | `bindsym $mod+space exec backslash` |
 
-**A:** Of course you can! This is **Linux**. Customization is our birthright. You can add commands, integrate your own scripts, and more. If you break something, that's just part of the fun. Just checkout our amazing [documentation](https://github.com/backslash-app/backslash/blob/main/DOCUMENTATION.md).
+On Sway, Hyprland, KDE and other wlroots-style compositors, install
+`gtk4-layer-shell` and Backslash opens as a true overlay, with no window rules
+needed. Without it, make the window float:
+`windowrulev2 = float, class:^(app\.backslash\.Backslash)$` (Hyprland) or
+`for_window [app_id="app.backslash.Backslash"] floating enable` (Sway).
 
-### **Q: Why do you hate Raycast and Mac users?**
+Run the **Enable Launch at Login** command so Backslash is always ready.
 
-**A:** Oh, we don’t hate Raycast at all! In fact, we're huge admirers of their work—that’s precisely why we made a Linux version. Deep down, we know we’re not bringing Backslash to macOS because, well, we’d feel a bit ridiculous next to the real deal.
+## Using it
 
-As for Mac users... Look, we don’t hate you either. It’s just that we, Linux folks, enjoy the challenge of wrestling with open-source, and there’s a special joy in knowing half our hardware only works if we stare at it hard enough. No hard feelings!
+| Key | Action |
+|---|---|
+| type | search apps and commands; math and conversions are computed as you type |
+| <kbd>Tab</kbd> | filter: All, Apps, Commands |
+| <kbd>↑</kbd> <kbd>↓</kbd> / <kbd>Ctrl</kbd>+<kbd>N</kbd> <kbd>P</kbd> | move |
+| <kbd>Enter</kbd> / <kbd>Ctrl</kbd>+<kbd>Enter</kbd> | primary / secondary action |
+| <kbd>Ctrl</kbd>+<kbd>K</kbd> | all actions |
+| <kbd>Esc</kbd> / <kbd>Backspace</kbd> on empty search | back, then close |
+
+Results learn from you: what you pick for a given query comes first next time.
+
+Built in:
+
+- **Calculator and conversions**: `12*(3+4)`, `5 km in miles`, `72 f to c`,
+  `2 GiB en MB`, `20 € en $` (European Central Bank rates, cached).
+- **Clipboard History**: searchable, with pins. Recorded in the background on
+  wlroots compositors, KDE and Hyprland (install `wl-clipboard`) and on X11; on
+  GNOME, each time Backslash opens. Password managers' copies are skipped.
+- **Search Files**: in your home folder (`fd` if installed), recent files first,
+  with a preview.
+- **Switch Windows**: Hyprland, Sway, niri and X11.
+- **Change Theme**: light, dark, or following the system.
+
+## Make it yours
+
+Everything is in the **Settings** command: theme, shortcut, launch at login,
+clipboard history, extensions (enable, see their permissions, configure them),
+quicklinks, snippets and hidden apps. It all lives in plain files, so you can
+also edit them by hand or keep them in your dotfiles.
+
+`~/.config/backslash/config.toml`:
+
+```toml
+theme = "system"          # "light", "dark" or "system"
+hotkey = "Super+Space"
+hidden_apps = ["org.gnome.Tour.desktop"]
+
+[[quicklinks]]            # type "gh tokio" to search GitHub
+name = "Search GitHub"
+url = "https://github.com/search?q={query}"
+keyword = "gh"
+
+[[snippets]]              # {date}, {time} and {clipboard} are expanded
+name = "Email signature"
+text = "Best,\nSteven"
+keyword = "sig"
+
+[extensions.npm]
+enabled = true
+```
+
+- `~/.config/backslash/style.css`: override any style or color, e.g.
+  `@define-color bs_accent #c2410c;` (see [`style.css`](crates/backslash/src/style.css)
+  and the palettes in [`theme.rs`](crates/backslash/src/theme.rs)).
+- `~/.local/share/backslash/extensions/`: drop extension folders here.
+- `backslash doctor` shows what works on your desktop.
 
 ## Contributing
 
-Contributions are more than welcome!
-See the [CONTRIBUTING.md](./CONTRIBUTING.md) file for more information.
+See [CONTRIBUTING.md](CONTRIBUTING.md). Bundled extensions in
+[`extensions/`](extensions/) are good examples to start from.
 
 ## License
 
-Backslash is licensed under the MIT License. That means you’re free to do whatever you want with it, just like we’re free to cry over the fact that Linux still doesn’t get enough love.
+[MIT](LICENSE)

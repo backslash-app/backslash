@@ -1,0 +1,353 @@
+/* Backslash layout. Colors are named (@bs_*) and come from the light or dark
+ * palette in theme.rs. Override anything, colors included, in
+ * ~/.config/backslash/style.css, e.g.  @define-color bs_accent #c2410c;  */
+
+window.launcher {
+  background: transparent;
+  color: @bs_fg;
+  font-family: "Inter", "Manrope", "Cantarell", "Noto Sans", sans-serif;
+  font-size: 14px;
+}
+
+.panel {
+  background-color: @bs_bg;
+  border: 1px solid @bs_border;
+  border-radius: 18px;
+  margin: 14px;
+  box-shadow: 0 22px 56px @bs_shadow;
+}
+
+/* --- Search bar ----------------------------------------------------------- */
+
+.header {
+  padding: 10px 16px 10px 20px;
+  min-height: 46px;
+}
+
+.header .search-icon {
+  color: @bs_dim;
+}
+
+.header .search {
+  background: none;
+  border: none;
+  box-shadow: none;
+  outline: none;
+  font-size: 19px;
+  font-weight: 500;
+  color: @bs_fg;
+  caret-color: @bs_accent;
+  padding: 0;
+  min-height: 0;
+}
+
+.header .search text placeholder {
+  color: @bs_faint;
+}
+
+.header .back {
+  min-width: 28px;
+  min-height: 28px;
+  padding: 0;
+  border-radius: 8px;
+  background: @bs_surface;
+  color: @bs_dim;
+  border: none;
+  box-shadow: none;
+}
+
+.chip {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 3px 11px;
+  min-height: 0;
+  border-radius: 999px;
+  border: none;
+  box-shadow: none;
+  background: @bs_surface;
+  color: @bs_dim;
+}
+
+.chip.active {
+  background: @bs_fg;
+  color: @bs_bg;
+}
+
+.divider {
+  background-color: @bs_divider;
+  min-height: 1px;
+  min-width: 1px;
+}
+
+/* --- Results ------------------------------------------------------------- */
+
+.results,
+.results row {
+  background: none;
+  color: @bs_fg;
+}
+
+.results {
+  padding: 8px;
+}
+
+.results row {
+  border-radius: 12px;
+  padding: 8px 10px;
+  margin: 1px 0;
+  outline: none;
+  transition: background-color 110ms ease-out;
+}
+
+.results row:selected {
+  background-color: @bs_selected;
+}
+
+.section-header {
+  color: @bs_faint;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 10px 12px 4px;
+}
+
+.title {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.subtitle {
+  color: @bs_dim;
+  font-size: 12.5px;
+}
+
+.tile {
+  border-radius: 10px;
+}
+
+.tile.app { background: none; }
+.tile.tint-blue { background-color: @bs_blue_bg; color: @bs_blue; }
+.tile.tint-orange { background-color: @bs_orange_bg; color: @bs_orange; }
+.tile.tint-green { background-color: @bs_green_bg; color: @bs_green; }
+.tile.tint-purple { background-color: @bs_purple_bg; color: @bs_purple; }
+.tile.tint-yellow { background-color: @bs_yellow_bg; color: @bs_yellow; }
+.tile.tint-red { background-color: @bs_red_bg; color: @bs_red; }
+.tile.tint-teal { background-color: @bs_teal_bg; color: @bs_teal; }
+.tile.tint-gray { background-color: @bs_gray_bg; color: @bs_gray; }
+
+.emoji-icon {
+  font-size: 20px;
+}
+
+.accessory {
+  color: @bs_dim;
+  font-size: 12px;
+}
+
+.tag {
+  background-color: @bs_surface;
+  border-radius: 6px;
+  padding: 1px 7px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: @bs_dim;
+}
+
+.accent-red { color: @bs_red; }
+.accent-orange { color: @bs_orange; }
+.accent-yellow { color: @bs_yellow; }
+.accent-green { color: @bs_green; }
+.accent-blue { color: @bs_blue; }
+.accent-purple { color: @bs_purple; }
+.accent-gray { color: @bs_gray; }
+
+.answer {
+  padding: 12px 6px;
+}
+
+.answer .result {
+  font-size: 28px;
+  font-weight: 700;
+  color: @bs_fg;
+}
+
+.answer .expression {
+  font-size: 13px;
+  color: @bs_dim;
+}
+
+/* --- Preview panel ------------------------------------------------------- */
+
+.preview {
+  background-color: @bs_preview_bg;
+  padding: 24px 24px 18px;
+}
+
+.preview-title {
+  font-size: 19px;
+  font-weight: 700;
+}
+
+.facts .fact-label {
+  color: @bs_dim;
+  font-size: 12.5px;
+}
+
+.facts .fact-value {
+  font-size: 12.5px;
+}
+
+.preview-body-box {
+  background-color: @bs_bg;
+  border: 1px solid @bs_divider;
+  border-radius: 10px;
+}
+
+.preview-body {
+  font-family: "JetBrains Mono", "DejaVu Sans Mono", monospace;
+  font-size: 12px;
+  padding: 10px 12px;
+}
+
+.preview-section {
+  color: @bs_faint;
+  font-size: 11px;
+  font-weight: 700;
+  margin-top: 4px;
+}
+
+.preview-action {
+  font-size: 13px;
+}
+
+.preview-key {
+  font-size: 11.5px;
+  color: @bs_faint;
+}
+
+.destructive {
+  color: @bs_red;
+}
+
+/* --- Empty, detail, form -------------------------------------------------- */
+
+.empty .title {
+  font-size: 16px;
+}
+
+.empty .subtitle {
+  font-size: 13px;
+}
+
+.detail {
+  padding: 20px 24px;
+}
+
+.metadata {
+  border-left: 1px solid @bs_divider;
+  background-color: @bs_preview_bg;
+  padding: 20px;
+  min-width: 210px;
+}
+
+.metadata .label {
+  color: @bs_dim;
+  font-size: 12px;
+}
+
+.form {
+  padding: 22px 30px;
+}
+
+.form entry,
+.form passwordentry,
+.form textview,
+.form dropdown > button {
+  background-color: @bs_surface;
+  border: 1px solid @bs_border;
+  border-radius: 9px;
+  color: @bs_fg;
+  box-shadow: none;
+}
+
+.form textview text {
+  background: none;
+  color: @bs_fg;
+}
+
+.form .field-title {
+  color: @bs_dim;
+  font-weight: 600;
+  font-size: 12.5px;
+}
+
+/* --- Footer --------------------------------------------------------------- */
+
+.footer {
+  padding: 9px 16px;
+  min-height: 22px;
+  font-size: 12px;
+  color: @bs_dim;
+}
+
+.footer .context {
+  color: @bs_dim;
+}
+
+.footer .primary {
+  color: @bs_fg;
+  font-weight: 600;
+}
+
+.hint {
+  color: @bs_dim;
+}
+
+.hint .key {
+  border: 1px solid @bs_border;
+  border-radius: 6px;
+  padding: 0 6px;
+  color: @bs_fg;
+  font-size: 11.5px;
+}
+
+.toast {
+  font-weight: 600;
+}
+
+.toast.success { color: @bs_green; }
+.toast.failure { color: @bs_red; }
+
+.footer .primary.confirm {
+  color: @bs_orange;
+}
+
+/* --- Action panel (Ctrl+K) ------------------------------------------------- */
+
+.actions-panel {
+  color: @bs_fg;
+  background-color: @bs_bg;
+  border: 1px solid @bs_border;
+  border-radius: 14px;
+  padding: 6px;
+  box-shadow: 0 14px 34px @bs_shadow;
+}
+
+.actions-panel list {
+  background: none;
+}
+
+.actions-panel row {
+  color: @bs_fg;
+  border-radius: 9px;
+  padding: 7px 10px;
+  background: none;
+}
+
+.actions-panel row:selected {
+  background-color: @bs_selected;
+}
+
+.actions-panel .kind {
+  color: @bs_faint;
+  font-size: 11.5px;
+}

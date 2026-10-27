@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Backslash
+Comment=Search apps and run commands
+Exec=backslash
+Icon=app.backslash.Backslash
+Terminal=false
+Categories=Utility;
+Keywords=launcher;search;run;commands;
+StartupNotify=false
+DBusActivatable=false

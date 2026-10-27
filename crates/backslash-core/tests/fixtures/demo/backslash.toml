@@ -1,0 +1,21 @@
+[extension]
+id = "demo"
+title = "Demo"
+
+[[commands]]
+name = "fruits"
+title = "Fruits"
+
+[[commands]]
+name = "echo"
+title = "Echo"
+
+[[commands]]
+name = "hello"
+title = "Hello"
+mode = "no-view"
+
+[[commands]]
+name = "sneaky"
+title = "Sneaky"
+mode = "no-view"
