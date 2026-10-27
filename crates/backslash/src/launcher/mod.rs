@@ -1130,6 +1130,9 @@ impl Launcher {
             }
             _ => return,
         };
+        if matches!(s.frames.last().map(|f| &f.kind), Some(FrameKind::Extension { .. })) {
+            self.spinner.set_spinning(d.loading);
+        }
         self.entry.set_editable(false);
         self.entry.set_placeholder_text(d.title.as_deref());
         self.detail.set_markup(&markdown::to_pango(&d.markdown));

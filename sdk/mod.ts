@@ -81,7 +81,8 @@ export interface ListOptions {
   placeholder?: string;
   /**
    * Loaded once, then filtered by the launcher as the user types (fast, fuzzy).
-   * An async generator can yield several times to show results progressively.
+   * An async generator can yield several times to show results progressively,
+   * or keep yielding to stay live (until `ctx.signal` aborts).
    */
   items?: ItemSource;
   /**
@@ -100,8 +101,11 @@ export interface ListOptions {
 
 export interface DetailOptions {
   title?: string;
-  /** Markdown body, or a function computing it. */
-  markdown: string | ((ctx: Context) => Awaitable<string>);
+  /**
+   * Markdown body, or a function computing it. A function may also be an
+   * async generator yielding the whole text so far, to stream an answer.
+   */
+  markdown: string | ((ctx: Context) => Awaitable<string> | AsyncIterable<string>);
   /** Key/value pairs shown in a side panel. */
   metadata?: Record<string, string | number>;
   actions?: Action[];
