@@ -81,7 +81,8 @@ export interface ListOptions {
   placeholder?: string;
   /**
    * Loaded once, then filtered by the launcher as the user types (fast, fuzzy).
-   * An async generator can yield several times to show results progressively.
+   * An async generator can yield several times to show results progressively,
+   * or keep yielding to stay live (until `ctx.signal` aborts).
    */
   items?: ItemSource;
   /**
