@@ -1,0 +1,7 @@
+{
+  "uuid": "backslash@backslash.app",
+  "name": "Backslash",
+  "description": "Lets the Backslash launcher list your windows and switch to them. It does nothing else.",
+  "shell-version": ["45", "46", "47", "48", "49", "50"],
+  "url": "https://github.com/backslash-app/backslash"
+}

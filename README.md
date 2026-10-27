@@ -186,7 +186,9 @@ Built in:
   GNOME, each time Backslash opens. Password managers' copies are skipped.
 - **Search Files**: in your home folder (`fd` if installed), recent files first,
   with a preview.
-- **Switch Windows**: Hyprland, Sway, niri and X11.
+- **Switch Windows**: Hyprland, Sway, niri, KDE Plasma (through a KWin
+  script, nothing to install), GNOME (through a tiny Shell extension the
+  launcher installs for you, or "Window Calls") and X11.
 - **Change Theme**: light, dark, or following the system.
 
 ## Script commands

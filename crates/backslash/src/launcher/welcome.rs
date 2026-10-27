@@ -241,6 +241,20 @@ pub fn rows(s: &State, desktop: &Desktop) -> Vec<Row> {
         "Clipboard history, snippets and extensions like Emoji paste straight into the app you were in, so you don't have to press Ctrl+V. Terminals get Ctrl+Shift+V.".into(),
     ));
 
+    // Window switching on GNOME needs a Shell extension.
+    if s.gnome_helper_needed {
+        let mut helper = super::rows::gnome_helper_row();
+        helper.key = "welcome:windows".into();
+        helper.title = "Switch windows".into();
+        helper.section = Some("Set up".into());
+        helper.accessories = vec![if backslash_core::system::gnome::is_installed() {
+            status("After next login", "blue")
+        } else {
+            status("Optional", "gray")
+        }];
+        rows.push(helper);
+    }
+
     // 5. Overlay window on wlroots-style compositors.
     if wayland() && kind != Kind::Gnome && !desktop.layer_shell {
         let mut overlay = row(
