@@ -19,3 +19,7 @@ mode = "no-view"
 name = "sneaky"
 title = "Sneaky"
 mode = "no-view"
+
+[[commands]]
+name = "story"
+title = "Story"

@@ -5,7 +5,7 @@
 // wire views and keeps the callbacks they reference.
 
 import { type Json, KIND, type Rpc, setRpc } from "./internal.ts";
-import type { Action, Command, Context, Effect, Item, ListSpec, Outcome, View } from "./mod.ts";
+import type { Action, Command, Context, DetailSpec, Effect, Item, ListSpec, Outcome, View } from "./mod.ts";
 
 // stdout belongs to the protocol: everything printed goes to the log instead.
 for (const level of ["log", "info", "debug", "warn"] as const) {
@@ -139,15 +139,12 @@ async function render(view: View, signal: AbortSignal = lifetime.signal): Promis
       return listJson(view, id, await source, false);
     }
     case "detail": {
-      const markdown = typeof view.markdown === "function" ? await view.markdown(ctx) : view.markdown;
-      return {
-        type: "detail",
-        id,
-        title: view.title ?? null,
-        markdown,
-        metadata: Object.entries(view.metadata ?? {}).map(([label, value]) => ({ label, value: String(value) })),
-        actions: serializeActions(view.actions, id),
-      };
+      const markdown = typeof view.markdown === "function" ? view.markdown(ctx) : view.markdown;
+      if (typeof markdown === "object" && markdown !== null && Symbol.asyncIterator in markdown) {
+        streamDetail(view, id, markdown as AsyncIterable<string>);
+        return detailJson(view, id, "", true);
+      }
+      return detailJson(view, id, await markdown, false);
     }
     case "form": {
       callbacks.set(`${id}:submit`, {
@@ -163,6 +160,37 @@ async function render(view: View, signal: AbortSignal = lifetime.signal): Promis
       };
     }
   }
+}
+
+function detailJson(spec: DetailSpec, id: string, markdown: string, loading: boolean): Json {
+  return {
+    type: "detail",
+    id,
+    title: spec.title ?? null,
+    markdown,
+    metadata: Object.entries(spec.metadata ?? {}).map(([label, value]) => ({ label, value: String(value) })),
+    actions: serializeActions(spec.actions, id),
+    loading,
+  };
+}
+
+/** Sends the text as it grows, at most every 80 ms so the launcher keeps up. */
+async function streamDetail(spec: DetailSpec, id: string, source: AsyncIterable<string>) {
+  let text = "";
+  let sent = 0;
+  try {
+    for await (const chunk of source) {
+      text = chunk;
+      if (Date.now() - sent > 80) {
+        sent = Date.now();
+        host.notify("view/update", { view: detailJson(spec, id, text, true) });
+      }
+    }
+  } catch (err) {
+    console.error(err);
+    text += `${text ? "\n\n" : ""}**Error:** ${err instanceof Error ? err.message : String(err)}`;
+  }
+  host.notify("view/update", { view: detailJson(spec, id, text, false) });
 }
 
 async function stream(spec: ListSpec, id: string, source: AsyncIterable<Item[]>) {

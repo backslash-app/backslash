@@ -163,6 +163,19 @@ export default form({
 });
 ```
 
+To stream a long answer (an AI reply, a log), make `markdown` an async
+generator yielding the whole text so far; the launcher shows it as it grows,
+with a spinner until the generator ends:
+
+```ts
+export default detail({
+  async *markdown({ signal }) {
+    let text = "";
+    for await (const chunk of answer(signal)) yield (text += chunk);
+  },
+});
+```
+
 A command can also export a function returning any view, to decide at runtime:
 `export default async ({ preferences }) => list({...})`.
 

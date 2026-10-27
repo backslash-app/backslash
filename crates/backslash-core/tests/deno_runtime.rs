@@ -110,3 +110,29 @@ fn no_view_command_and_sandbox() {
     let err = reply.unwrap_err();
     assert!(err.message.contains("NotCapable") || err.message.contains("read access"), "{err}");
 }
+
+#[test]
+fn detail_streams_its_markdown() {
+    if !deno_available() {
+        return;
+    }
+    let (session, reply, _state) = start("story", json!({}));
+    let Effect::Push { view: View::Detail(first) } = reply.unwrap() else { panic!("expected a detail") };
+    assert!(first.loading);
+    let mut updates = Vec::new();
+    loop {
+        let Ok(Incoming::Notification { method, params }) = session.incoming.recv_blocking() else {
+            panic!("session closed before the stream ended")
+        };
+        assert_eq!(method, "view/update");
+        let View::Detail(d) = serde_json::from_value(params["view"].clone()).unwrap() else { panic!("not a detail") };
+        assert_eq!(d.id, first.id, "updates target the same view");
+        let done = !d.loading;
+        updates.push(d.markdown);
+        if done {
+            break;
+        }
+    }
+    assert!(updates.len() >= 2, "text arrives in several updates: {updates:?}");
+    assert_eq!(updates.last().unwrap(), "Once upon a time");
+}

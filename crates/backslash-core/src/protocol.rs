@@ -132,6 +132,8 @@ pub struct DetailView {
     pub markdown: String,
     pub metadata: Vec<MetadataEntry>,
     pub actions: Vec<Action>,
+    /// More text is coming (a streamed answer).
+    pub loading: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]

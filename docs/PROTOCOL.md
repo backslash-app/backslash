@@ -80,7 +80,7 @@ and used to target `view/update`.
 ```
 
 ```jsonc
-{ "type": "detail", "id": "v2", "title": "react", "markdown": "# react", "metadata": [{ "label": "Version", "value": "19" }], "actions": [] }
+{ "type": "detail", "id": "v2", "title": "react", "markdown": "# react", "metadata": [{ "label": "Version", "value": "19" }], "actions": [], "loading": false }
 ```
 
 ```jsonc

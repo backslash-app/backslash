@@ -100,8 +100,11 @@ export interface ListOptions {
 
 export interface DetailOptions {
   title?: string;
-  /** Markdown body, or a function computing it. */
-  markdown: string | ((ctx: Context) => Awaitable<string>);
+  /**
+   * Markdown body, or a function computing it. A function may also be an
+   * async generator yielding the whole text so far, to stream an answer.
+   */
+  markdown: string | ((ctx: Context) => Awaitable<string> | AsyncIterable<string>);
   /** Key/value pairs shown in a side panel. */
   metadata?: Record<string, string | number>;
   actions?: Action[];
