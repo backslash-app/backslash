@@ -24,7 +24,8 @@
 - **Made for Linux.** Applications come straight from your system (Flatpak and
   Snap included), icons from your icon theme, light/dark from your desktop.
 - **Extensions that cannot hurt you.** Each extension declares what it needs
-  (`net = ["api.github.com"]`, `run = ["git"]`) and the runtime enforces it.
+  (`net = ["api.github.com"]`, `run = ["git"]`), you approve it once, and the
+  runtime enforces it. Tokens go to your system keyring.
   Each command runs in its own process: a buggy extension can't freeze or
   crash the launcher.
 - **Extensions that are easy to write.** TypeScript, no build step, no
@@ -140,6 +141,11 @@ Built in:
 - **Change Theme**: light, dark, or following the system.
 
 ## Make it yours
+
+Everything is in the **Settings** command: theme, shortcut, launch at login,
+clipboard history, extensions (enable, see their permissions, configure them),
+quicklinks, snippets and hidden apps. It all lives in plain files, so you can
+also edit them by hand or keep them in your dotfiles.
 
 `~/.config/backslash/config.toml`:
 

@@ -43,6 +43,9 @@ enum Cmd {
         /// Print JSON instead of a table.
         #[arg(long)]
         json: bool,
+        /// Approve the extension's permissions without asking.
+        #[arg(short, long)]
+        yes: bool,
     },
     /// List installed extensions and their commands.
     List,
@@ -83,7 +86,9 @@ fn run(args: Args) -> anyhow::Result<()> {
             let dir = dir.unwrap_or_else(|| PathBuf::from(".")).canonicalize()?;
             launcher::run(launcher::Options { hidden: false, dev_dir: Some(dir) })
         }
-        Some(Cmd::Run { id, query, args, json }) => cli::run(&id, query.as_deref().unwrap_or(""), &args, json),
+        Some(Cmd::Run { id, query, args, json, yes }) => {
+            cli::run(&id, query.as_deref().unwrap_or(""), &args, json, yes)
+        }
         Some(Cmd::List) => cli::list(),
         Some(Cmd::New { name, dir }) => scaffold::create(&name, dir.as_deref()),
         Some(Cmd::Doctor) => cli::doctor(),

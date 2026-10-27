@@ -39,7 +39,7 @@ pub fn start(
     let (preferences, missing) = config.preferences(&ext.manifest);
     if !missing.is_empty() {
         bail!(
-            "{} needs preferences: {} (set them in ~/.config/backslash/config.toml)",
+            "{} needs preferences: {} (set them in Backslash → Settings → Extensions)",
             ext.manifest.extension.title,
             missing.join(", ")
         );

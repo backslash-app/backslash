@@ -7,7 +7,8 @@ and run the command again.
 ```sh
 backslash new github        # scaffold ./github
 cd github
-backslash dev               # opens the launcher with your extension loaded, logs in the terminal
+backslash dev               # opens the launcher with your extension loaded: logs in the terminal,
+                            # and the open command reloads when you save a file
 backslash run github/hello  # or run a command straight from the terminal
 ```
 
@@ -60,7 +61,7 @@ placeholder = "https://github.com/…"
 required = true
 # type = "text" (default) | "number" (min/max) | "choice" (options = [...])
 
-[[preferences]]                     # set in ~/.config/backslash/config.toml
+[[preferences]]                     # edited in Settings → Extensions → Configure
 name = "username"
 title = "GitHub username"
 required = true
@@ -236,6 +237,18 @@ command = ["python3"]   # the command entry path is appended
 ```
 
 Exec extensions are not sandboxed; `backslash list` flags them as such.
+
+## Preferences and permissions
+
+- Users set preferences in **Settings → Extensions → Configure**. If a
+  `required` preference is missing, the form opens by itself before the command
+  runs. Your command receives them in `ctx.preferences`.
+- `type = "secret"` values are stored in the system keyring (libsecret: GNOME
+  Keyring, KWallet, KeePassXC…), never in `config.toml`.
+- The first time a command of your extension runs, the user sees what it asks
+  for (the `[permissions]` lines) and approves it. Asking for more in an update
+  asks again. Extensions declaring no permission run without a prompt.
+  From a terminal, `backslash run` asks the same question (or `--yes`).
 
 ## Installing
 

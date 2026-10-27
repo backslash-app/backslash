@@ -9,6 +9,7 @@
 
 mod model;
 mod rows;
+mod settings;
 mod widgets;
 
 use std::cell::{Cell, RefCell};
@@ -26,12 +27,12 @@ use backslash_core::search::{Ranker, Usage};
 use backslash_core::system::clipboard::ClipboardHistory;
 use backslash_core::system::files;
 use backslash_core::system::windows::{Backend, WindowInfo};
-use backslash_core::{paths, runner};
+use backslash_core::{approvals, paths, runner, secrets};
 use gtk::prelude::*;
 use gtk::{gdk, gio, glib};
 use serde_json::{json, Map, Value};
 
-use self::model::{Builtin, Filter, FormInput, Frame, FrameKind, Op, Row, UiAction};
+use self::model::{Builtin, Filter, FormInput, FormPurpose, Frame, FrameKind, Launched, Op, Row, UiAction};
 use self::widgets::{key_hint, label, pretty_accel, row_widget};
 use crate::apps::{self, App};
 use crate::currency::Currency;
@@ -155,6 +156,9 @@ pub struct Launcher {
     dev_dir: Option<PathBuf>,
     /// Set while the code (not the user) changes the search text.
     setting_query: Cell<bool>,
+    /// `backslash dev`: watches the extension's files for hot reload.
+    monitors: RefCell<Vec<gio::FileMonitor>>,
+    reload_timer: RefCell<Option<glib::SourceId>>,
     _hold: gio::ApplicationHoldGuard,
 }
 
@@ -378,6 +382,8 @@ impl Launcher {
             }),
             dev_dir,
             setting_query: Cell::new(false),
+            monitors: RefCell::default(),
+            reload_timer: RefCell::default(),
             _hold: app.hold(),
         });
         launcher.build_chips();
@@ -386,8 +392,87 @@ impl Launcher {
         launcher
     }
 
+    /// `backslash dev`: reload when the extension's manifest or commands change.
+    fn watch_dev_dir(self: &Rc<Self>) {
+        let Some(dir) = self.dev_dir.clone() else { return };
+        for path in [dir.clone(), dir.join("commands")] {
+            let Ok(monitor) =
+                gio::File::for_path(&path).monitor_directory(gio::FileMonitorFlags::NONE, gio::Cancellable::NONE)
+            else {
+                continue;
+            };
+            let weak = Rc::downgrade(self);
+            monitor.connect_changed(move |_, _, _, event| {
+                if !matches!(
+                    event,
+                    gio::FileMonitorEvent::ChangesDoneHint
+                        | gio::FileMonitorEvent::Created
+                        | gio::FileMonitorEvent::Deleted
+                ) {
+                    return;
+                }
+                let Some(l) = weak.upgrade() else { return };
+                // Editors save in several steps: wait for the last one.
+                if let Some(timer) = l.reload_timer.borrow_mut().take() {
+                    timer.remove();
+                }
+                let weak = Rc::downgrade(&l);
+                let timer = glib::timeout_add_local_once(Duration::from_millis(250), move || {
+                    if let Some(l) = weak.upgrade() {
+                        l.reload_timer.borrow_mut().take();
+                        l.hot_reload();
+                    }
+                });
+                *l.reload_timer.borrow_mut() = Some(timer);
+            });
+            self.monitors.borrow_mut().push(monitor);
+        }
+        eprintln!("backslash: watching {} for changes", dir.display());
+    }
+
+    /// Reloads the dev extension and restarts its open command, if any.
+    fn hot_reload(self: &Rc<Self>) {
+        self.reload();
+        let Some(dir) = &self.dev_dir else { return };
+        let id = match backslash_core::manifest::Manifest::load(dir) {
+            Ok(m) => m.extension.id,
+            Err(e) => return self.fail(format!("{e:#}")),
+        };
+        let open = {
+            let s = self.state.borrow();
+            s.frames
+                .iter()
+                .position(|f| matches!(&f.kind, FrameKind::Extension { session, .. } if session.extension_id == id))
+                .map(|i| match &s.frames[i].kind {
+                    FrameKind::Extension { launched, .. } => (i, launched.clone()),
+                    _ => unreachable!(),
+                })
+        };
+        match open {
+            Some((index, launched)) => {
+                {
+                    let mut s = self.state.borrow_mut();
+                    s.frames.truncate(index);
+                    s.search = None;
+                    s.selected_key = None;
+                }
+                let query = self.state.borrow().frames.last().map(|f| f.query.clone()).unwrap_or_default();
+                self.set_query(&query);
+                self.render();
+                self.start_command(&launched.command_id, Some(launched.arguments.clone()));
+                eprintln!("backslash: reloaded {}", launched.command_id);
+                self.show_toast("Reloaded", proto::ToastStyle::Success);
+            }
+            None => {
+                self.render();
+                self.show_toast("Extension reloaded", proto::ToastStyle::Success);
+            }
+        }
+    }
+
     /// Background services, started once the application is registered.
     fn start_services(self: &Rc<Self>) {
+        self.watch_dev_dir();
         let (hotkey, clipboard_enabled) = {
             let s = self.state.borrow();
             (s.config.hotkey.clone(), s.config.clipboard.enabled)
@@ -674,7 +759,8 @@ impl Launcher {
                 FrameKind::Extension { view: View::List(_), title, .. } => (title.clone(), "list"),
                 FrameKind::Extension { view: View::Detail(_), title, .. } => (title.clone(), "detail"),
                 FrameKind::Extension { view: View::Form(_), title, .. } => (title.clone(), "form"),
-                FrameKind::Arguments { form, .. } => (form.title.clone().unwrap_or_default(), "form"),
+                FrameKind::Form { form, .. } => (form.title.clone().unwrap_or_default(), "form"),
+                FrameKind::Approval { .. } => ("Permissions".to_string(), "detail"),
             };
             (s.frames.len(), title, page)
         };
@@ -764,8 +850,19 @@ impl Launcher {
 
     fn render_detail(&self) {
         let s = self.state.borrow();
-        let Some(Frame { kind: FrameKind::Extension { view: View::Detail(d), .. }, .. }) = s.frames.last() else {
-            return;
+        let approval;
+        let d = match s.frames.last().map(|f| &f.kind) {
+            Some(FrameKind::Extension { view: View::Detail(d), .. }) => d,
+            Some(FrameKind::Approval { extension_id, .. }) => {
+                let Some(ext) = s.registry.find(extension_id) else { return };
+                approval = proto::DetailView {
+                    title: Some(ext.manifest.extension.title.clone()),
+                    markdown: settings::approval_markdown(&ext.manifest),
+                    ..Default::default()
+                };
+                &approval
+            }
+            _ => return,
         };
         self.entry.set_editable(false);
         self.entry.set_placeholder_text(d.title.as_deref());
@@ -789,7 +886,7 @@ impl Launcher {
         let form = {
             let s = self.state.borrow();
             match &s.frames.last().unwrap().kind {
-                FrameKind::Extension { view: View::Form(f), .. } | FrameKind::Arguments { form: f, .. } => f.clone(),
+                FrameKind::Extension { view: View::Form(f), .. } | FrameKind::Form { form: f, .. } => f.clone(),
                 _ => return,
             }
         };
@@ -875,7 +972,13 @@ impl Launcher {
             let from = |actions: &[proto::Action]| actions.iter().map(UiAction::from_proto).collect::<Vec<_>>();
             match &s.frames.last().unwrap().kind {
                 FrameKind::Extension { view: View::Detail(d), .. } => return from(&d.actions),
-                FrameKind::Extension { view: View::Form(_), .. } | FrameKind::Arguments { .. } => return Vec::new(),
+                FrameKind::Extension { view: View::Form(_), .. } | FrameKind::Form { .. } => return Vec::new(),
+                FrameKind::Approval { .. } => {
+                    return vec![
+                        UiAction::new("Allow and Run", Op::Approve).icon("object-select"),
+                        UiAction::new("Cancel", Op::Back).icon("window-close"),
+                    ]
+                }
                 FrameKind::Extension { view: View::List(l), .. } => from(&l.actions),
                 FrameKind::Root | FrameKind::Builtin(_) => Vec::new(),
             }
@@ -888,7 +991,7 @@ impl Launcher {
     fn is_form(&self) -> bool {
         matches!(
             self.state.borrow().frames.last().unwrap().kind,
-            FrameKind::Extension { view: View::Form(_), .. } | FrameKind::Arguments { .. }
+            FrameKind::Extension { view: View::Form(_), .. } | FrameKind::Form { .. }
         )
     }
 
@@ -1095,6 +1198,11 @@ impl Launcher {
         }
 
         if self.is_form() {
+            if matches!(key, gdk::Key::Tab | gdk::Key::ISO_Left_Tab) {
+                let back = key == gdk::Key::ISO_Left_Tab || mods.contains(gdk::ModifierType::SHIFT_MASK);
+                self.focus_next_field(if back { -1 } else { 1 });
+                return Stop;
+            }
             if matches!(key, gdk::Key::Return | gdk::Key::KP_Enter) {
                 let in_textview =
                     gtk::prelude::GtkWindowExt::focus(&self.window).is_some_and(|w| w.is::<gtk::TextView>());
@@ -1131,6 +1239,31 @@ impl Launcher {
             }
         }
         Stop
+    }
+
+    /// Moves the focus between form fields (Tab / Shift+Tab), wrapping around.
+    fn focus_next_field(&self, delta: i32) {
+        let widgets: Vec<gtk::Widget> = self
+            .state
+            .borrow()
+            .form
+            .iter()
+            .map(|(_, input)| match input {
+                FormInput::Entry(w) => w.clone().upcast(),
+                FormInput::Password(w) => w.clone().upcast(),
+                FormInput::Text(w) => w.clone().upcast(),
+                FormInput::Check(w) => w.clone().upcast(),
+                FormInput::Drop(w, _) => w.clone().upcast(),
+            })
+            .collect();
+        if widgets.is_empty() {
+            return;
+        }
+        let focused = gtk::prelude::GtkWindowExt::focus(&self.window);
+        let current =
+            focused.and_then(|f| widgets.iter().position(|w| &f == w || f.is_ancestor(w))).map_or(-1, |i| i as i32);
+        let next = (current + delta).rem_euclid(widgets.len() as i32) as usize;
+        widgets[next].grab_focus();
     }
 
     fn on_popover_key(self: &Rc<Self>, key: gdk::Key, mods: gdk::ModifierType) -> glib::Propagation {
@@ -1335,6 +1468,90 @@ impl Launcher {
                 }
                 Err(e) => self.fail(e),
             },
+            Op::SetClipboard(enabled) => {
+                self.update_config(|c| c.clipboard.enabled = enabled);
+                let note = if enabled {
+                    "Clipboard history on (watching starts at the next start)"
+                } else {
+                    "Clipboard history off"
+                };
+                self.show_toast(note, proto::ToastStyle::Success);
+                self.render();
+            }
+            Op::EditHotkey => {
+                let current = self.state.borrow().config.hotkey.clone();
+                self.push(FrameKind::Form { purpose: FormPurpose::Hotkey, form: settings::hotkey_form(&current) });
+            }
+            Op::ToggleExtension(id) => {
+                let enabled = self.state.borrow().config.is_enabled(&id);
+                self.update_config(|c| c.extensions.entry(id.clone()).or_default().enabled = !enabled);
+                self.render();
+            }
+            Op::ConfigureExtension(id) => {
+                let form = {
+                    let s = self.state.borrow();
+                    let Some(ext) = s.registry.find(&id) else { return };
+                    settings::preferences_form(&ext.manifest, &s.config)
+                };
+                let purpose = FormPurpose::Preferences { extension_id: id, then_run: None };
+                self.push(FrameKind::Form { purpose, form });
+            }
+            Op::EditQuicklink(index) => {
+                let form = settings::quicklink_form(
+                    index.and_then(|i| self.state.borrow().config.quicklinks.get(i).cloned()).as_ref(),
+                );
+                self.push(FrameKind::Form { purpose: FormPurpose::Quicklink { index }, form });
+            }
+            Op::DeleteQuicklink(index) => {
+                self.update_config(|c| {
+                    if index < c.quicklinks.len() {
+                        c.quicklinks.remove(index);
+                    }
+                });
+                self.render();
+            }
+            Op::EditSnippet(index) => {
+                let form = settings::snippet_form(
+                    index.and_then(|i| self.state.borrow().config.snippets.get(i).cloned()).as_ref(),
+                );
+                self.push(FrameKind::Form { purpose: FormPurpose::Snippet { index }, form });
+            }
+            Op::DeleteSnippet(index) => {
+                self.update_config(|c| {
+                    if index < c.snippets.len() {
+                        c.snippets.remove(index);
+                    }
+                });
+                self.render();
+            }
+            Op::UnhideApp(id) => {
+                self.update_config(|c| c.hidden_apps.retain(|h| *h != id));
+                let hidden = self.state.borrow().config.hidden_apps.clone();
+                self.state.borrow_mut().apps = apps::load(&hidden);
+                self.render();
+            }
+            Op::Approve => {
+                let pending = match &self.state.borrow().frames.last().unwrap().kind {
+                    FrameKind::Approval { extension_id, command_id, arguments } => {
+                        Some((extension_id.clone(), command_id.clone(), arguments.clone()))
+                    }
+                    _ => None,
+                };
+                let Some((extension_id, command_id, arguments)) = pending else { return };
+                let approved = {
+                    let s = self.state.borrow();
+                    s.registry.find(&extension_id).map(|e| approvals::approve(&e.manifest))
+                };
+                match approved {
+                    Some(Ok(())) => {
+                        self.pop();
+                        self.start_command(&command_id, arguments);
+                    }
+                    Some(Err(e)) => self.fail(format!("{e:#}")),
+                    None => {}
+                }
+            }
+            Op::Back => self.pop(),
         }
     }
 
@@ -1348,38 +1565,53 @@ impl Launcher {
         });
     }
 
-    /// Starts `extension/command`. Without `arguments`, commands that declare
-    /// arguments first show a small form to fill them.
+    /// Starts `extension/command`. Before running, the launcher may first ask
+    /// to approve the extension's permissions, fill missing required
+    /// preferences, or fill the command's arguments.
     fn start_command(self: &Rc<Self>, id: &str, arguments: Option<Map<String, Value>>) {
         enum Prepared {
-            Started((Session, backslash_core::host::Pending), String),
-            NeedArguments(FormView),
+            Started((Session, backslash_core::host::Pending), String, Map<String, Value>),
+            Push(FrameKind),
             Failed(String),
         }
         let prepared = {
             let s = self.state.borrow();
             match s.registry.resolve(id) {
                 None => Prepared::Failed(format!("Unknown command {id}")),
-                Some((_, command)) if arguments.is_none() && !command.arguments.is_empty() => {
-                    Prepared::NeedArguments(arguments_form(command))
-                }
                 Some((ext, command)) => {
-                    match runner::start(ext, command, &s.config, arguments.unwrap_or_default(), "") {
-                        Ok(started) => Prepared::Started(started, command.title.clone()),
-                        Err(e) => Prepared::Failed(format!("{e:#}")),
+                    let manifest = &ext.manifest;
+                    let ext_id = manifest.extension.id.clone();
+                    let (_, missing) = s.config.preferences(manifest);
+                    if !approvals::requested(manifest).is_empty() && !approvals::is_approved(manifest) {
+                        Prepared::Push(FrameKind::Approval { extension_id: ext_id, command_id: id.into(), arguments })
+                    } else if !missing.is_empty() {
+                        Prepared::Push(FrameKind::Form {
+                            purpose: FormPurpose::Preferences { extension_id: ext_id, then_run: Some(id.into()) },
+                            form: settings::preferences_form(manifest, &s.config),
+                        })
+                    } else if arguments.is_none() && !command.arguments.is_empty() {
+                        Prepared::Push(FrameKind::Form {
+                            purpose: FormPurpose::Arguments { command_id: id.into() },
+                            form: arguments_form(command),
+                        })
+                    } else {
+                        let arguments = arguments.unwrap_or_default();
+                        match runner::start(ext, command, &s.config, arguments.clone(), "") {
+                            Ok(started) => Prepared::Started(started, command.title.clone(), arguments),
+                            Err(e) => Prepared::Failed(format!("{e:#}")),
+                        }
                     }
                 }
             }
         };
-        let ((session, pending), title) = match prepared {
-            Prepared::Started(started, title) => (started, title),
+        let ((session, pending), title, arguments) = match prepared {
+            Prepared::Started(started, title, arguments) => (started, title, arguments),
             Prepared::Failed(e) => return self.fail(e),
-            Prepared::NeedArguments(form) => {
-                return self.push(FrameKind::Arguments { command_id: id.to_string(), form });
-            }
+            Prepared::Push(kind) => return self.push(kind),
         };
 
         let session = Rc::new(session);
+        let launched = Rc::new(Launched { command_id: id.to_string(), arguments });
         self.listen(&session);
         self.spinner.set_spinning(true);
         let weak = Rc::downgrade(self);
@@ -1391,7 +1623,7 @@ impl Launcher {
                 .and_then(|v| serde_json::from_value::<Effect>(v).map_err(|e| RpcError::new(-32700, e.to_string())))
             {
                 Ok(Effect::Push { view } | Effect::Replace { view }) => {
-                    l.push(FrameKind::Extension { session, view, title });
+                    l.push(FrameKind::Extension { session, view, title, launched });
                 }
                 Ok(Effect::Close { message }) => match message {
                     Some(m) => l.flash_and_hide(&m),
@@ -1436,7 +1668,11 @@ impl Launcher {
             Effect::None => {}
             Effect::Push { view } => {
                 let title = self.context.text().to_string();
-                self.push(FrameKind::Extension { session: session.clone(), view, title });
+                let launched = match self.state.borrow().frames.last().map(|f| &f.kind) {
+                    Some(FrameKind::Extension { launched, .. }) => launched.clone(),
+                    _ => return,
+                };
+                self.push(FrameKind::Extension { session: session.clone(), view, title, launched });
             }
             Effect::Replace { view } => self.replace_top(session, view),
             Effect::Pop => self.pop(),
@@ -1469,34 +1705,138 @@ impl Launcher {
         if let Some(title) = missing {
             return self.fail(format!("{title} is required"));
         }
-        enum Target {
-            Arguments(String),
-            Extension(Option<String>),
-        }
-        let target = match &self.state.borrow().frames.last().unwrap().kind {
-            FrameKind::Arguments { command_id, .. } => Target::Arguments(command_id.clone()),
-            FrameKind::Extension { view: View::Form(f), .. } => Target::Extension(f.id.clone()),
-            _ => return,
+        let purpose = match &self.state.borrow().frames.last().unwrap().kind {
+            FrameKind::Form { purpose, .. } => Some(purpose.clone()),
+            FrameKind::Extension { view: View::Form(f), .. } => {
+                let id = format!("{}:submit", f.id.clone().unwrap_or_default());
+                return self.callback(&id, Some(values));
+            }
+            _ => None,
         };
-        match target {
-            Target::Arguments(id) => {
+        let Some(purpose) = purpose else { return };
+        let text = |k: &str| values.get(k).and_then(Value::as_str).unwrap_or_default().trim().to_string();
+        let optional = |k: &str| Some(text(k)).filter(|t| !t.is_empty());
+        match purpose {
+            FormPurpose::Arguments { command_id } => {
                 let parsed = {
                     let s = self.state.borrow();
-                    let Some((_, command)) = s.registry.resolve(&id) else { return };
+                    let Some((_, command)) = s.registry.resolve(&command_id) else { return };
                     runner::parse_arguments(command, &values)
                 };
                 match parsed {
                     Ok(args) => {
                         self.pop();
-                        self.start_command(&id, Some(args));
+                        self.start_command(&command_id, Some(args));
                     }
                     Err(e) => self.fail(e),
                 }
             }
-            Target::Extension(view_id) => {
-                let id = format!("{}:submit", view_id.unwrap_or_default());
-                self.callback(&id, Some(values));
+            FormPurpose::Preferences { extension_id, then_run } => {
+                if let Err(e) = self.save_preferences(&extension_id, &values) {
+                    return self.fail(format!("{e:#}"));
+                }
+                self.pop();
+                match then_run {
+                    Some(command) => self.start_command(&command, None),
+                    None => self.show_toast("Preferences saved", proto::ToastStyle::Success),
+                }
             }
+            FormPurpose::Quicklink { index } => {
+                let link = backslash_core::config::Quicklink {
+                    name: text("name"),
+                    url: text("url"),
+                    keyword: optional("keyword"),
+                    icon: index.and_then(|i| self.state.borrow().config.quicklinks.get(i).and_then(|l| l.icon.clone())),
+                };
+                if !link.url.contains("://") {
+                    return self.fail("The URL must start with https:// (or another scheme)");
+                }
+                self.update_config(|c| match index {
+                    Some(i) if i < c.quicklinks.len() => c.quicklinks[i] = link,
+                    _ => c.quicklinks.push(link),
+                });
+                self.pop();
+            }
+            FormPurpose::Snippet { index } => {
+                let snippet = backslash_core::config::Snippet {
+                    name: text("name"),
+                    text: values.get("text").and_then(Value::as_str).unwrap_or_default().to_string(),
+                    keyword: optional("keyword"),
+                };
+                self.update_config(|c| match index {
+                    Some(i) if i < c.snippets.len() => c.snippets[i] = snippet,
+                    _ => c.snippets.push(snippet),
+                });
+                self.pop();
+            }
+            FormPurpose::Hotkey => {
+                let hotkey = text("hotkey");
+                self.update_config(|c| c.hotkey = hotkey);
+                self.pop();
+                self.show_toast("Saved. The new shortcut applies at the next start", proto::ToastStyle::Info);
+            }
+        }
+    }
+
+    /// Plain preferences go to config.toml, secrets to the keyring. An empty
+    /// secret field keeps the saved value.
+    fn save_preferences(&self, extension_id: &str, values: &Map<String, Value>) -> anyhow::Result<()> {
+        let mut s = self.state.borrow_mut();
+        let manifest = s
+            .registry
+            .find(extension_id)
+            .map(|e| e.manifest.clone())
+            .ok_or_else(|| anyhow::anyhow!("unknown extension {extension_id}"))?;
+        let entry = s.config.extensions.entry(extension_id.to_string()).or_default();
+        for pref in &manifest.preferences {
+            let value = values.get(&pref.name).cloned().unwrap_or(Value::Null);
+            match pref.kind {
+                backslash_core::manifest::PreferenceKind::Secret => {
+                    let secret = value.as_str().unwrap_or_default();
+                    if !secret.is_empty() {
+                        secrets::set(extension_id, &pref.name, secret)?;
+                    }
+                }
+                backslash_core::manifest::PreferenceKind::Boolean => {
+                    entry.preferences.insert(
+                        pref.name.clone(),
+                        backslash_core::toml::Value::Boolean(value.as_bool().unwrap_or(false)),
+                    );
+                }
+                backslash_core::manifest::PreferenceKind::Number => {
+                    let raw = value.as_str().unwrap_or_default().trim().replace(',', ".");
+                    if raw.is_empty() {
+                        entry.preferences.remove(&pref.name);
+                    } else {
+                        let n: f64 = raw.parse().map_err(|_| anyhow::anyhow!("{} must be a number", pref.title))?;
+                        entry.preferences.insert(pref.name.clone(), backslash_core::toml::Value::Float(n));
+                    }
+                }
+                backslash_core::manifest::PreferenceKind::Text => {
+                    let text = value.as_str().unwrap_or_default().to_string();
+                    if text.is_empty() {
+                        entry.preferences.remove(&pref.name);
+                    } else {
+                        entry.preferences.insert(pref.name.clone(), backslash_core::toml::Value::String(text));
+                    }
+                }
+            }
+        }
+        s.config.save()
+    }
+
+    /// Changes the config, saves it, and re-renders.
+    fn update_config(self: &Rc<Self>, change: impl FnOnce(&mut Config)) {
+        let result = {
+            let mut s = self.state.borrow_mut();
+            change(&mut s.config);
+            let config = s.config.clone();
+            let commands = s.registry.commands(|id| config.is_enabled(id));
+            s.commands = commands;
+            s.config.save()
+        };
+        if let Err(e) = result {
+            self.fail(format!("Could not save config.toml: {e:#}"));
         }
     }
 
@@ -1517,7 +1857,10 @@ impl Launcher {
         }
         self.set_query("");
         self.render();
-        self.entry.grab_focus();
+        // Forms focus their first field themselves.
+        if !self.is_form() {
+            self.entry.grab_focus();
+        }
     }
 
     fn pop(self: &Rc<Self>) {
@@ -1693,7 +2036,7 @@ impl Launcher {
                 s.files.recent = files::recent(30);
                 s.files.results.clear();
             }
-            Builtin::Clipboard | Builtin::Theme => {}
+            Builtin::Clipboard | Builtin::Theme | Builtin::Settings => {}
         }
         self.record(format!("builtin:{}", builtin_id(builtin)));
         self.push(FrameKind::Builtin(builtin));
@@ -1762,6 +2105,7 @@ fn builtin_id(builtin: Builtin) -> &'static str {
         Builtin::Files => "files",
         Builtin::Windows => "windows",
         Builtin::Theme => "theme",
+        Builtin::Settings => "settings",
     }
 }
 

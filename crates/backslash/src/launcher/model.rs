@@ -7,6 +7,7 @@ use backslash_core::config::Theme;
 use backslash_core::host::Session;
 use backslash_core::protocol::{self as proto, Accessory, ActionKind, FormView, View};
 use backslash_core::search::Searchable;
+use serde_json::{Map, Value};
 
 use crate::icons::Icon;
 
@@ -17,6 +18,7 @@ pub enum Builtin {
     Files,
     Windows,
     Theme,
+    Settings,
 }
 
 impl Builtin {
@@ -26,6 +28,7 @@ impl Builtin {
             Self::Files => "Search Files",
             Self::Windows => "Switch Windows",
             Self::Theme => "Theme",
+            Self::Settings => "Settings",
         }
     }
 
@@ -35,7 +38,7 @@ impl Builtin {
             Self::Clipboard => ("Nothing copied yet", "Text you copy will show up here."),
             Self::Files => ("Search your files", "Type at least two letters. Recent files appear here."),
             Self::Windows => ("No open windows", ""),
-            Self::Theme => ("", ""),
+            Self::Theme | Self::Settings => ("", ""),
         }
     }
 
@@ -45,6 +48,7 @@ impl Builtin {
             Self::Files => "Search files in your home folder…",
             Self::Windows => "Search open windows…",
             Self::Theme => "Choose a theme…",
+            Self::Settings => "Search settings…",
         }
     }
 }
@@ -70,6 +74,18 @@ pub enum Op {
     FocusWindow(String),
     SetTheme(Theme),
     SetAutostart(bool),
+    SetClipboard(bool),
+    EditHotkey,
+    ToggleExtension(String),
+    ConfigureExtension(String),
+    EditQuicklink(Option<usize>),
+    DeleteQuicklink(usize),
+    EditSnippet(Option<usize>),
+    DeleteSnippet(usize),
+    UnhideApp(String),
+    /// Allow the extension of the approval screen, then run its command.
+    Approve,
+    Back,
 }
 
 #[derive(Clone)]
@@ -220,6 +236,33 @@ impl Filter {
     }
 }
 
+/// What a form built by the launcher itself is for.
+#[derive(Clone)]
+pub enum FormPurpose {
+    /// Arguments of a command, asked before starting it.
+    Arguments {
+        command_id: String,
+    },
+    /// Preferences of an extension; `then_run` starts a command after saving.
+    Preferences {
+        extension_id: String,
+        then_run: Option<String>,
+    },
+    Quicklink {
+        index: Option<usize>,
+    },
+    Snippet {
+        index: Option<usize>,
+    },
+    Hotkey,
+}
+
+/// The command an extension view belongs to, to restart it (hot reload).
+pub struct Launched {
+    pub command_id: String,
+    pub arguments: Map<String, Value>,
+}
+
 pub enum FrameKind {
     Root,
     /// A view served by an extension process.
@@ -227,11 +270,18 @@ pub enum FrameKind {
         session: Rc<Session>,
         view: View,
         title: String,
+        launched: Rc<Launched>,
     },
-    /// Arguments of a command, asked before starting it.
-    Arguments {
-        command_id: String,
+    /// A form handled by the launcher.
+    Form {
+        purpose: FormPurpose,
         form: FormView,
+    },
+    /// "This extension wants to…": shown before its first run.
+    Approval {
+        extension_id: String,
+        command_id: String,
+        arguments: Option<Map<String, Value>>,
     },
     Builtin(Builtin),
 }

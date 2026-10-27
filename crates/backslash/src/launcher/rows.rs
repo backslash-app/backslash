@@ -241,6 +241,15 @@ fn builtin_commands(s: &State) -> Vec<(Entry, Row)> {
     };
     add("autostart", title, &["startup", "autostart", "login", "démarrage"], "system-run", "green", op, about);
     add(
+        "settings",
+        "Settings",
+        &["preferences", "extensions", "quicklinks", "snippets", "réglages", "configure"],
+        "preferences-system",
+        "gray",
+        Op::OpenBuiltin(Builtin::Settings),
+        "Theme, shortcut, extensions and their preferences, quicklinks, snippets.",
+    );
+    add(
         "config",
         "Open Config File",
         &["settings", "preferences", "quicklinks", "snippets", "réglages"],
@@ -577,6 +586,20 @@ pub fn builtin_rows(s: &mut State, builtin: Builtin, query: &str) -> Vec<Row> {
                 })
                 .collect();
             ranked_rows(&mut s.ranker, query, entries)
+        }
+        Builtin::Settings => {
+            let entries = super::settings::rows(s)
+                .into_iter()
+                .map(|row| {
+                    let keywords = [row.section.clone(), row.subtitle.clone()].into_iter().flatten().collect();
+                    (Entry { key: row.key.clone(), title: row.title.clone(), keywords, subtitle: None }, row)
+                })
+                .collect();
+            let mut rows = ranked_rows(&mut s.ranker, query, entries);
+            if !query.trim().is_empty() {
+                rows.iter_mut().for_each(|r| r.section = None);
+            }
+            rows
         }
         Builtin::Theme => {
             let current = s.config.theme;

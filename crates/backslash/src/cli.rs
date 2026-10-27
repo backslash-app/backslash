@@ -74,11 +74,12 @@ impl Searchable for Row<'_> {
     }
 }
 
-pub fn run(id: &str, query: &str, raw_args: &[String], json_out: bool) -> Result<()> {
+pub fn run(id: &str, query: &str, raw_args: &[String], json_out: bool, yes: bool) -> Result<()> {
     let registry = registry();
     let config = Config::load();
     let (ext, command) =
         registry.resolve(id).with_context(|| format!("unknown command `{id}` (see `backslash list`)"))?;
+    approve(&ext.manifest, yes)?;
 
     let mut raw = Map::new();
     for pair in raw_args {
@@ -158,6 +159,32 @@ pub fn run(id: &str, query: &str, raw_args: &[String], json_out: bool) -> Result
     Ok(())
 }
 
+/// Same consent as in the launcher: ask on a terminal, or require `--yes`.
+fn approve(manifest: &backslash_core::manifest::Manifest, yes: bool) -> Result<()> {
+    use backslash_core::approvals;
+    use std::io::IsTerminal;
+    let requested = approvals::requested(manifest);
+    if requested.is_empty() || approvals::is_approved(manifest) {
+        return Ok(());
+    }
+    if !yes {
+        if !std::io::stdin().is_terminal() {
+            bail!("{} needs approval: {}. Run again with --yes", manifest.extension.title, requested.join(", "));
+        }
+        eprintln!("{} asks to:", manifest.extension.title);
+        for line in &requested {
+            eprintln!("  - {line}");
+        }
+        eprint!("Allow? [y/N] ");
+        let mut answer = String::new();
+        std::io::stdin().read_line(&mut answer)?;
+        if !matches!(answer.trim(), "y" | "Y" | "yes" | "o" | "oui") {
+            bail!("not allowed");
+        }
+    }
+    approvals::approve(manifest)
+}
+
 pub fn list() -> Result<()> {
     let registry = registry();
     let config = Config::load();
@@ -234,6 +261,7 @@ pub fn doctor() -> Result<()> {
         None => println!("[info] Window switcher: not available on this desktop yet"),
     }
     println!("[info] File search: {}", backslash_core::system::files::backend());
+    println!("[info] Secrets: {}", backslash_core::secrets::Backend::detect().describe());
     println!("[info] Launch at login: {}", if crate::autostart::enabled() { "on" } else { "off" });
 
     let registry = registry();

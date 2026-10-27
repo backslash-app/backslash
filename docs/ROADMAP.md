@@ -21,16 +21,16 @@ the CLI and two bundled extensions. Next steps, roughly in order.
 - [ ] Aliases and per-command hotkeys.
 
 ## Extensions
-- [ ] Settings view: enable/disable extensions, edit preferences, secrets
-      stored with libsecret instead of `secrets.toml`.
-- [ ] Ask for missing required preferences with a form on first run.
-- [ ] Permission prompt when an extension is installed or its permissions grow.
+- [x] Settings view: enable/disable extensions, edit preferences, secrets
+      in the system keyring (libsecret), quicklinks, snippets, hidden apps.
+- [x] Ask for missing required preferences with a form on first run.
+- [x] Permission prompt on first run and when permissions grow.
 - [ ] Registry: a git index of extensions pinned by commit hash,
       `backslash install <id>`, update checks, store view in the launcher.
 - [ ] `Grid` view (emoji, images), list item detail pane, menu-bar/tray items.
 - [ ] Background commands on an interval.
 - [ ] OAuth helper (PKCE, loopback redirect).
-- [ ] Hot reload in `backslash dev` (watch files, re-run the open command).
+- [x] Hot reload in `backslash dev` (watch files, re-run the open command).
 - [ ] Sandbox exec-runtime extensions with bubblewrap.
 - [ ] Python SDK.
 
