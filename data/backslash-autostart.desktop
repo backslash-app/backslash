@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Backslash
+Comment=Start the launcher in the background so it opens instantly
+Exec=backslash --hidden
+Icon=app.backslash.Backslash
+Terminal=false
+NoDisplay=true
+X-GNOME-Autostart-enabled=true

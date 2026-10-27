@@ -1,0 +1,39 @@
+[extension]
+id = "system"
+title = "System"
+version = "1.0.0"
+description = "Power, volume and processes"
+author = "Backslash"
+icon = "preferences-system"
+license = "MIT"
+
+[permissions]
+run = ["systemctl", "loginctl", "wpctl", "pactl", "ps", "kill"]
+
+[[commands]]
+name = "power"
+title = "Power"
+description = "Lock, suspend, restart or shut down"
+icon = "system-shutdown"
+keywords = ["shutdown", "reboot", "restart", "suspend", "sleep", "lock", "logout"]
+
+[[commands]]
+name = "volume"
+title = "Set Volume"
+icon = "audio-volume-high"
+keywords = ["sound", "audio", "mute"]
+mode = "no-view"
+[[commands.arguments]]
+name = "level"
+placeholder = "0-100"
+type = "number"
+min = 0
+max = 150
+required = true
+
+[[commands]]
+name = "processes"
+title = "Processes"
+description = "Find and stop running processes"
+icon = "utilities-system-monitor"
+keywords = ["kill", "task manager", "top"]

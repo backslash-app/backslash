@@ -1,28 +1,36 @@
-# How to contribute
+# Contributing
 
-We don't have guidelines for contributing just yet, so it's going to be a bit of a wild ride at first.
-But don't worry, we'll figure it out together. For now, just fork the repo, make your changes, and submit a pull request.
-We'll work together to make Backslash the best it can be. And if you have any questions or just want to chat about Backslash,
-feel free to join the [Backslash Discord server](https://discord.gg/sTzwBzDkK9). We can't wait to see what you do!
+Thanks for helping! Questions and ideas are welcome on
+[Discord](https://discord.gg/sTzwBzDkK9) or in an issue.
 
-## Running the project locally
+## Setup
 
-Running the project locally is a great way to see how the project works but also vital if you want to contribute to the project.
-Luckily, it's as easy as eating pie. Just follow the instructions below.
+- Rust (stable), GTK 4.14+ development files (`libgtk-4-dev`, `gtk4-devel`, `gtk4`)
+- [Deno](https://deno.com) 2
 
-### Pre-requisites
+```sh
+cargo run                                    # the launcher, using ./sdk and your installed extensions
+BACKSLASH_EXTENSIONS_PATH=$PWD/extensions cargo run   # with the bundled extensions
+cargo run -- run npm/search react            # CLI
+make check                                   # everything CI runs
+```
 
-You will be needing the following tools to run the project locally:
+`backslash dev <dir>` runs a separate instance (`app.backslash.Backslash.Devel`)
+that never hides on focus loss and prints extension logs.
 
-- [Node](https://nodejs.org/en/download)
-- [Yarn](https://classic.yarnpkg.com/lang/en/docs/install)
+## Where things are
 
-### Instructions
+Read [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) first. In short:
 
-1. Create a fork of the project
-2. Clone the forked project to your local machine
-3. Run `yarn install` to install the dependencies
-4. Run `yarn start` to run the project
+- `crates/backslash-core`: protocol, host, ranking, manifests. Most logic, most tests.
+- `crates/backslash`: the GTK window and the CLI.
+- `sdk/`: the TypeScript API and its runtime.
+- `extensions/`: bundled extensions.
 
-And voilà! You have the project running locally like a boss.
-Now you can make your changes and submit a pull request, good luck!.
+Protocol changes must update `protocol.rs`, `sdk/`, and `docs/PROTOCOL.md` together.
+
+## Pull requests
+
+- Keep them focused; describe the user-visible change.
+- `make check` must pass (format, clippy, tests, Deno lint and type check).
+- New behavior in `backslash-core` comes with a test.

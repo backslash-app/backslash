@@ -1,0 +1,323 @@
+/* Backslash default theme.
+ * Override anything in ~/.config/backslash/style.css (loaded after this file).
+ * The window gets the `light` class when the desktop prefers a light scheme. */
+
+@define-color bs_bg rgba(22, 22, 28, 0.94);
+@define-color bs_surface rgba(255, 255, 255, 0.05);
+@define-color bs_border rgba(255, 255, 255, 0.09);
+@define-color bs_fg #ececf1;
+@define-color bs_dim rgba(236, 236, 241, 0.55);
+@define-color bs_selected rgba(255, 255, 255, 0.09);
+@define-color bs_accent #8b7cf6;
+@define-color bs_red #f87171;
+@define-color bs_orange #fb923c;
+@define-color bs_yellow #facc15;
+@define-color bs_green #4ade80;
+@define-color bs_blue #60a5fa;
+@define-color bs_purple #c084fc;
+@define-color bs_gray #a1a1aa;
+
+window.launcher {
+  background: transparent;
+  /* Explicit colors everywhere: the user's GTK theme must not leak in. */
+  color: @bs_fg;
+  font-size: 14px;
+}
+
+.panel {
+  background-color: @bs_bg;
+  border: 1px solid @bs_border;
+  border-radius: 16px;
+  margin: 12px;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
+}
+
+/* --- Search bar ----------------------------------------------------------- */
+
+.header {
+  padding: 6px 14px;
+  min-height: 52px;
+}
+
+.header .search {
+  background: none;
+  border: none;
+  box-shadow: none;
+  outline: none;
+  font-size: 19px;
+  color: @bs_fg;
+  caret-color: @bs_accent;
+  padding: 0;
+}
+
+.header .search text placeholder {
+  color: @bs_dim;
+}
+
+.header .back {
+  min-width: 26px;
+  min-height: 26px;
+  padding: 0;
+  border-radius: 8px;
+  background: @bs_surface;
+  color: @bs_dim;
+}
+
+.separator {
+  background-color: @bs_border;
+  min-height: 1px;
+}
+
+/* --- Lists ---------------------------------------------------------------- */
+
+.results,
+.results row {
+  background: none;
+  color: @bs_fg;
+}
+
+.results {
+  padding: 6px 8px;
+}
+
+.results row {
+  border-radius: 10px;
+  padding: 7px 10px;
+  margin: 1px 0;
+  transition: background-color 120ms ease-out;
+  outline: none;
+}
+
+.results row:selected {
+  background-color: @bs_selected;
+}
+
+.results row:selected .title {
+  color: white;
+}
+
+.section-header {
+  color: @bs_dim;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 10px 12px 4px;
+}
+
+.title {
+  font-weight: 500;
+}
+
+.subtitle {
+  color: @bs_dim;
+}
+
+.kind {
+  color: @bs_dim;
+  font-size: 12px;
+}
+
+.emoji-icon {
+  font-size: 22px;
+}
+
+.accessory {
+  color: @bs_dim;
+  font-size: 12.5px;
+}
+
+.tag {
+  background-color: @bs_surface;
+  border: 1px solid @bs_border;
+  border-radius: 6px;
+  padding: 1px 7px;
+  font-size: 12px;
+}
+
+.accent-red { color: @bs_red; }
+.accent-orange { color: @bs_orange; }
+.accent-yellow { color: @bs_yellow; }
+.accent-green { color: @bs_green; }
+.accent-blue { color: @bs_blue; }
+.accent-purple { color: @bs_purple; }
+.accent-gray { color: @bs_gray; }
+
+.calculator {
+  padding: 16px 14px;
+}
+
+.calculator .result {
+  font-size: 30px;
+  font-weight: 600;
+}
+
+.calculator .expression {
+  font-size: 15px;
+  color: @bs_dim;
+}
+
+/* --- Empty, detail, form -------------------------------------------------- */
+
+.empty .title {
+  font-size: 16px;
+}
+
+.empty .subtitle {
+  font-size: 13px;
+}
+
+.detail {
+  padding: 18px 22px;
+}
+
+.metadata {
+  border-left: 1px solid @bs_border;
+  padding: 18px;
+  min-width: 200px;
+}
+
+.metadata .label {
+  color: @bs_dim;
+  font-size: 12px;
+}
+
+.form {
+  padding: 20px 28px;
+}
+
+.form entry,
+.form passwordentry,
+.form textview,
+.form dropdown > button {
+  background-color: @bs_surface;
+  border: 1px solid @bs_border;
+  border-radius: 8px;
+  color: @bs_fg;
+}
+
+.form textview text {
+  background: none;
+}
+
+.form .field-title {
+  color: @bs_dim;
+}
+
+/* --- Footer --------------------------------------------------------------- */
+
+.footer {
+  padding: 8px 14px;
+  min-height: 24px;
+  background-color: rgba(255, 255, 255, 0.025);
+  border-bottom-left-radius: 16px;
+  border-bottom-right-radius: 16px;
+  font-size: 12.5px;
+}
+
+.footer .context {
+  color: @bs_dim;
+}
+
+.footer .hint {
+  color: @bs_dim;
+}
+
+.footer .hint .key {
+  background-color: @bs_surface;
+  border: 1px solid @bs_border;
+  border-radius: 5px;
+  padding: 0 5px;
+  margin-left: 4px;
+  color: @bs_fg;
+}
+
+.footer .primary {
+  color: @bs_fg;
+  font-weight: 500;
+}
+
+.toast {
+  font-weight: 500;
+}
+
+.toast.success { color: @bs_green; }
+.toast.failure { color: @bs_red; }
+
+.footer .primary.confirm {
+  color: @bs_orange;
+  font-weight: 600;
+}
+
+/* --- Action panel (Ctrl+K) ------------------------------------------------- */
+
+.actions-panel {
+  color: @bs_fg;
+  background-color: @bs_bg;
+  border: 1px solid @bs_border;
+  border-radius: 12px;
+  padding: 6px;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.4);
+}
+
+.actions-panel row {
+  color: @bs_fg;
+  border-radius: 8px;
+  padding: 6px 10px;
+  background: none;
+}
+
+.actions-panel row:selected {
+  background-color: @bs_selected;
+}
+
+.actions-panel .destructive {
+  color: @bs_red;
+}
+
+.actions-panel list {
+  background: none;
+}
+
+/* --- Light scheme ----------------------------------------------------------- */
+
+window.launcher.light,
+window.launcher.light .results row,
+window.launcher.light .actions-panel,
+window.launcher.light .actions-panel row {
+  color: #1f1f25;
+}
+
+window.launcher.light .panel,
+window.launcher.light .actions-panel {
+  background-color: rgba(250, 250, 252, 0.96);
+  border-color: rgba(0, 0, 0, 0.08);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.18);
+}
+
+window.launcher.light .header .search {
+  color: #1f1f25;
+}
+
+window.launcher.light .results row:selected,
+window.launcher.light .actions-panel row:selected {
+  background-color: rgba(0, 0, 0, 0.06);
+}
+
+window.launcher.light .results row:selected .title {
+  color: black;
+}
+
+window.launcher.light .subtitle,
+window.launcher.light .kind,
+window.launcher.light .accessory,
+window.launcher.light .section-header,
+window.launcher.light .footer .hint,
+window.launcher.light .footer .context {
+  color: rgba(31, 31, 37, 0.55);
+}
+
+window.launcher.light .tag,
+window.launcher.light .footer .hint .key {
+  background-color: rgba(0, 0, 0, 0.04);
+  border-color: rgba(0, 0, 0, 0.08);
+  color: #1f1f25;
+}
