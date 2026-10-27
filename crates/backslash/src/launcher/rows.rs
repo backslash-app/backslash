@@ -3,7 +3,7 @@
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use backslash_core::config::{Quicklink, Theme};
+use backslash_core::config::{Quicklink, Snippet, Theme};
 use backslash_core::protocol::{self as proto, Accessory, Filtering};
 use backslash_core::registry::CommandEntry;
 use backslash_core::search::{Ranker, Searchable};
@@ -267,7 +267,90 @@ fn builtin_commands(s: &State) -> Vec<(Entry, Row)> {
         Op::Open(backslash_core::config::Config::path().display().to_string()),
         "Theme, hotkey, quicklinks, snippets, hidden apps and extension preferences live in config.toml.",
     );
+    if let Some((_, row)) =
+        out.iter_mut().find(|(e, _)| e.key == "builtin:store").filter(|_| !s.catalog.updates.is_empty())
+    {
+        let n = s.catalog.updates.len();
+        row.accessories.push(Accessory {
+            tag: Some(if n == 1 { "1 update".into() } else { format!("{n} updates") }),
+            color: Some("orange".into()),
+            ..Default::default()
+        });
+    }
     out
+}
+
+fn snippet_row(snippet: &Snippet) -> Row {
+    Row {
+        key: format!("snippet:{}", snippet.name),
+        title: snippet.name.clone(),
+        subtitle: Some(match &snippet.keyword {
+            Some(kw) => format!("Snippet · {kw}"),
+            None => "Snippet".into(),
+        }),
+        icon: Some(Icon::Spec("insert-text".into())),
+        tint: Some("green"),
+        section: Some("Commands".into()),
+        actions: vec![UiAction::new("Copy Snippet", Op::Snippet(snippet.text.clone())).icon("edit-copy")],
+        preview: Some(Preview {
+            icon: Some(Icon::Spec("insert-text".into())),
+            title: snippet.name.clone(),
+            subtitle: Some("Snippet".into()),
+            body: Some(snippet.text.clone()),
+            ..Default::default()
+        }),
+        ..Default::default()
+    }
+}
+
+/// The root search row with this key, wherever it comes from.
+pub fn row_for_key(s: &State, key: &str) -> Option<Row> {
+    let (kind, id) = key.split_once(':')?;
+    match kind {
+        "app" => s.apps.iter().find(|a| a.id == id).map(|a| app_row(a, s.usage.stats(key))),
+        "cmd" => s.commands.iter().find(|c| c.id == id).map(|c| command_row(s, c)),
+        "builtin" => builtin_commands(s).into_iter().map(|(_, r)| r).find(|r| r.key == key),
+        "quicklink" => s.config.quicklinks.iter().find(|l| l.name == id).map(quicklink_row),
+        "snippet" => s.config.snippets.iter().find(|n| n.name == id).map(snippet_row),
+        _ => None,
+    }
+}
+
+/// Whether a row can get an alias and a hotkey.
+pub fn is_assignable(key: &str) -> bool {
+    ["app:", "cmd:", "builtin:", "quicklink:", "snippet:"].iter().any(|p| key.starts_with(p))
+}
+
+/// Shows the alias and hotkey of a root row, and actions to change them.
+fn decorate(s: &State, row: &mut Row) {
+    if !is_assignable(&row.key) {
+        return;
+    }
+    let alias = s.config.aliases.get(&row.key);
+    let hotkey = s.config.hotkeys.get(&row.key);
+    if let Some(alias) = alias {
+        row.accessories
+            .insert(0, Accessory { tag: Some(alias.clone()), color: Some("gray".into()), ..Default::default() });
+    }
+    if let Some(p) = row.preview.as_mut() {
+        if let Some(alias) = alias {
+            p.facts.push(("Alias".into(), alias.clone()));
+        }
+        if let Some(hotkey) = hotkey {
+            p.facts.push(("Hotkey".into(), hotkey.clone()));
+        }
+    }
+    row.actions.push(
+        UiAction::new(if alias.is_some() { "Change Alias…" } else { "Set Alias…" }, Op::EditAlias(row.key.clone()))
+            .icon("insert-text"),
+    );
+    row.actions.push(
+        UiAction::new(
+            if hotkey.is_some() { "Change Hotkey…" } else { "Set Hotkey…" },
+            Op::EditKeyHotkey(row.key.clone()),
+        )
+        .icon("input-keyboard"),
+    );
 }
 
 fn quicklink_row(link: &Quicklink) -> Row {
@@ -389,26 +472,7 @@ pub fn root_rows(s: &mut State, query: &str) -> Vec<Row> {
             extra.push((Entry { key: row.key.clone(), title: link.name.clone(), keywords: kw, subtitle: None }, row));
         }
         for snippet in &s.config.snippets {
-            let row = Row {
-                key: format!("snippet:{}", snippet.name),
-                title: snippet.name.clone(),
-                subtitle: Some(match &snippet.keyword {
-                    Some(kw) => format!("Snippet · {kw}"),
-                    None => "Snippet".into(),
-                }),
-                icon: Some(Icon::Spec("insert-text".into())),
-                tint: Some("green"),
-                section: Some("Commands".into()),
-                actions: vec![UiAction::new("Copy Snippet", Op::Snippet(snippet.text.clone())).icon("edit-copy")],
-                preview: Some(Preview {
-                    icon: Some(Icon::Spec("insert-text".into())),
-                    title: snippet.name.clone(),
-                    subtitle: Some("Snippet".into()),
-                    body: Some(snippet.text.clone()),
-                    ..Default::default()
-                }),
-                ..Default::default()
-            };
+            let row = snippet_row(snippet);
             let keywords = snippet.keyword.iter().cloned().collect();
             extra.push((Entry { key: row.key.clone(), title: snippet.name.clone(), keywords, subtitle: None }, row));
         }
@@ -419,6 +483,10 @@ pub fn root_rows(s: &mut State, query: &str) -> Vec<Row> {
         }
     }
     scored.sort_by_key(|(score, _)| std::cmp::Reverse(*score));
+    if let Some(row) = s.config.alias_target(query).and_then(|key| row_for_key(s, key)) {
+        scored.retain(|(_, r)| r.key != row.key);
+        scored.insert(0, (u32::MAX, row));
+    }
 
     if query.trim().is_empty() {
         // Suggestions first (what you use), then everything grouped by kind.
@@ -443,6 +511,9 @@ pub fn root_rows(s: &mut State, query: &str) -> Vec<Row> {
         }));
     }
     rows.truncate(MAX_ROWS);
+    for row in &mut rows {
+        decorate(s, row);
+    }
     rows
 }
 

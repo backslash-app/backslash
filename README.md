@@ -164,6 +164,12 @@ Run the **Enable Launch at Login** command so Backslash is always ready.
 
 Results learn from you: what you pick for a given query comes first next time.
 
+Any app or command can get an **alias** and its own **global shortcut**:
+<kbd>Ctrl</kbd>+<kbd>K</kbd> on it, then **Set Alias…** (type `ff`, Firefox comes
+first) or **Set Hotkey…** (e.g. <kbd>Super</kbd>+<kbd>V</kbd> for the clipboard
+history). Without the shortcuts portal, bind `backslash open builtin:clipboard`
+(or `app:…`, `cmd:extension/command`) to a key in your desktop settings.
+
 Built in:
 
 - **Calculator and conversions**: `12*(3+4)`, `5 km in miles`, `72 f to c`,
@@ -202,6 +208,13 @@ keyword = "sig"
 
 [extensions.npm]
 enabled = true
+
+[aliases]                 # type "ff" to get Firefox first
+"app:org.mozilla.firefox.desktop" = "ff"
+
+[hotkeys]                 # global shortcuts that open an item
+"builtin:clipboard" = "Super+V"
+"cmd:github/pull-requests" = "Super+G"
 ```
 
 - `~/.config/backslash/style.css`: override any style or color, e.g.

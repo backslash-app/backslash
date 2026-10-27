@@ -146,3 +146,22 @@ pub fn pretty_accel(accel: &str) -> String {
         .map(|(k, m)| gtk::accelerator_get_label(k, m).to_string())
         .unwrap_or_else(|| accel.to_string())
 }
+
+/// A tile of the grid layout: a big icon (or emoji) and the title below.
+pub fn grid_cell(row: &Row) -> gtk::Box {
+    let cell = gtk::Box::new(gtk::Orientation::Vertical, 6);
+    cell.add_css_class("grid-cell");
+    let icon = icons::widget(row.icon.as_ref(), 48);
+    icon.set_halign(gtk::Align::Center);
+    icon.set_valign(gtk::Align::Center);
+    icon.set_vexpand(true);
+    cell.append(&icon);
+    let title = label(&row.title, "grid-title");
+    title.set_xalign(0.5);
+    title.set_ellipsize(gtk::pango::EllipsizeMode::End);
+    title.set_max_width_chars(1);
+    title.set_hexpand(true);
+    cell.set_tooltip_text(Some(&row.title));
+    cell.append(&title);
+    cell
+}

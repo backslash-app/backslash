@@ -120,6 +120,21 @@ export default list({
 });
 ```
 
+### A grid
+
+For things you recognize by sight (emoji, images, colors, icons), show tiles
+instead of rows. Everything else works the same: filtering, sections, actions.
+
+```ts
+export default list({
+  layout: "grid",
+  columns: 8,
+  items: [{ title: "Party Popper", icon: "🎉", actions: [copy("🎉")] }],
+});
+```
+
+Arrow keys move in both directions; the title shows under each tile.
+
 ### A detail or a form
 
 ```ts

@@ -19,7 +19,7 @@ the CLI and two bundled extensions. Next steps, roughly in order.
 - [x] Unit and currency conversions.
 - [x] Quicklinks and snippets in `config.toml` (an editor in the launcher to do).
 - [x] Light, dark and system themes with a preview panel.
-- [ ] Aliases and per-command hotkeys.
+- [x] Aliases and per-item global shortcuts, `backslash open <item>`.
 
 ## Extensions
 - [x] Settings view: enable/disable extensions, edit preferences, secrets
@@ -28,9 +28,10 @@ the CLI and two bundled extensions. Next steps, roughly in order.
 - [x] Permission prompt on first run and when permissions grow.
 - [x] Registry: a git index of extensions pinned by commit hash and checksum,
       `backslash install/update/uninstall/search/publish`, store view.
-- [ ] Update notifications in the launcher (a badge on Browse Extensions).
+- [x] Update badge on Browse Extensions (registry checked every 6 hours), Update All.
 - [ ] Signed registry commits, so a compromised mirror cannot serve entries.
-- [ ] `Grid` view (emoji, images), list item detail pane, menu-bar/tray items.
+- [x] Grid layout for lists (emoji, images).
+- [ ] List item detail pane, menu-bar/tray items.
 - [ ] Background commands on an interval.
 - [ ] OAuth helper (PKCE, loopback redirect).
 - [x] Hot reload in `backslash dev` (watch files, re-run the open command).

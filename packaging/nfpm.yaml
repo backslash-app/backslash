@@ -6,7 +6,7 @@ platform: linux
 version: ${VERSION}
 section: utils
 priority: optional
-maintainer: Backslash developers <https://github.com/backslash-app/backslash/issues>
+maintainer: Steven Persia <persia.steven8@gmail.com>
 description: |
   A fast, extensible launcher for Linux
   Apps, calculator, conversions, clipboard history, files, windows,

@@ -80,6 +80,9 @@ pub enum Op {
     SetAutostart(bool),
     SetClipboard(bool),
     EditHotkey,
+    /// Alias or global shortcut of a root search item, by row key.
+    EditAlias(String),
+    EditKeyHotkey(String),
     ToggleExtension(String),
     ConfigureExtension(String),
     EditQuicklink(Option<usize>),
@@ -92,6 +95,8 @@ pub enum Op {
     /// Store: show what an extension will be allowed to do, then install.
     ReviewInstall(String),
     InstallEntry(String),
+    /// Updates every extension whose update asks for no new permission.
+    UpdateAll,
     UninstallEntry(String),
     /// Download Deno, then run the command that needed it.
     InstallRuntime,
@@ -265,6 +270,12 @@ pub enum FormPurpose {
         index: Option<usize>,
     },
     Hotkey,
+    Alias {
+        key: String,
+    },
+    KeyHotkey {
+        key: String,
+    },
 }
 
 /// The command an extension view belongs to, to restart it (hot reload).

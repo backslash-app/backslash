@@ -47,6 +47,8 @@ pub use self::rows::now;
 pub struct Options {
     pub hidden: bool,
     pub dev_dir: Option<PathBuf>,
+    /// Root search item to open instead of showing the window (`backslash open`).
+    pub open: Option<String>,
 }
 
 const WIDTH: i32 = 860;
@@ -60,10 +62,30 @@ pub fn run(options: Options) -> anyhow::Result<()> {
     let app_id = if dev { "app.backslash.Backslash.Devel" } else { "app.backslash.Backslash" };
     let app = gtk::Application::builder().application_id(app_id).build();
 
+    // `backslash open KEY` asks the running instance, if any, and exits.
+    if let Some(key) = &options.open {
+        if activate_remote(app_id, key) {
+            return Ok(());
+        }
+    }
+
     let launcher: Rc<RefCell<Option<Rc<Launcher>>>> = Rc::default();
     let first_activation = Cell::new(true);
     let dev_dir = options.dev_dir.clone();
     let hidden = options.hidden;
+    let open = RefCell::new(options.open.clone());
+
+    let open_action = gio::SimpleAction::new("open", Some(glib::VariantTy::STRING));
+    open_action.connect_activate({
+        let launcher = launcher.clone();
+        move |_, key| {
+            let (Some(l), Some(key)) = (launcher.borrow().clone(), key.and_then(|k| k.str().map(str::to_owned))) else {
+                return;
+            };
+            l.open_key(&key);
+        }
+    });
+    app.add_action(&open_action);
 
     app.connect_startup({
         let launcher = launcher.clone();
@@ -79,6 +101,9 @@ pub fn run(options: Options) -> anyhow::Result<()> {
         let Some(l) = launcher.borrow().clone() else { return };
         if first_activation.replace(false) {
             l.start_services();
+            if let Some(key) = open.take() {
+                return l.open_key(&key);
+            }
             if hidden {
                 return;
             }
@@ -91,6 +116,30 @@ pub fn run(options: Options) -> anyhow::Result<()> {
         anyhow::bail!("launcher exited with an error");
     }
     Ok(())
+}
+
+/// Calls the `open` action of a running instance over D-Bus (what
+/// `GApplication` exports). False when none is running.
+fn activate_remote(app_id: &str, key: &str) -> bool {
+    let Ok(bus) = gio::bus_get_sync(gio::BusType::Session, None::<&gio::Cancellable>) else { return false };
+    let path = format!("/{}", app_id.replace('.', "/"));
+    let args = glib::Variant::tuple_from_iter([
+        "open".to_variant(),
+        glib::Variant::array_from_iter_with_type(glib::VariantTy::VARIANT, [key.to_variant().to_variant()]),
+        glib::VariantDict::new(None).end(),
+    ]);
+    bus.call_sync(
+        Some(app_id),
+        &path,
+        "org.gtk.Actions",
+        "Activate",
+        Some(&args),
+        None,
+        gio::DBusCallFlags::NO_AUTO_START,
+        2000,
+        None::<&gio::Cancellable>,
+    )
+    .is_ok()
 }
 
 /// Results of the file search, filled from a background thread.
@@ -143,6 +192,11 @@ pub struct Launcher {
     list: gtk::ListBox,
     scroller: gtk::ScrolledWindow,
     preview: gtk::Box,
+    /// Grid layout of extension lists: cells in row order, and the selected one.
+    grid_scroller: gtk::ScrolledWindow,
+    grid_box: gtk::Box,
+    grid_cells: RefCell<Vec<gtk::Widget>>,
+    grid_selected: Cell<usize>,
     sections: Rc<RefCell<Vec<Option<String>>>>,
     empty_title: gtk::Label,
     empty_subtitle: gtk::Label,
@@ -164,6 +218,7 @@ pub struct Launcher {
     /// `backslash dev`: watches the extension's files for hot reload.
     monitors: RefCell<Vec<gio::FileMonitor>>,
     reload_timer: RefCell<Option<glib::SourceId>>,
+    shortcuts: Rc<hotkey::Shortcuts>,
     _hold: gio::ApplicationHoldGuard,
 }
 
@@ -238,6 +293,12 @@ impl Launcher {
         list_page.append(&divider());
         list_page.append(&preview);
         pages.add_named(&list_page, Some("list"));
+
+        let grid_box = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        grid_box.add_css_class("grid");
+        let grid_scroller =
+            gtk::ScrolledWindow::builder().hscrollbar_policy(gtk::PolicyType::Never).child(&grid_box).build();
+        pages.add_named(&grid_scroller, Some("grid"));
 
         let empty = gtk::Box::new(gtk::Orientation::Vertical, 6);
         empty.add_css_class("empty");
@@ -348,6 +409,10 @@ impl Launcher {
             list,
             scroller,
             preview,
+            grid_scroller,
+            grid_box,
+            grid_cells: RefCell::default(),
+            grid_selected: Cell::new(0),
             sections: Rc::default(),
             empty_title,
             empty_subtitle,
@@ -391,6 +456,7 @@ impl Launcher {
             setting_query: Cell::new(false),
             monitors: RefCell::default(),
             reload_timer: RefCell::default(),
+            shortcuts: Rc::default(),
             _hold: app.hold(),
         });
         launcher.build_chips();
@@ -480,23 +546,10 @@ impl Launcher {
     /// Background services, started once the application is registered.
     fn start_services(self: &Rc<Self>) {
         self.watch_dev_dir();
-        let (hotkey, clipboard_enabled) = {
-            let s = self.state.borrow();
-            (s.config.hotkey.clone(), s.config.clipboard.enabled)
-        };
-        if !hotkey.is_empty() && self.dev_dir.is_none() {
-            let weak = Rc::downgrade(self);
-            let app_id = self.window.application().and_then(|a| a.application_id()).unwrap_or_default();
-            hotkey::register(
-                &app_id,
-                &hotkey,
-                move || {
-                    if let Some(l) = weak.upgrade() {
-                        l.toggle();
-                    }
-                },
-                |status| eprintln!("backslash: {status}"),
-            );
+        let clipboard_enabled = self.state.borrow().config.clipboard.enabled;
+        self.bind_shortcuts();
+        if self.dev_dir.is_none() {
+            self.watch_updates();
         }
         if clipboard_enabled {
             let weak = Rc::downgrade(self);
@@ -677,6 +730,71 @@ impl Launcher {
     }
 
     // -----------------------------------------------------------------------
+    /// Asks the desktop for the launcher's shortcut and those of items
+    /// (`[hotkeys]`). Does nothing when they did not change.
+    fn bind_shortcuts(self: &Rc<Self>) {
+        if self.dev_dir.is_some() {
+            return;
+        }
+        let bindings = {
+            let s = self.state.borrow();
+            let mut bindings = Vec::new();
+            if !s.config.hotkey.is_empty() {
+                bindings.push(hotkey::Binding {
+                    id: "toggle".into(),
+                    description: "Show or hide Backslash".into(),
+                    accel: s.config.hotkey.clone(),
+                });
+            }
+            for (key, accel) in s.config.hotkeys.iter().filter(|(_, a)| !a.trim().is_empty()) {
+                let title = rows::row_for_key(&s, key).map_or_else(|| key.clone(), |r| r.title);
+                bindings.push(hotkey::Binding {
+                    id: key.clone(),
+                    description: format!("Backslash: {title}"),
+                    accel: accel.clone(),
+                });
+            }
+            bindings
+        };
+        let weak = Rc::downgrade(self);
+        let app_id = self.window.application().and_then(|a| a.application_id()).unwrap_or_default();
+        self.shortcuts.bind(
+            &app_id,
+            bindings,
+            Rc::new(move |id| {
+                if let Some(l) = weak.upgrade() {
+                    if id == "toggle" {
+                        l.toggle();
+                    } else {
+                        l.open_key(id);
+                    }
+                }
+            }),
+            |status| eprintln!("backslash: {status}"),
+        );
+    }
+
+    /// Runs the main action of a root search item, by key (`app:…`,
+    /// `cmd:…`…): what item hotkeys and `backslash open` do.
+    pub fn open_key(self: &Rc<Self>, key: &str) {
+        self.reload();
+        let row = rows::row_for_key(&self.state.borrow(), key);
+        let Some(action) = row.and_then(|r| r.actions.into_iter().next()) else {
+            eprintln!("backslash: nothing to open for `{key}`");
+            return;
+        };
+        // Apps open directly; everything else shows in the launcher.
+        if !matches!(action.op, Op::LaunchApp(..)) {
+            if self.window.is_visible() && !self.is_root() {
+                self.hide();
+            }
+            if !self.window.is_visible() {
+                self.show();
+            }
+        }
+        self.execute(action);
+    }
+
     // Visibility
 
     fn toggle(self: &Rc<Self>) {
@@ -689,6 +807,8 @@ impl Launcher {
 
     fn show(self: &Rc<Self>) {
         self.reload();
+        // config.toml may have been edited by hand.
+        self.bind_shortcuts();
         let theme = self.state.borrow().config.theme;
         self.styles.apply(theme, &self.window);
         if self.layer_shell {
@@ -787,6 +907,12 @@ impl Launcher {
 
     fn render_list(self: &Rc<Self>) {
         let query = self.entry.text().to_string();
+        let grid_columns = match &self.state.borrow().frames.last().unwrap().kind {
+            FrameKind::Extension { view: View::List(l), .. } if l.layout == proto::Layout::Grid => {
+                Some(l.columns.unwrap_or(6).clamp(2, 12))
+            }
+            _ => None,
+        };
         let (rows, placeholder, empty) = {
             let mut guard = self.state.borrow_mut();
             let s = &mut *guard;
@@ -813,6 +939,14 @@ impl Launcher {
         self.entry.set_placeholder_text(Some(&placeholder));
 
         let previous_key = self.state.borrow().selected_key.clone();
+        if let (Some(columns), false) = (grid_columns, rows.is_empty()) {
+            let selected = previous_key.and_then(|k| rows.iter().position(|r| r.key == k)).unwrap_or(0);
+            self.fill_grid(&rows, columns, selected);
+            self.state.borrow_mut().rows = rows;
+            self.pages.set_visible_child_name("grid");
+            self.update_footer();
+            return;
+        }
         while let Some(child) = self.list.first_child() {
             self.list.remove(&child);
         }
@@ -845,6 +979,111 @@ impl Launcher {
             }
         }
         self.update_preview();
+    }
+
+    fn is_grid(&self) -> bool {
+        self.pages.visible_child_name().as_deref() == Some("grid")
+    }
+
+    fn fill_grid(self: &Rc<Self>, rows: &[Row], columns: u32, selected: usize) {
+        while let Some(child) = self.grid_box.first_child() {
+            self.grid_box.remove(&child);
+        }
+        let mut cells = Vec::with_capacity(rows.len());
+        let mut flow: Option<gtk::FlowBox> = None;
+        let mut section: Option<&str> = None;
+        for (i, row) in rows.iter().enumerate() {
+            if flow.is_none() || row.section.as_deref() != section {
+                section = row.section.as_deref();
+                if let Some(title) = section {
+                    self.grid_box.append(&label(&title.to_uppercase(), "section-header"));
+                }
+                let f = gtk::FlowBox::builder()
+                    .selection_mode(gtk::SelectionMode::None)
+                    .homogeneous(true)
+                    .min_children_per_line(columns)
+                    .max_children_per_line(columns)
+                    .column_spacing(6)
+                    .row_spacing(6)
+                    .build();
+                self.grid_box.append(&f);
+                flow = Some(f);
+            }
+            let cell = widgets::grid_cell(row);
+            let click = gtk::GestureClick::new();
+            let weak = Rc::downgrade(self);
+            click.connect_released(move |_, _, _, _| {
+                if let Some(l) = weak.upgrade() {
+                    l.select_cell(i);
+                    l.run_row(i as i32, 0);
+                }
+            });
+            cell.add_controller(click);
+            let f = flow.as_ref().expect("created above");
+            f.append(&cell);
+            if let Some(child) = f.last_child() {
+                child.set_focusable(false);
+            }
+            cells.push(cell.upcast::<gtk::Widget>());
+        }
+        self.grid_cells.replace(cells);
+        self.grid_scroller.vadjustment().set_value(0.0);
+        self.select_cell(selected.min(rows.len().saturating_sub(1)));
+    }
+
+    fn select_cell(&self, index: usize) {
+        let cells = self.grid_cells.borrow();
+        if let Some(old) = cells.get(self.grid_selected.get()) {
+            old.remove_css_class("selected");
+        }
+        let Some(cell) = cells.get(index) else { return };
+        cell.add_css_class("selected");
+        self.grid_selected.set(index);
+        let key = self.state.borrow().rows.get(index).map(|r| r.key.clone());
+        self.state.borrow_mut().selected_key = key;
+        // Keep it visible (after layout, for freshly built grids).
+        let (cell, scroller, grid) = (cell.clone(), self.grid_scroller.clone(), self.grid_box.clone());
+        glib::idle_add_local_once(move || {
+            let Some(b) = cell.compute_bounds(&grid) else { return };
+            let adj = scroller.vadjustment();
+            let (top, bottom) = (b.y() as f64, (b.y() + b.height()) as f64);
+            if top < adj.value() {
+                adj.set_value(top - 28.0);
+            } else if bottom > adj.value() + adj.page_size() {
+                adj.set_value(bottom - adj.page_size() + 6.0);
+            }
+        });
+        drop(cells);
+        self.update_footer();
+    }
+
+    /// Moves in the grid: `dx` along the line, `dy` lines up or down (to the
+    /// tile closest horizontally, across section boundaries).
+    fn grid_move(&self, dx: i32, dy: i32) {
+        let cells = self.grid_cells.borrow();
+        let current = self.grid_selected.get();
+        let mut target = (current as i32 + dx).clamp(0, cells.len() as i32 - 1) as usize;
+        for _ in 0..dy.abs() {
+            let Some(from) = cells.get(target).and_then(|c| c.compute_bounds(&self.grid_box)) else { break };
+            let (cx, cy) = (from.x() + from.width() / 2.0, from.y() + from.height() / 2.0);
+            let candidates = cells.iter().enumerate().filter_map(|(i, c)| {
+                let b = c.compute_bounds(&self.grid_box)?;
+                let y = b.y() + b.height() / 2.0;
+                let ahead = if dy > 0 { y > cy + 1.0 } else { y < cy - 1.0 };
+                ahead.then(|| (i, (y - cy).abs(), (b.x() + b.width() / 2.0 - cx).abs()))
+            });
+            // Nearest line first, then nearest column.
+            let best =
+                candidates.min_by(|a, b| (a.1.round() as i64, a.2 as i64).cmp(&(b.1.round() as i64, b.2 as i64)));
+            match best {
+                Some((i, _, _)) => target = i,
+                None => break,
+            }
+        }
+        drop(cells);
+        if target != current {
+            self.select_cell(target);
+        }
     }
 
     fn update_preview(&self) {
@@ -988,7 +1227,7 @@ impl Launcher {
     }
 
     fn selected_row(&self) -> Option<Row> {
-        let index = self.list.selected_row()?.index();
+        let index = if self.is_grid() { self.grid_selected.get() as i32 } else { self.list.selected_row()?.index() };
         self.state.borrow().rows.get(index as usize).cloned()
     }
 
@@ -1047,7 +1286,13 @@ impl Launcher {
         }
         self.primary.remove_css_class("confirm");
         if self.is_form() {
-            self.primary.set_text("Submit");
+            let title = match &self.state.borrow().frames.last().unwrap().kind {
+                FrameKind::Extension { view: View::Form(f), .. } | FrameKind::Form { form: f, .. } => {
+                    f.submit_title.clone()
+                }
+                _ => None,
+            };
+            self.primary.set_text(title.as_deref().unwrap_or("Submit"));
             self.primary_key.set_visible(true);
             self.actions_hint.set_visible(false);
             return;
@@ -1253,6 +1498,23 @@ impl Launcher {
             return Proceed;
         }
 
+        if self.is_grid() {
+            let step = match key {
+                gdk::Key::Left => Some((-1, 0)),
+                gdk::Key::Right => Some((1, 0)),
+                gdk::Key::Down => Some((0, 1)),
+                gdk::Key::Up => Some((0, -1)),
+                gdk::Key::n | gdk::Key::j if ctrl => Some((0, 1)),
+                gdk::Key::p if ctrl => Some((0, -1)),
+                gdk::Key::Page_Down => Some((0, 3)),
+                gdk::Key::Page_Up => Some((0, -3)),
+                _ => None,
+            };
+            if let Some((dx, dy)) = step {
+                self.grid_move(dx, dy);
+                return Stop;
+            }
+        }
         match key {
             gdk::Key::Down => self.move_selection(1),
             gdk::Key::Up => self.move_selection(-1),
@@ -1521,6 +1783,22 @@ impl Launcher {
                 let current = self.state.borrow().config.hotkey.clone();
                 self.push(FrameKind::Form { purpose: FormPurpose::Hotkey, form: settings::hotkey_form(&current) });
             }
+            Op::EditAlias(key) => {
+                let form = {
+                    let s = self.state.borrow();
+                    let title = rows::row_for_key(&s, &key).map_or_else(|| key.clone(), |r| r.title);
+                    settings::alias_form(&title, s.config.aliases.get(&key).map_or("", String::as_str))
+                };
+                self.push(FrameKind::Form { purpose: FormPurpose::Alias { key }, form });
+            }
+            Op::EditKeyHotkey(key) => {
+                let form = {
+                    let s = self.state.borrow();
+                    let title = rows::row_for_key(&s, &key).map_or_else(|| key.clone(), |r| r.title);
+                    settings::key_hotkey_form(&title, s.config.hotkeys.get(&key).map_or("", String::as_str))
+                };
+                self.push(FrameKind::Form { purpose: FormPurpose::KeyHotkey { key }, form });
+            }
             Op::ToggleExtension(id) => {
                 let enabled = self.state.borrow().config.is_enabled(&id);
                 self.update_config(|c| c.extensions.entry(id.clone()).or_default().enabled = !enabled);
@@ -1593,12 +1871,14 @@ impl Launcher {
             Op::Back => self.pop(),
             Op::ReviewInstall(id) => self.push(FrameKind::ConfirmInstall { id }),
             Op::InstallEntry(id) => self.install_entry(id),
+            Op::UpdateAll => self.update_all(),
             Op::InstallRuntime => self.install_runtime(),
             Op::UninstallEntry(id) => {
                 let loc = backslash_core::catalog::Locations::user(&self.state.borrow().config);
                 match backslash_core::catalog::uninstall(&loc, &id) {
                     Ok(()) => {
                         self.reload();
+                        self.recount_updates();
                         self.show_toast("Uninstalled", proto::ToastStyle::Success);
                         self.render();
                     }
@@ -1828,7 +2108,40 @@ impl Launcher {
                 let hotkey = text("hotkey");
                 self.update_config(|c| c.hotkey = hotkey);
                 self.pop();
-                self.show_toast("Saved. The new shortcut applies at the next start", proto::ToastStyle::Info);
+                self.bind_shortcuts();
+                self.show_toast("Saved. Confirm the shortcut if your desktop asks", proto::ToastStyle::Info);
+            }
+            FormPurpose::Alias { key } => {
+                let alias = text("alias").trim().to_string();
+                let taken = {
+                    let s = self.state.borrow();
+                    s.config.alias_target(&alias).filter(|k| *k != key).map(str::to_owned)
+                };
+                if let Some(other) = taken {
+                    return self.fail(format!("`{alias}` is already the alias of {other}"));
+                }
+                self.update_config(|c| {
+                    if alias.is_empty() {
+                        c.aliases.remove(&key);
+                    } else {
+                        c.aliases.insert(key, alias);
+                    }
+                });
+                self.pop();
+                self.show_toast("Alias saved", proto::ToastStyle::Success);
+            }
+            FormPurpose::KeyHotkey { key } => {
+                let hotkey = text("hotkey").trim().to_string();
+                self.update_config(|c| {
+                    if hotkey.is_empty() {
+                        c.hotkeys.remove(&key);
+                    } else {
+                        c.hotkeys.insert(key, hotkey);
+                    }
+                });
+                self.pop();
+                self.bind_shortcuts();
+                self.show_toast("Saved. Confirm the shortcut if your desktop asks", proto::ToastStyle::Info);
             }
         }
     }
@@ -2139,6 +2452,7 @@ impl Launcher {
     fn refresh_catalog(self: &Rc<Self>) {
         let loc = backslash_core::catalog::Locations::user(&self.state.borrow().config);
         self.state.borrow_mut().catalog.entries = backslash_core::catalog::entries(&loc);
+        self.recount_updates();
         let stale = backslash_core::catalog::age(&loc).is_none_or(|age| age > Duration::from_secs(3600));
         if !stale || self.state.borrow().catalog.syncing {
             return;
@@ -2161,48 +2475,119 @@ impl Launcher {
                 s.catalog.entries = backslash_core::catalog::entries(&loc);
                 s.catalog.error = result.as_ref().err().cloned();
             }
-            if let Err(e) = result {
-                l.fail(format!("Could not update the extension list: {e}"));
+            l.recount_updates();
+            let in_store =
+                matches!(l.state.borrow().frames.last().map(|f| &f.kind), Some(FrameKind::Builtin(Builtin::Store)));
+            match result {
+                Err(e) if in_store => l.fail(format!("Could not update the extension list: {e}")),
+                Err(e) => eprintln!("backslash: could not update the extension list: {e}"),
+                Ok(()) => {}
             }
-            if matches!(l.state.borrow().frames.last().map(|f| &f.kind), Some(FrameKind::Builtin(Builtin::Store))) {
+            if l.window.is_visible() {
                 l.render();
             }
         });
     }
 
-    /// Downloads, verifies and installs a registry entry on a worker thread.
-    /// Confirming the install screen is the user's consent to its permissions.
+    /// Recomputes which installed extensions have an update in the registry.
+    fn recount_updates(&self) {
+        let mut s = self.state.borrow_mut();
+        let loc = backslash_core::catalog::Locations::user(&s.config);
+        s.catalog.updates = store::pending_updates(&loc, &s.catalog.entries);
+    }
+
+    /// Refreshes the registry now and every few hours, for the update badge.
+    fn watch_updates(self: &Rc<Self>) {
+        self.refresh_catalog();
+        let weak = Rc::downgrade(self);
+        glib::timeout_add_seconds_local(6 * 3600, move || {
+            let Some(l) = weak.upgrade() else { return glib::ControlFlow::Break };
+            l.refresh_catalog();
+            glib::ControlFlow::Continue
+        });
+    }
+
     fn install_entry(self: &Rc<Self>, id: String) {
-        let (entry, loc) = {
+        self.install_entries(vec![id]);
+    }
+
+    /// Updates what can be updated without asking: the others ask for more
+    /// permissions and go through the review screen.
+    fn update_all(self: &Rc<Self>) {
+        let (quiet, review) = {
             let s = self.state.borrow();
-            let Some(entry) = s.catalog.entries.iter().find(|e| e.id == id).cloned() else { return };
-            (entry, backslash_core::catalog::Locations::user(&s.config))
+            let loc = backslash_core::catalog::Locations::user(&s.config);
+            s.catalog.updates.iter().cloned().partition::<Vec<_>, _>(|id| {
+                let Some(ext) = s.registry.find(id) else { return false };
+                matches!(
+                    backslash_core::catalog::check_update(&loc, id, &ext.manifest),
+                    Ok(backslash_core::catalog::Update::Registry { ref new_permissions, .. }) if new_permissions.is_empty()
+                )
+            })
         };
+        if !review.is_empty() {
+            self.show_toast(
+                &format!("{} asks for more permissions: review it with Update…", review.join(", ")),
+                proto::ToastStyle::Info,
+            );
+        }
+        if !quiet.is_empty() {
+            self.install_entries(quiet);
+        }
+    }
+
+    /// Downloads, verifies and installs registry entries on a worker thread.
+    /// Confirming the install screen is the user's consent to its permissions.
+    fn install_entries(self: &Rc<Self>, ids: Vec<String>) {
+        let (entries, loc) = {
+            let s = self.state.borrow();
+            let entries: Vec<_> = s.catalog.entries.iter().filter(|e| ids.contains(&e.id)).cloned().collect();
+            (entries, backslash_core::catalog::Locations::user(&s.config))
+        };
+        if entries.is_empty() {
+            return;
+        }
         if self.state.borrow().catalog.busy.is_some() {
             return self.fail("Another installation is running");
         }
-        self.state.borrow_mut().catalog.busy = Some(id.clone());
+        self.state.borrow_mut().catalog.busy = Some(entries[0].id.clone());
         if matches!(self.state.borrow().frames.last().map(|f| &f.kind), Some(FrameKind::ConfirmInstall { .. })) {
             self.pop();
         }
         self.spinner.set_spinning(true);
         self.render();
-        let (tx, rx) = async_channel::bounded(1);
+        let (tx, rx) = async_channel::unbounded();
         std::thread::spawn(move || {
-            let result = backslash_core::catalog::install_entry(&loc, &entry)
-                .and_then(|(_, manifest)| approvals::approve(&manifest).map(|_| manifest.extension.title));
-            let _ = tx.send_blocking(result.map_err(|e| format!("{e:#}")));
+            for entry in entries {
+                let _ = tx.send_blocking((entry.id.clone(), None));
+                let result = backslash_core::catalog::install_entry(&loc, &entry)
+                    .and_then(|(_, manifest)| approvals::approve(&manifest).map(|_| manifest.extension.title));
+                let _ = tx.send_blocking((entry.id, Some(result.map_err(|e| format!("{e:#}")))));
+            }
         });
         let weak = Rc::downgrade(self);
         glib::spawn_future_local(async move {
-            let result = rx.recv().await.unwrap_or_else(|_| Err("install thread died".into()));
+            let mut done = Vec::new();
+            while let Ok((id, result)) = rx.recv().await {
+                let Some(l) = weak.upgrade() else { return };
+                match result {
+                    None => {
+                        l.state.borrow_mut().catalog.busy = Some(id);
+                        l.render();
+                    }
+                    Some(Ok(title)) => done.push(title),
+                    Some(Err(e)) => l.fail(e),
+                }
+            }
             let Some(l) = weak.upgrade() else { return };
             l.spinner.set_spinning(false);
             l.state.borrow_mut().catalog.busy = None;
             l.reload();
-            match result {
-                Ok(title) => l.show_toast(&format!("{title} installed"), proto::ToastStyle::Success),
-                Err(e) => l.fail(e),
+            l.recount_updates();
+            match done.len() {
+                0 => {}
+                1 => l.show_toast(&format!("{} installed", done[0]), proto::ToastStyle::Success),
+                n => l.show_toast(&format!("{n} extensions updated"), proto::ToastStyle::Success),
             }
             l.render();
         });

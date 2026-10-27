@@ -136,6 +136,36 @@ pub fn rows(s: &State) -> Vec<Row> {
         });
     }
 
+    let mut keys: Vec<&String> = c.aliases.keys().chain(c.hotkeys.keys()).collect();
+    keys.sort();
+    keys.dedup();
+    for key in keys {
+        let Some(item) = super::rows::row_for_key(s, key) else { continue };
+        let alias = c.aliases.get(key);
+        let hotkey = c.hotkeys.get(key);
+        let mut accessories = Vec::new();
+        if let Some(a) = alias {
+            accessories.push(Accessory { tag: Some(a.clone()), color: Some("gray".into()), ..Default::default() });
+        }
+        if let Some(h) = hotkey {
+            accessories.push(Accessory { text: Some(h.clone()), ..Default::default() });
+        }
+        rows.push(Row {
+            key: format!("shortcut:{key}"),
+            title: item.title,
+            subtitle: item.subtitle,
+            icon: item.icon,
+            tint: item.tint,
+            accessories,
+            section: Some("Aliases & Hotkeys".into()),
+            actions: vec![
+                UiAction::new("Change Alias…", Op::EditAlias(key.clone())).icon("insert-text"),
+                UiAction::new("Change Hotkey…", Op::EditKeyHotkey(key.clone())).icon("input-keyboard"),
+            ],
+            ..Default::default()
+        });
+    }
+
     for (i, link) in c.quicklinks.iter().enumerate() {
         rows.push(Row {
             key: format!("ql:{i}"),
@@ -281,13 +311,25 @@ pub fn hotkey_form(current: &str) -> FormView {
         id: None,
         title: Some("Global Shortcut".into()),
         submit_title: Some("Save".into()),
-        fields: vec![text(
-            "hotkey",
-            "Shortcut (empty to disable; applies at the next start)",
-            current,
-            "Super+Space",
-            false,
-        )],
+        fields: vec![text("hotkey", "Shortcut (empty to disable)", current, "Super+Space", false)],
+    }
+}
+
+pub fn alias_form(title: &str, current: &str) -> FormView {
+    FormView {
+        id: None,
+        title: Some(format!("Alias for {title}")),
+        submit_title: Some("Save".into()),
+        fields: vec![text("alias", "Typing this shows it first (empty to remove)", current, "ff", false)],
+    }
+}
+
+pub fn key_hotkey_form(title: &str, current: &str) -> FormView {
+    FormView {
+        id: None,
+        title: Some(format!("Hotkey for {title}")),
+        submit_title: Some("Save".into()),
+        fields: vec![text("hotkey", "Global shortcut (empty to remove)", current, "Super+V", false)],
     }
 }
 
