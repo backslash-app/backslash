@@ -15,6 +15,13 @@ pub struct CatalogState {
     /// Id of the extension being installed or updated.
     pub busy: Option<String>,
     pub error: Option<String>,
+    /// Installed extensions with a newer reviewed version.
+    pub updates: Vec<String>,
+}
+
+/// Ids of installed registry extensions whose entry moved to another commit.
+pub fn pending_updates(loc: &Locations, entries: &[Entry]) -> Vec<String> {
+    entries.iter().filter(|e| matches!(status(loc, e), Status::Update)).map(|e| e.id.clone()).collect()
 }
 
 pub enum Status {
@@ -51,7 +58,10 @@ pub fn rows(s: &State) -> Vec<Row> {
                     actions.push(UiAction::new("Install…", Op::ReviewInstall(e.id.clone())).icon("list-add"))
                 }
                 Status::Update => {
-                    actions.push(UiAction::new("Update…", Op::ReviewInstall(e.id.clone())).icon("view-refresh"))
+                    actions.push(UiAction::new("Update…", Op::ReviewInstall(e.id.clone())).icon("view-refresh"));
+                    if s.catalog.updates.len() > 1 {
+                        actions.push(UiAction::new("Update All", Op::UpdateAll).icon("view-refresh"));
+                    }
                 }
                 Status::Installed => {}
             }

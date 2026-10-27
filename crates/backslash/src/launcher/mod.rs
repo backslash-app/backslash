@@ -533,6 +533,9 @@ impl Launcher {
         self.watch_dev_dir();
         let clipboard_enabled = self.state.borrow().config.clipboard.enabled;
         self.bind_shortcuts();
+        if self.dev_dir.is_none() {
+            self.watch_updates();
+        }
         if clipboard_enabled {
             let weak = Rc::downgrade(self);
             clipboard::watch(&WidgetExt::display(&self.window), move |text| {
@@ -1149,7 +1152,13 @@ impl Launcher {
         }
         self.primary.remove_css_class("confirm");
         if self.is_form() {
-            self.primary.set_text("Submit");
+            let title = match &self.state.borrow().frames.last().unwrap().kind {
+                FrameKind::Extension { view: View::Form(f), .. } | FrameKind::Form { form: f, .. } => {
+                    f.submit_title.clone()
+                }
+                _ => None,
+            };
+            self.primary.set_text(title.as_deref().unwrap_or("Submit"));
             self.primary_key.set_visible(true);
             self.actions_hint.set_visible(false);
             return;
@@ -1711,12 +1720,14 @@ impl Launcher {
             Op::Back => self.pop(),
             Op::ReviewInstall(id) => self.push(FrameKind::ConfirmInstall { id }),
             Op::InstallEntry(id) => self.install_entry(id),
+            Op::UpdateAll => self.update_all(),
             Op::InstallRuntime => self.install_runtime(),
             Op::UninstallEntry(id) => {
                 let loc = backslash_core::catalog::Locations::user(&self.state.borrow().config);
                 match backslash_core::catalog::uninstall(&loc, &id) {
                     Ok(()) => {
                         self.reload();
+                        self.recount_updates();
                         self.show_toast("Uninstalled", proto::ToastStyle::Success);
                         self.render();
                     }
@@ -2290,6 +2301,7 @@ impl Launcher {
     fn refresh_catalog(self: &Rc<Self>) {
         let loc = backslash_core::catalog::Locations::user(&self.state.borrow().config);
         self.state.borrow_mut().catalog.entries = backslash_core::catalog::entries(&loc);
+        self.recount_updates();
         let stale = backslash_core::catalog::age(&loc).is_none_or(|age| age > Duration::from_secs(3600));
         if !stale || self.state.borrow().catalog.syncing {
             return;
@@ -2312,48 +2324,119 @@ impl Launcher {
                 s.catalog.entries = backslash_core::catalog::entries(&loc);
                 s.catalog.error = result.as_ref().err().cloned();
             }
-            if let Err(e) = result {
-                l.fail(format!("Could not update the extension list: {e}"));
+            l.recount_updates();
+            let in_store =
+                matches!(l.state.borrow().frames.last().map(|f| &f.kind), Some(FrameKind::Builtin(Builtin::Store)));
+            match result {
+                Err(e) if in_store => l.fail(format!("Could not update the extension list: {e}")),
+                Err(e) => eprintln!("backslash: could not update the extension list: {e}"),
+                Ok(()) => {}
             }
-            if matches!(l.state.borrow().frames.last().map(|f| &f.kind), Some(FrameKind::Builtin(Builtin::Store))) {
+            if l.window.is_visible() {
                 l.render();
             }
         });
     }
 
-    /// Downloads, verifies and installs a registry entry on a worker thread.
-    /// Confirming the install screen is the user's consent to its permissions.
+    /// Recomputes which installed extensions have an update in the registry.
+    fn recount_updates(&self) {
+        let mut s = self.state.borrow_mut();
+        let loc = backslash_core::catalog::Locations::user(&s.config);
+        s.catalog.updates = store::pending_updates(&loc, &s.catalog.entries);
+    }
+
+    /// Refreshes the registry now and every few hours, for the update badge.
+    fn watch_updates(self: &Rc<Self>) {
+        self.refresh_catalog();
+        let weak = Rc::downgrade(self);
+        glib::timeout_add_seconds_local(6 * 3600, move || {
+            let Some(l) = weak.upgrade() else { return glib::ControlFlow::Break };
+            l.refresh_catalog();
+            glib::ControlFlow::Continue
+        });
+    }
+
     fn install_entry(self: &Rc<Self>, id: String) {
-        let (entry, loc) = {
+        self.install_entries(vec![id]);
+    }
+
+    /// Updates what can be updated without asking: the others ask for more
+    /// permissions and go through the review screen.
+    fn update_all(self: &Rc<Self>) {
+        let (quiet, review) = {
             let s = self.state.borrow();
-            let Some(entry) = s.catalog.entries.iter().find(|e| e.id == id).cloned() else { return };
-            (entry, backslash_core::catalog::Locations::user(&s.config))
+            let loc = backslash_core::catalog::Locations::user(&s.config);
+            s.catalog.updates.iter().cloned().partition::<Vec<_>, _>(|id| {
+                let Some(ext) = s.registry.find(id) else { return false };
+                matches!(
+                    backslash_core::catalog::check_update(&loc, id, &ext.manifest),
+                    Ok(backslash_core::catalog::Update::Registry { ref new_permissions, .. }) if new_permissions.is_empty()
+                )
+            })
         };
+        if !review.is_empty() {
+            self.show_toast(
+                &format!("{} asks for more permissions: review it with Update…", review.join(", ")),
+                proto::ToastStyle::Info,
+            );
+        }
+        if !quiet.is_empty() {
+            self.install_entries(quiet);
+        }
+    }
+
+    /// Downloads, verifies and installs registry entries on a worker thread.
+    /// Confirming the install screen is the user's consent to its permissions.
+    fn install_entries(self: &Rc<Self>, ids: Vec<String>) {
+        let (entries, loc) = {
+            let s = self.state.borrow();
+            let entries: Vec<_> = s.catalog.entries.iter().filter(|e| ids.contains(&e.id)).cloned().collect();
+            (entries, backslash_core::catalog::Locations::user(&s.config))
+        };
+        if entries.is_empty() {
+            return;
+        }
         if self.state.borrow().catalog.busy.is_some() {
             return self.fail("Another installation is running");
         }
-        self.state.borrow_mut().catalog.busy = Some(id.clone());
+        self.state.borrow_mut().catalog.busy = Some(entries[0].id.clone());
         if matches!(self.state.borrow().frames.last().map(|f| &f.kind), Some(FrameKind::ConfirmInstall { .. })) {
             self.pop();
         }
         self.spinner.set_spinning(true);
         self.render();
-        let (tx, rx) = async_channel::bounded(1);
+        let (tx, rx) = async_channel::unbounded();
         std::thread::spawn(move || {
-            let result = backslash_core::catalog::install_entry(&loc, &entry)
-                .and_then(|(_, manifest)| approvals::approve(&manifest).map(|_| manifest.extension.title));
-            let _ = tx.send_blocking(result.map_err(|e| format!("{e:#}")));
+            for entry in entries {
+                let _ = tx.send_blocking((entry.id.clone(), None));
+                let result = backslash_core::catalog::install_entry(&loc, &entry)
+                    .and_then(|(_, manifest)| approvals::approve(&manifest).map(|_| manifest.extension.title));
+                let _ = tx.send_blocking((entry.id, Some(result.map_err(|e| format!("{e:#}")))));
+            }
         });
         let weak = Rc::downgrade(self);
         glib::spawn_future_local(async move {
-            let result = rx.recv().await.unwrap_or_else(|_| Err("install thread died".into()));
+            let mut done = Vec::new();
+            while let Ok((id, result)) = rx.recv().await {
+                let Some(l) = weak.upgrade() else { return };
+                match result {
+                    None => {
+                        l.state.borrow_mut().catalog.busy = Some(id);
+                        l.render();
+                    }
+                    Some(Ok(title)) => done.push(title),
+                    Some(Err(e)) => l.fail(e),
+                }
+            }
             let Some(l) = weak.upgrade() else { return };
             l.spinner.set_spinning(false);
             l.state.borrow_mut().catalog.busy = None;
             l.reload();
-            match result {
-                Ok(title) => l.show_toast(&format!("{title} installed"), proto::ToastStyle::Success),
-                Err(e) => l.fail(e),
+            l.recount_updates();
+            match done.len() {
+                0 => {}
+                1 => l.show_toast(&format!("{} installed", done[0]), proto::ToastStyle::Success),
+                n => l.show_toast(&format!("{n} extensions updated"), proto::ToastStyle::Success),
             }
             l.render();
         });

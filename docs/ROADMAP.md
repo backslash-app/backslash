@@ -28,7 +28,7 @@ the CLI and two bundled extensions. Next steps, roughly in order.
 - [x] Permission prompt on first run and when permissions grow.
 - [x] Registry: a git index of extensions pinned by commit hash and checksum,
       `backslash install/update/uninstall/search/publish`, store view.
-- [ ] Update notifications in the launcher (a badge on Browse Extensions).
+- [x] Update badge on Browse Extensions (registry checked every 6 hours), Update All.
 - [ ] Signed registry commits, so a compromised mirror cannot serve entries.
 - [ ] `Grid` view (emoji, images), list item detail pane, menu-bar/tray items.
 - [ ] Background commands on an interval.

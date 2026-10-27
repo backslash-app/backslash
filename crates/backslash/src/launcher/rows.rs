@@ -267,6 +267,16 @@ fn builtin_commands(s: &State) -> Vec<(Entry, Row)> {
         Op::Open(backslash_core::config::Config::path().display().to_string()),
         "Theme, hotkey, quicklinks, snippets, hidden apps and extension preferences live in config.toml.",
     );
+    if let Some((_, row)) =
+        out.iter_mut().find(|(e, _)| e.key == "builtin:store").filter(|_| !s.catalog.updates.is_empty())
+    {
+        let n = s.catalog.updates.len();
+        row.accessories.push(Accessory {
+            tag: Some(if n == 1 { "1 update".into() } else { format!("{n} updates") }),
+            color: Some("orange".into()),
+            ..Default::default()
+        });
+    }
     out
 }
 

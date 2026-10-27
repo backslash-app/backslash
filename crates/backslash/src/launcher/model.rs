@@ -95,6 +95,8 @@ pub enum Op {
     /// Store: show what an extension will be allowed to do, then install.
     ReviewInstall(String),
     InstallEntry(String),
+    /// Updates every extension whose update asks for no new permission.
+    UpdateAll,
     UninstallEntry(String),
     /// Download Deno, then run the command that needed it.
     InstallRuntime,
