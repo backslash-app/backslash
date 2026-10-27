@@ -4,7 +4,7 @@
 use backslash_core::config::{Config, Quicklink, Snippet, Theme};
 use backslash_core::manifest::{Manifest, PreferenceKind};
 use backslash_core::protocol::{Accessory, Field, FieldKind, FormView};
-use backslash_core::{approvals, secrets};
+use backslash_core::{approvals, runtime, secrets};
 use serde_json::Value;
 
 use super::model::{tint_for, Builtin, Op, Preview, Row, UiAction};
@@ -352,4 +352,24 @@ pub fn approval_markdown(manifest: &Manifest) -> String {
          Press **Enter** to allow and run, **Esc** to cancel.",
     );
     md
+}
+
+/// The screen asking to download Deno.
+pub fn runtime_markdown(busy: bool) -> String {
+    if busy {
+        return format!(
+            "# Downloading Deno {}…\n\nAbout 40 MB. The command starts as soon as it is ready.",
+            runtime::DENO_VERSION
+        );
+    }
+    format!(
+        "# This extension needs Deno\n\n\
+         Extensions written in TypeScript run in **Deno**, which keeps each of them in a sandbox \
+         with only the permissions it declares.\n\n\
+         Backslash can download Deno {} for you (about 40 MB) into `~/.local/share/backslash/runtime`. \
+         It comes from Deno's official npm package and is checked before use.\n\n\
+         Prefer your package manager? Install `deno` with it and run the command again.\n\n\
+         Press **Enter** to download, **Esc** to cancel.",
+        runtime::DENO_VERSION
+    )
 }

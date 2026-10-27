@@ -111,7 +111,7 @@ impl Currency {
 }
 
 fn fetch() -> Result<Rates, String> {
-    let agent = ureq::Agent::config_builder().timeout_global(Some(Duration::from_secs(8))).build().new_agent();
+    let agent = backslash_core::http::agent(Duration::from_secs(8));
     let mut response = agent.get(URL).call().map_err(|e| format!("cannot reach the rates service ({e})"))?;
     let mut rates: Rates = response.body_mut().read_json().map_err(|e| format!("unexpected answer ({e})"))?;
     rates.fetched = crate::launcher::now();

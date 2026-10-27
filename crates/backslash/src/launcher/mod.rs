@@ -22,13 +22,14 @@ use std::time::Duration;
 
 use backslash_core::config::Config;
 use backslash_core::host::{Incoming, RpcError, Session};
+use backslash_core::manifest::Runtime;
 use backslash_core::protocol::{self as proto, Effect, FieldKind, Filtering, FormView, View};
 use backslash_core::registry::{CommandEntry, Registry};
 use backslash_core::search::{Ranker, Usage};
 use backslash_core::system::clipboard::ClipboardHistory;
 use backslash_core::system::files;
 use backslash_core::system::windows::{Backend, WindowInfo};
-use backslash_core::{approvals, paths, runner, secrets};
+use backslash_core::{approvals, paths, runner, runtime, secrets};
 use gtk::prelude::*;
 use gtk::{gdk, gio, glib};
 use serde_json::{json, Map, Value};
@@ -125,6 +126,8 @@ pub(super) struct State {
     currency: Currency,
     autostart: bool,
     catalog: store::CatalogState,
+    /// Deno is being downloaded.
+    runtime_busy: bool,
 }
 
 pub struct Launcher {
@@ -382,6 +385,7 @@ impl Launcher {
                 currency: Currency::new(),
                 autostart: autostart::enabled(),
                 catalog: store::CatalogState::default(),
+                runtime_busy: false,
             }),
             dev_dir,
             setting_query: Cell::new(false),
@@ -765,6 +769,7 @@ impl Launcher {
                 FrameKind::Form { form, .. } => (form.title.clone().unwrap_or_default(), "form"),
                 FrameKind::Approval { .. } => ("Permissions".to_string(), "detail"),
                 FrameKind::ConfirmInstall { .. } => ("Extensions".to_string(), "detail"),
+                FrameKind::InstallRuntime { .. } => ("Runtime".to_string(), "detail"),
             };
             (s.frames.len(), title, page)
         };
@@ -863,6 +868,14 @@ impl Launcher {
                 approval = proto::DetailView {
                     title: Some(entry.title.clone()),
                     markdown: store::confirm_markdown(&loc, entry),
+                    ..Default::default()
+                };
+                &approval
+            }
+            Some(FrameKind::InstallRuntime { .. }) => {
+                approval = proto::DetailView {
+                    title: Some("Deno".into()),
+                    markdown: settings::runtime_markdown(s.runtime_busy),
                     ..Default::default()
                 };
                 &approval
@@ -990,6 +1003,12 @@ impl Launcher {
                 FrameKind::ConfirmInstall { id } => {
                     return vec![
                         UiAction::new("Install", Op::InstallEntry(id.clone())).icon("object-select"),
+                        UiAction::new("Cancel", Op::Back).icon("window-close"),
+                    ]
+                }
+                FrameKind::InstallRuntime { .. } => {
+                    return vec![
+                        UiAction::new("Download and Run", Op::InstallRuntime).icon("folder-download"),
                         UiAction::new("Cancel", Op::Back).icon("window-close"),
                     ]
                 }
@@ -1574,6 +1593,7 @@ impl Launcher {
             Op::Back => self.pop(),
             Op::ReviewInstall(id) => self.push(FrameKind::ConfirmInstall { id }),
             Op::InstallEntry(id) => self.install_entry(id),
+            Op::InstallRuntime => self.install_runtime(),
             Op::UninstallEntry(id) => {
                 let loc = backslash_core::catalog::Locations::user(&self.state.borrow().config);
                 match backslash_core::catalog::uninstall(&loc, &id) {
@@ -1615,7 +1635,9 @@ impl Launcher {
                     let manifest = &ext.manifest;
                     let ext_id = manifest.extension.id.clone();
                     let (_, missing) = s.config.preferences(manifest);
-                    if !approvals::requested(manifest).is_empty() && !approvals::is_approved(manifest) {
+                    if manifest.runtime == Runtime::Deno && !runtime::is_installed() {
+                        Prepared::Push(FrameKind::InstallRuntime { command_id: id.into(), arguments })
+                    } else if !approvals::requested(manifest).is_empty() && !approvals::is_approved(manifest) {
                         Prepared::Push(FrameKind::Approval { extension_id: ext_id, command_id: id.into(), arguments })
                     } else if !missing.is_empty() {
                         Prepared::Push(FrameKind::Form {
@@ -2183,6 +2205,46 @@ impl Launcher {
                 Err(e) => l.fail(e),
             }
             l.render();
+        });
+    }
+
+    /// Downloads Deno on a worker thread, then runs the command that needed it.
+    fn install_runtime(self: &Rc<Self>) {
+        if self.state.borrow().runtime_busy {
+            return;
+        }
+        self.state.borrow_mut().runtime_busy = true;
+        self.spinner.set_spinning(true);
+        self.render();
+        let (tx, rx) = async_channel::bounded(1);
+        std::thread::spawn(move || {
+            let _ = tx.send_blocking(runtime::install().map_err(|e| format!("{e:#}")));
+        });
+        let weak = Rc::downgrade(self);
+        glib::spawn_future_local(async move {
+            let result = rx.recv().await.unwrap_or_else(|_| Err("download thread died".into()));
+            let Some(l) = weak.upgrade() else { return };
+            l.spinner.set_spinning(false);
+            l.state.borrow_mut().runtime_busy = false;
+            let pending = match l.state.borrow().frames.last().map(|f| &f.kind) {
+                Some(FrameKind::InstallRuntime { command_id, arguments }) => {
+                    Some((command_id.clone(), arguments.clone()))
+                }
+                _ => None,
+            };
+            match result {
+                Ok(_) => {
+                    l.show_toast("Deno installed", proto::ToastStyle::Success);
+                    if let Some((command_id, arguments)) = pending {
+                        l.pop();
+                        l.start_command(&command_id, arguments);
+                    }
+                }
+                Err(e) => {
+                    l.fail(e);
+                    l.render();
+                }
+            }
         });
     }
 

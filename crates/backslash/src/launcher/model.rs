@@ -93,6 +93,8 @@ pub enum Op {
     ReviewInstall(String),
     InstallEntry(String),
     UninstallEntry(String),
+    /// Download Deno, then run the command that needed it.
+    InstallRuntime,
     Back,
 }
 
@@ -295,6 +297,11 @@ pub enum FrameKind {
     /// Store: "Install X? It will be allowed to…".
     ConfirmInstall {
         id: String,
+    },
+    /// "This extension needs Deno": shown when the runtime is missing.
+    InstallRuntime {
+        command_id: String,
+        arguments: Option<Map<String, Value>>,
     },
 }
 

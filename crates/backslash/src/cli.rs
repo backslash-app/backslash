@@ -4,9 +4,10 @@ use std::time::{Duration, Instant};
 
 use anyhow::{anyhow, bail, Context, Result};
 use backslash_core::config::Config;
-use backslash_core::host::{deno_binary, Incoming, Pending, RpcError, Session};
+use backslash_core::host::{Incoming, Pending, RpcError, Session};
 use backslash_core::protocol::{Effect, Filtering, Item, View};
 use backslash_core::registry::Registry;
+use backslash_core::runtime;
 use backslash_core::search::{Ranker, Searchable};
 use backslash_core::{paths, runner};
 use serde_json::{json, Map, Value};
@@ -210,15 +211,24 @@ pub fn list() -> Result<()> {
     Ok(())
 }
 
+pub fn install_runtime() -> Result<()> {
+    if let Some(v) = runtime::version() {
+        println!("Already available: {v} ({})", runtime::binary().display());
+        return Ok(());
+    }
+    eprintln!("Downloading Deno {} from the npm registry…", runtime::DENO_VERSION);
+    let path = runtime::install()?;
+    println!("Installed {} in {}", runtime::version().unwrap_or_default(), path.display());
+    Ok(())
+}
+
 pub fn doctor() -> Result<()> {
     let ok = |b: bool| if b { "ok  " } else { "FAIL" };
-    let deno = std::process::Command::new(deno_binary()).arg("--version").output();
-    let deno_version =
-        deno.as_ref().ok().and_then(|o| String::from_utf8_lossy(&o.stdout).lines().next().map(str::to_owned));
+    let deno_version = runtime::version();
     println!(
         "[{}] Deno runtime: {}",
         ok(deno_version.is_some()),
-        deno_version.as_deref().unwrap_or("not found, install it from https://deno.com or your package manager")
+        deno_version.as_deref().unwrap_or("not found: run `backslash install-runtime`")
     );
     let sdk = paths::sdk_dir();
     println!("[{}] SDK: {}", ok(sdk.join("mod.ts").exists()), sdk.display());

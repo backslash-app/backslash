@@ -143,14 +143,7 @@ pub struct Launch {
 
 /// Deno binary: `$BACKSLASH_DENO`, then the copy managed by Backslash, then `$PATH`.
 pub fn deno_binary() -> PathBuf {
-    if let Some(p) = std::env::var_os("BACKSLASH_DENO") {
-        return p.into();
-    }
-    let managed = paths::data_dir().join("runtime/deno");
-    if managed.is_file() {
-        return managed;
-    }
-    PathBuf::from("deno")
+    crate::runtime::binary()
 }
 
 fn join_paths(paths: &[PathBuf]) -> String {

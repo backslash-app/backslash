@@ -93,6 +93,8 @@ enum Cmd {
     Search { query: Option<String> },
     /// Print the registry entry for the extension in a git repository.
     Publish { dir: Option<PathBuf> },
+    /// Download Deno, the runtime of TypeScript extensions, into Backslash's data folder.
+    InstallRuntime,
 }
 
 fn main() {
@@ -127,5 +129,6 @@ fn run(args: Args) -> anyhow::Result<()> {
         Some(Cmd::Outdated) => catalog_cli::outdated(),
         Some(Cmd::Search { query }) => catalog_cli::search(query.as_deref()),
         Some(Cmd::Publish { dir }) => catalog_cli::publish(dir.as_deref()),
+        Some(Cmd::InstallRuntime) => cli::install_runtime(),
     }
 }

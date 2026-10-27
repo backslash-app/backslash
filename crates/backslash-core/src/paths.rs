@@ -39,7 +39,19 @@ pub fn extension_dirs() -> Vec<PathBuf> {
         .map(|v| std::env::split_paths(&v).collect::<Vec<_>>())
         .unwrap_or_else(|| vec!["/usr/local/share".into(), "/usr/share".into()]);
     dirs.extend(system.into_iter().map(|d| d.join("backslash/extensions")));
+    // Bundled with the binary, wherever it was unpacked.
+    if let Some(bundled) = installed_share().map(|d| d.join("extensions")) {
+        if !dirs.contains(&bundled) {
+            dirs.push(bundled);
+        }
+    }
     dirs
+}
+
+/// `<prefix>/share/backslash` for a binary in `<prefix>/bin`.
+fn installed_share() -> Option<PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    Some(exe.parent()?.parent()?.join("share/backslash"))
 }
 
 /// The TypeScript SDK shipped with this exact launcher version, so extensions
@@ -49,8 +61,7 @@ pub fn sdk_dir() -> PathBuf {
         return dir.into();
     }
     // Installed: <prefix>/bin/backslash → <prefix>/share/backslash/sdk.
-    let installed =
-        std::env::current_exe().ok().and_then(|exe| exe.parent()?.parent().map(|p| p.join("share/backslash/sdk")));
+    let installed = installed_share().map(|d| d.join("sdk"));
     if let Some(dir) = installed.filter(|d| d.join("mod.ts").exists()) {
         return dir;
     }
