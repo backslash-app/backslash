@@ -15,7 +15,7 @@ the CLI and two bundled extensions. Next steps, roughly in order.
 ## Built-in features
 - [x] Clipboard history with pins, pasted straight into the app you were in (images still to do).
 - [x] File search with recents and previews.
-- [x] Window switcher for Hyprland, Sway, niri, X11. KDE and GNOME to do.
+- [x] Window switcher for Hyprland, Sway, niri, KDE Plasma, GNOME and X11.
 - [x] Unit and currency conversions.
 - [x] Quicklinks and snippets in `config.toml` (an editor in the launcher to do).
 - [x] Light, dark and system themes with a preview panel.

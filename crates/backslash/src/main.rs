@@ -8,6 +8,7 @@ mod clipboard;
 mod currency;
 mod hotkey;
 mod icons;
+mod kwin;
 mod launcher;
 mod layer;
 mod markdown;

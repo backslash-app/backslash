@@ -282,6 +282,12 @@ pub fn doctor() -> Result<()> {
     }
     match backslash_core::system::windows::Backend::detect() {
         Some(b) => println!("[ok  ] Window switcher: {}", b.name()),
+        None if backslash_core::system::windows::is_kde_wayland() => {
+            println!("[ok  ] Window switcher: KDE Plasma (KWin script)")
+        }
+        None if backslash_core::system::windows::is_gnome() => println!(
+            "[info] Window switcher: install the GNOME helper from \"Switch Windows\" in the launcher, then log out and in"
+        ),
         None => println!("[info] Window switcher: not available on this desktop yet"),
     }
     println!("[info] File search: {}", backslash_core::system::files::backend());

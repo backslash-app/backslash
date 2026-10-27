@@ -1,6 +1,8 @@
 //! Open windows, for the window switcher. Wayland has no common protocol for
 //! this, so each compositor with an IPC gets a backend; X11 goes through
-//! `wmctrl`. GNOME and KDE Wayland are not covered yet.
+//! `wmctrl`. GNOME goes through a small Shell extension (Backslash's own, or
+//! "Window Calls"), called with `gdbus`. KDE needs a KWin script and a D-Bus
+//! callback, so it lives in the launcher.
 
 use std::process::Command;
 
@@ -25,7 +27,54 @@ pub enum Backend {
     Hyprland,
     Sway,
     Niri,
+    /// GNOME Shell with a window extension.
+    Gnome(GnomeApi),
     X11,
+}
+
+/// The GNOME Shell extension answering on D-Bus.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GnomeApi {
+    /// `backslash@backslash.app`, shipped with Backslash.
+    Backslash,
+    /// The "Window Calls" extension, if already installed.
+    WindowCalls,
+}
+
+impl GnomeApi {
+    fn path(self) -> &'static str {
+        match self {
+            Self::Backslash => "/app/backslash/Windows",
+            Self::WindowCalls => "/org/gnome/Shell/Extensions/Windows",
+        }
+    }
+    fn interface(self) -> &'static str {
+        match self {
+            Self::Backslash => "app.backslash.Windows",
+            Self::WindowCalls => "org.gnome.Shell.Extensions.Windows",
+        }
+    }
+    fn call(self, method: &str, args: &[&str]) -> Result<String> {
+        let method = format!("{}.{method}", self.interface());
+        let mut argv =
+            vec!["call", "--session", "--timeout", "2", "--dest", "org.gnome.Shell", "--object-path", self.path()];
+        argv.extend(["--method", &method]);
+        argv.extend(args);
+        run("gdbus", &argv)
+    }
+}
+
+/// Is this a GNOME session?
+pub fn is_gnome() -> bool {
+    std::env::var("XDG_CURRENT_DESKTOP").is_ok_and(|d| d.to_lowercase().contains("gnome"))
+}
+
+/// The GNOME window extension that answers, if any.
+pub fn gnome_api() -> Option<GnomeApi> {
+    if !is_gnome() || which(&["gdbus"]).is_none() {
+        return None;
+    }
+    [GnomeApi::Backslash, GnomeApi::WindowCalls].into_iter().find(|api| api.call("List", &[]).is_ok())
 }
 
 impl Backend {
@@ -38,6 +87,8 @@ impl Backend {
             Some(Self::Sway)
         } else if env("NIRI_SOCKET") && which(&["niri"]).is_some() {
             Some(Self::Niri)
+        } else if let Some(api) = gnome_api() {
+            Some(Self::Gnome(api))
         } else if !env("WAYLAND_DISPLAY") && env("DISPLAY") && which(&["wmctrl"]).is_some() {
             Some(Self::X11)
         } else {
@@ -50,6 +101,8 @@ impl Backend {
             Self::Hyprland => "Hyprland",
             Self::Sway => "Sway",
             Self::Niri => "niri",
+            Self::Gnome(GnomeApi::Backslash) => "GNOME (Backslash extension)",
+            Self::Gnome(GnomeApi::WindowCalls) => "GNOME (Window Calls extension)",
             Self::X11 => "X11 (wmctrl)",
         }
     }
@@ -59,6 +112,7 @@ impl Backend {
             Self::Hyprland => parse_hyprland(&run("hyprctl", &["-j", "clients"])?),
             Self::Sway => parse_sway(&run("swaymsg", &["-t", "get_tree", "-r"])?),
             Self::Niri => parse_niri(&run("niri", &["msg", "-j", "windows"])?),
+            Self::Gnome(api) => parse_gnome(&gvariant_string(&api.call("List", &[])?)?),
             Self::X11 => Ok(parse_wmctrl(&run("wmctrl", &["-lx"])?)),
         }
     }
@@ -68,6 +122,7 @@ impl Backend {
             Self::Hyprland => run("hyprctl", &["dispatch", "focuswindow", &format!("address:{id}")]),
             Self::Sway => run("swaymsg", &[&format!("[con_id={id}]"), "focus"]),
             Self::Niri => run("niri", &["msg", "action", "focus-window", "--id", id]),
+            Self::Gnome(api) => api.call("Activate", &[id]),
             Self::X11 => run("wmctrl", &["-ia", id]),
         }
         .map(|_| ())
@@ -154,6 +209,79 @@ pub fn parse_niri(json: &str) -> Result<Vec<WindowInfo>> {
         .collect())
 }
 
+/// The string in gdbus's output `('…',)`, unescaped.
+pub fn gvariant_string(out: &str) -> Result<String> {
+    let t = out.trim();
+    let inner = t
+        .strip_prefix("('")
+        .and_then(|r| r.strip_suffix("',)"))
+        .or_else(|| t.strip_prefix("(\"").and_then(|r| r.strip_suffix("\",)")))
+        .with_context(|| format!("unexpected gdbus output: {}", t.chars().take(80).collect::<String>()))?;
+    let mut s = String::with_capacity(inner.len());
+    let mut chars = inner.chars();
+    while let Some(c) = chars.next() {
+        if c != '\\' {
+            s.push(c);
+            continue;
+        }
+        match chars.next() {
+            Some('n') => s.push('\n'),
+            Some('t') => s.push('\t'),
+            Some('u') => {
+                let hex: String = chars.by_ref().take(4).collect();
+                s.extend(u32::from_str_radix(&hex, 16).ok().and_then(char::from_u32));
+            }
+            Some(other) => s.push(other),
+            None => {}
+        }
+    }
+    Ok(s)
+}
+
+/// The JSON of the Backslash or Window Calls GNOME extension.
+pub fn parse_gnome(json: &str) -> Result<Vec<WindowInfo>> {
+    let windows: Vec<Value> = serde_json::from_str(json)?;
+    Ok(windows
+        .iter()
+        // Window Calls lists every window; keep the normal ones.
+        .filter(|w| w.get("window_type").and_then(Value::as_i64).is_none_or(|t| t == 0))
+        .map(|w| {
+            let app_id = [str_of(w, "app_id"), str_of(w, "wm_class"), str_of(w, "class")]
+                .into_iter()
+                .find(|s| !s.is_empty())
+                .unwrap_or_default();
+            WindowInfo {
+                id: w.get("id").map(|v| v.to_string()).unwrap_or_default(),
+                app_id,
+                title: str_of(w, "title"),
+                workspace: w.get("workspace").and_then(Value::as_i64).filter(|n| *n >= 0).map(|n| (n + 1).to_string()),
+                focused: w.get("focus").and_then(Value::as_bool).unwrap_or(false),
+            }
+        })
+        .collect())
+}
+
+/// What Backslash's KWin script reports (KDE Plasma).
+pub fn parse_kwin(json: &str) -> Result<Vec<WindowInfo>> {
+    let windows: Vec<Value> = serde_json::from_str(json)?;
+    Ok(windows
+        .iter()
+        .map(|w| WindowInfo {
+            id: str_of(w, "id"),
+            app_id: str_of(w, "app_id"),
+            title: str_of(w, "title"),
+            workspace: Some(str_of(w, "workspace")).filter(|s| !s.is_empty()),
+            focused: w.get("focus").and_then(Value::as_bool).unwrap_or(false),
+        })
+        .collect())
+}
+
+/// Is this KDE Plasma on Wayland (where wmctrl can't see the windows)?
+pub fn is_kde_wayland() -> bool {
+    std::env::var("XDG_CURRENT_DESKTOP").is_ok_and(|d| d.to_lowercase().contains("kde"))
+        && std::env::var_os("WAYLAND_DISPLAY").is_some()
+}
+
 /// `wmctrl -lx`: `0x03a00003  0 firefox.Firefox  host  Title with spaces`.
 pub fn parse_wmctrl(text: &str) -> Vec<WindowInfo> {
     text.lines()
@@ -174,6 +302,41 @@ pub fn parse_wmctrl(text: &str) -> Vec<WindowInfo> {
             })
         })
         .collect()
+}
+
+#[cfg(test)]
+mod gnome_tests {
+    use super::*;
+
+    #[test]
+    fn gdbus_strings() {
+        assert_eq!(gvariant_string("('[{\"id\":1}]',)\n").unwrap(), "[{\"id\":1}]");
+        assert_eq!(gvariant_string(r"('It\'s \u00e9t\u00e9',)").unwrap(), "It's été");
+        assert!(gvariant_string("()").is_err());
+    }
+
+    #[test]
+    fn kwin_windows() {
+        let w = parse_kwin(
+            r#"[{"id":"{5a1}","app_id":"org.kde.dolphin","title":"Home","focus":true,"workspace":"Desktop 1"}]"#,
+        )
+        .unwrap();
+        assert_eq!(
+            (w[0].id.as_str(), w[0].app_id.as_str(), w[0].workspace.as_deref()),
+            ("{5a1}", "org.kde.dolphin", Some("Desktop 1"))
+        );
+    }
+
+    #[test]
+    fn gnome_windows() {
+        let json = r#"[{"id":12,"app_id":"org.gnome.Nautilus","wm_class":"org.gnome.Nautilus","title":"Home","focus":true,"workspace":0},
+                       {"id":13,"app_id":"","wm_class":"firefox","title":"Mozilla","focus":false,"workspace":1},
+                       {"id":14,"wm_class":"gnome-shell","window_type":3,"title":"popup"}]"#;
+        let w = parse_gnome(json).unwrap();
+        assert_eq!(w.len(), 2);
+        assert_eq!((w[0].id.as_str(), w[0].app_id.as_str(), w[0].focused), ("12", "org.gnome.Nautilus", true));
+        assert_eq!((w[1].app_id.as_str(), w[1].workspace.as_deref()), ("firefox", Some("2")));
+    }
 }
 
 #[cfg(test)]

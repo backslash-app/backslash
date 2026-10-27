@@ -187,6 +187,10 @@ pub(super) struct State {
     paste_target: Option<String>,
     /// Script commands from ~/.config/backslash/scripts.
     scripts: Vec<Script>,
+    /// Windows come from a KWin script (KDE Plasma on Wayland).
+    kwin: bool,
+    /// GNOME without a window extension yet.
+    gnome_helper_needed: bool,
 }
 
 pub struct Launcher {
@@ -230,6 +234,7 @@ pub struct Launcher {
     reload_timer: RefCell<Option<glib::SourceId>>,
     shortcuts: Rc<hotkey::Shortcuts>,
     paster: Rc<paste::Paster>,
+    kwin: Option<Rc<crate::kwin::Kwin>>,
     _hold: gio::ApplicationHoldGuard,
 }
 
@@ -407,6 +412,8 @@ impl Launcher {
         }
         let clipboard = ClipboardHistory::load(paths::state_dir().join("clipboard.json"), config.clipboard.max_items);
 
+        let window_backend = Backend::detect();
+        let kwin = if window_backend.is_none() { crate::kwin::Kwin::new() } else { None };
         let launcher = Rc::new(Self {
             window,
             styles,
@@ -457,7 +464,7 @@ impl Launcher {
                 clipboard,
                 files: FilesState::default(),
                 windows: Vec::new(),
-                window_backend: Backend::detect(),
+                window_backend,
                 currency: Currency::new(),
                 autostart: autostart::enabled(),
                 catalog: store::CatalogState::default(),
@@ -466,6 +473,10 @@ impl Launcher {
                 paste: paste::detect(),
                 paste_target: None,
                 scripts: scripts::discover(&[scripts::dir()]),
+                kwin: kwin.is_some(),
+                gnome_helper_needed: window_backend.is_none()
+                    && backslash_core::system::windows::is_gnome()
+                    && std::env::var_os("WAYLAND_DISPLAY").is_some(),
             }),
             dev_dir,
             setting_query: Cell::new(false),
@@ -473,6 +484,7 @@ impl Launcher {
             reload_timer: RefCell::default(),
             shortcuts: Rc::default(),
             paster: Rc::default(),
+            kwin,
             _hold: app.hold(),
         });
         launcher.build_chips();
@@ -1838,6 +1850,26 @@ impl Launcher {
                 reveal(&path);
                 self.hide();
             }
+            Op::FocusWindow(id) if self.state.borrow().window_backend.is_none() => {
+                self.hide();
+                if let Some(kwin) = self.kwin.clone() {
+                    glib::spawn_future_local(async move {
+                        if let Err(e) = kwin.activate(&id).await {
+                            eprintln!("backslash: could not switch window: {e}");
+                        }
+                    });
+                }
+            }
+            Op::InstallGnomeHelper => match backslash_core::system::gnome::install() {
+                Ok(()) => {
+                    self.show_toast(
+                        "Installed. Log out and back in once to switch windows",
+                        proto::ToastStyle::Success,
+                    );
+                    self.render();
+                }
+                Err(e) => self.fail(format!("Could not install the GNOME helper: {e:#}")),
+            },
             Op::FocusWindow(id) => {
                 let backend = self.state.borrow().window_backend;
                 self.hide();
@@ -2556,6 +2588,27 @@ impl Launcher {
 
     fn open_builtin(self: &Rc<Self>, builtin: Builtin) {
         match builtin {
+            Builtin::Windows if self.state.borrow().window_backend.is_none() => {
+                self.state.borrow_mut().windows.clear();
+                if let Some(kwin) = self.kwin.clone() {
+                    // KWin answers asynchronously: show the view, then fill it.
+                    self.spinner.set_spinning(true);
+                    let weak = Rc::downgrade(self);
+                    glib::spawn_future_local(async move {
+                        let result = kwin.list().await;
+                        let Some(l) = weak.upgrade() else { return };
+                        l.spinner.set_spinning(false);
+                        match result {
+                            Ok(mut windows) => {
+                                windows.retain(|w| !w.app_id.starts_with("app.backslash.Backslash"));
+                                l.state.borrow_mut().windows = windows;
+                                l.render();
+                            }
+                            Err(e) => l.fail(format!("Could not list windows: {e}")),
+                        }
+                    });
+                }
+            }
             Builtin::Windows => {
                 let backend = self.state.borrow().window_backend;
                 let Some(backend) = backend else { return };

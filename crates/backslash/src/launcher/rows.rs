@@ -211,7 +211,7 @@ fn builtin_commands(s: &State) -> Vec<(Entry, Row)> {
         Op::OpenBuiltin(Builtin::Files),
         "Find files in your home folder. Recent files appear first.",
     );
-    if s.window_backend.is_some() {
+    if s.window_backend.is_some() || s.kwin || s.gnome_helper_needed {
         add(
             "windows",
             "Switch Windows",
@@ -757,6 +757,9 @@ pub fn builtin_rows(s: &mut State, builtin: Builtin, query: &str) -> Vec<Row> {
                     (Entry { key: row.key.clone(), title: row.title.clone(), keywords, subtitle: None }, row)
                 })
                 .collect();
+            if entries.is_empty() && s.gnome_helper_needed {
+                return vec![gnome_helper_row()];
+            }
             ranked_rows(&mut s.ranker, query, entries)
         }
         Builtin::Store => {
@@ -927,4 +930,32 @@ pub fn script_lines(s: &mut State, query: &str) -> Vec<Row> {
         })
         .collect();
     ranked_rows(&mut s.ranker, query, entries)
+}
+
+/// GNOME needs a small Shell extension before windows can be listed.
+pub fn gnome_helper_row() -> Row {
+    let installed = backslash_core::system::gnome::is_installed();
+    Row {
+        key: "gnome-helper".into(),
+        title: if installed { "Log out and back in once" } else { "Install the GNOME helper" }.into(),
+        subtitle: Some(if installed {
+            "GNOME loads the Backslash extension at the next login".into()
+        } else {
+            "A tiny GNOME Shell extension that lets Backslash see your windows".into()
+        }),
+        icon: Some(Icon::Spec("preferences-system-windows".into())),
+        tint: Some("teal"),
+        actions: vec![UiAction::new(if installed { "Install Again" } else { "Install" }, Op::InstallGnomeHelper)
+            .icon("system-software-install")],
+        preview: Some(Preview {
+            icon: Some(Icon::Spec("preferences-system-windows".into())),
+            title: "Switch windows on GNOME".into(),
+            subtitle: Some("GNOME does not let apps list windows".into()),
+            body: Some(
+                "Backslash ships a small GNOME Shell extension (backslash@backslash.app) that only lists your windows and switches to the one you pick. It is installed in ~/.local/share/gnome-shell/extensions and enabled; GNOME loads it at your next login.\n\nThe \"Window Calls\" extension works too, if you already have it.".into(),
+            ),
+            ..Default::default()
+        }),
+        ..Default::default()
+    }
 }

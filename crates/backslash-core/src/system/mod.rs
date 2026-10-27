@@ -3,6 +3,7 @@
 
 pub mod clipboard;
 pub mod files;
+pub mod gnome;
 pub mod windows;
 
 /// First of `names` found in `$PATH`.

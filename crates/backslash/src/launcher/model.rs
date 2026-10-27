@@ -110,6 +110,8 @@ pub enum Op {
     RunScript(String, Option<Vec<String>>),
     NewScript,
     OpenScriptsFolder,
+    /// Installs the GNOME Shell extension that lists windows.
+    InstallGnomeHelper,
     UninstallEntry(String),
     /// Download Deno, then run the command that needed it.
     InstallRuntime,
