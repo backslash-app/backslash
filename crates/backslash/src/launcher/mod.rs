@@ -11,6 +11,7 @@ mod model;
 mod rows;
 mod settings;
 mod store;
+mod welcome;
 mod widgets;
 
 use std::cell::{Cell, RefCell};
@@ -177,6 +178,8 @@ pub(super) struct State {
     catalog: store::CatalogState,
     /// Deno is being downloaded.
     runtime_busy: bool,
+    /// Desktop facts shown by the welcome screen.
+    desktop: welcome::Desktop,
 }
 
 pub struct Launcher {
@@ -451,6 +454,7 @@ impl Launcher {
                 autostart: autostart::enabled(),
                 catalog: store::CatalogState::default(),
                 runtime_busy: false,
+                desktop: welcome::Desktop { shortcut: hotkey::Status::Disabled, layer_shell: false },
             }),
             dev_dir,
             setting_query: Cell::new(false),
@@ -757,6 +761,7 @@ impl Launcher {
             bindings
         };
         let weak = Rc::downgrade(self);
+        let weak_status = Rc::downgrade(self);
         let app_id = self.window.application().and_then(|a| a.application_id()).unwrap_or_default();
         self.shortcuts.bind(
             &app_id,
@@ -770,7 +775,19 @@ impl Launcher {
                     }
                 }
             }),
-            |status| eprintln!("backslash: {status}"),
+            move |status| {
+                eprintln!("backslash: {status}");
+                // The welcome screen shows whether the shortcut works.
+                if let Some(l) = weak_status.upgrade() {
+                    let on_welcome = matches!(
+                        l.state.borrow().frames.last().map(|f| &f.kind),
+                        Some(FrameKind::Builtin(Builtin::Welcome))
+                    );
+                    if on_welcome && l.window.is_visible() {
+                        l.render();
+                    }
+                }
+            },
         );
     }
 
@@ -809,6 +826,10 @@ impl Launcher {
         self.reload();
         // config.toml may have been edited by hand.
         self.bind_shortcuts();
+        if self.dev_dir.is_none() && self.is_root() && !welcome::seen() {
+            welcome::mark_seen();
+            self.push(FrameKind::Builtin(Builtin::Welcome));
+        }
         let theme = self.state.borrow().config.theme;
         self.styles.apply(theme, &self.window);
         if self.layer_shell {
@@ -907,6 +928,8 @@ impl Launcher {
 
     fn render_list(self: &Rc<Self>) {
         let query = self.entry.text().to_string();
+        self.state.borrow_mut().desktop =
+            welcome::Desktop { shortcut: self.shortcuts.status(), layer_shell: self.layer_shell };
         let grid_columns = match &self.state.borrow().frames.last().unwrap().kind {
             FrameKind::Extension { view: View::List(l), .. } if l.layout == proto::Layout::Grid => {
                 Some(l.columns.unwrap_or(6).clamp(2, 12))
@@ -1875,6 +1898,23 @@ impl Launcher {
             Op::ReviewInstall(id) => self.push(FrameKind::ConfirmInstall { id }),
             Op::InstallEntry(id) => self.install_entry(id),
             Op::UpdateAll => self.update_all(),
+            Op::Spawn(program, args) => {
+                if let Err(e) = std::process::Command::new(&program).args(&args).spawn() {
+                    self.fail(format!("Could not start {program}: {e}"));
+                }
+            }
+            Op::FinishWelcome => {
+                welcome::mark_seen();
+                {
+                    let mut s = self.state.borrow_mut();
+                    s.frames.truncate(1);
+                    s.frames[0].query.clear();
+                    s.selected_key = None;
+                }
+                self.set_query("");
+                self.render();
+                self.show_toast("You're all set. Type to search", proto::ToastStyle::Success);
+            }
             Op::InstallRuntime => self.install_runtime(),
             Op::UninstallEntry(id) => {
                 let loc = backslash_core::catalog::Locations::user(&self.state.borrow().config);
@@ -2408,7 +2448,7 @@ impl Launcher {
                 s.files.results.clear();
             }
             Builtin::Store => self.refresh_catalog(),
-            Builtin::Clipboard | Builtin::Theme | Builtin::Settings => {}
+            Builtin::Clipboard | Builtin::Theme | Builtin::Settings | Builtin::Welcome => {}
         }
         self.record(format!("builtin:{}", builtin_id(builtin)));
         self.push(FrameKind::Builtin(builtin));
@@ -2665,6 +2705,7 @@ fn builtin_id(builtin: Builtin) -> &'static str {
         Builtin::Theme => "theme",
         Builtin::Settings => "settings",
         Builtin::Store => "store",
+        Builtin::Welcome => "welcome",
     }
 }
 

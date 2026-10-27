@@ -127,6 +127,11 @@ Inside the Flatpak sandbox all of this goes through `flatpak-spawn --host`,
 which gives the whole system away anyway while making everything slower and
 harder to debug. Extensions get their own, finer sandbox from Deno instead.
 
+The first time it opens, Backslash shows a short **welcome** checklist: the
+shortcut (with the steps for your desktop when it can't register one itself),
+theme, launch at login, clipboard history, the overlay on Wayland, and the
+extension runtime. Open it again any time with **Welcome to Backslash**.
+
 ### Open it with a shortcut
 
 Backslash asks your desktop for <kbd>Super</kbd>+<kbd>Space</kbd> through the
