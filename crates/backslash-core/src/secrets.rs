@@ -118,12 +118,17 @@ fn remove_from_file(extension: &str, key: &str) -> Result<()> {
     Ok(())
 }
 
+/// Tests that point `XDG_CONFIG_HOME` at a temporary directory take this.
+#[cfg(test)]
+pub(crate) static TEST_ENV: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn file_backend_round_trip() {
+        let _env = TEST_ENV.lock().unwrap_or_else(|e| e.into_inner());
         let dir = tempfile::tempdir().unwrap();
         std::env::set_var("XDG_CONFIG_HOME", dir.path());
         std::env::set_var("BACKSLASH_SECRETS", "file");

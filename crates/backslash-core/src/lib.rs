@@ -9,6 +9,7 @@ pub mod config;
 pub mod host;
 pub mod http;
 pub mod manifest;
+pub mod oauth;
 pub mod paths;
 pub mod protocol;
 pub mod registry;

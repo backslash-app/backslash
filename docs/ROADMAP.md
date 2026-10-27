@@ -33,7 +33,7 @@ the CLI and two bundled extensions. Next steps, roughly in order.
 - [x] Grid layout for lists (emoji, images).
 - [ ] List item detail pane, menu-bar/tray items.
 - [ ] Background commands on an interval.
-- [ ] OAuth helper (PKCE, loopback redirect).
+- [x] OAuth helper (PKCE, loopback redirect, refresh, tokens in the keyring).
 - [x] Hot reload in `backslash dev` (watch files, re-run the open command).
 - [ ] Sandbox exec-runtime extensions with bubblewrap.
 - [x] Script commands: any executable with a few comment lines, in any language.

@@ -54,11 +54,36 @@ fn serve(session: &Session, msg: Incoming) {
                     println!("{}", text("text"));
                     Ok(Value::Null)
                 }
+                "oauth/token" | "oauth/signOut" => oauth(session, &method, &params),
                 _ => Err(RpcError::new(RpcError::METHOD_NOT_FOUND, format!("{method} is not available in the CLI"))),
             };
             session.respond(id, result);
         }
         Incoming::Notification { .. } | Incoming::Exited(_) => {}
+    }
+}
+
+/// Saved tokens work from the terminal; signing in needs the launcher.
+fn oauth(session: &Session, method: &str, params: &Value) -> Result<Value, RpcError> {
+    use backslash_core::oauth;
+    let error = |e: anyhow::Error| RpcError::new(-32000, format!("{e:#}"));
+    let provider: oauth::Provider =
+        serde_json::from_value(params["provider"].clone()).map_err(|e| RpcError::new(-32602, e.to_string()))?;
+    let hosts = registry().find(&session.extension_id).map(|e| e.manifest.permissions.net.clone()).unwrap_or_default();
+    provider.check(&hosts).map_err(error)?;
+    if method == "oauth/signOut" {
+        return oauth::sign_out(&session.extension_id, &provider.id).map(|_| Value::Null).map_err(error);
+    }
+    match oauth::quiet_token(&session.extension_id, &provider).map_err(error)? {
+        Some(token) => Ok(token.into()),
+        None if params["interactive"] == false => Ok(Value::Null),
+        None => Err(RpcError::new(
+            -32000,
+            format!(
+                "not signed in to {}: run the command once from the launcher",
+                provider.title.as_deref().unwrap_or(&provider.id)
+            ),
+        )),
     }
 }
 
