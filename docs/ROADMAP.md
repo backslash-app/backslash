@@ -19,7 +19,7 @@ the CLI and two bundled extensions. Next steps, roughly in order.
 - [x] Unit and currency conversions.
 - [x] Quicklinks and snippets in `config.toml` (an editor in the launcher to do).
 - [x] Light, dark and system themes with a preview panel.
-- [ ] Aliases and per-command hotkeys.
+- [x] Aliases and per-item global shortcuts, `backslash open <item>`.
 
 ## Extensions
 - [x] Settings view: enable/disable extensions, edit preferences, secrets

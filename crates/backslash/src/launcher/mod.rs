@@ -47,6 +47,8 @@ pub use self::rows::now;
 pub struct Options {
     pub hidden: bool,
     pub dev_dir: Option<PathBuf>,
+    /// Root search item to open instead of showing the window (`backslash open`).
+    pub open: Option<String>,
 }
 
 const WIDTH: i32 = 860;
@@ -60,10 +62,30 @@ pub fn run(options: Options) -> anyhow::Result<()> {
     let app_id = if dev { "app.backslash.Backslash.Devel" } else { "app.backslash.Backslash" };
     let app = gtk::Application::builder().application_id(app_id).build();
 
+    // `backslash open KEY` asks the running instance, if any, and exits.
+    if let Some(key) = &options.open {
+        if activate_remote(app_id, key) {
+            return Ok(());
+        }
+    }
+
     let launcher: Rc<RefCell<Option<Rc<Launcher>>>> = Rc::default();
     let first_activation = Cell::new(true);
     let dev_dir = options.dev_dir.clone();
     let hidden = options.hidden;
+    let open = RefCell::new(options.open.clone());
+
+    let open_action = gio::SimpleAction::new("open", Some(glib::VariantTy::STRING));
+    open_action.connect_activate({
+        let launcher = launcher.clone();
+        move |_, key| {
+            let (Some(l), Some(key)) = (launcher.borrow().clone(), key.and_then(|k| k.str().map(str::to_owned))) else {
+                return;
+            };
+            l.open_key(&key);
+        }
+    });
+    app.add_action(&open_action);
 
     app.connect_startup({
         let launcher = launcher.clone();
@@ -79,6 +101,9 @@ pub fn run(options: Options) -> anyhow::Result<()> {
         let Some(l) = launcher.borrow().clone() else { return };
         if first_activation.replace(false) {
             l.start_services();
+            if let Some(key) = open.take() {
+                return l.open_key(&key);
+            }
             if hidden {
                 return;
             }
@@ -91,6 +116,30 @@ pub fn run(options: Options) -> anyhow::Result<()> {
         anyhow::bail!("launcher exited with an error");
     }
     Ok(())
+}
+
+/// Calls the `open` action of a running instance over D-Bus (what
+/// `GApplication` exports). False when none is running.
+fn activate_remote(app_id: &str, key: &str) -> bool {
+    let Ok(bus) = gio::bus_get_sync(gio::BusType::Session, None::<&gio::Cancellable>) else { return false };
+    let path = format!("/{}", app_id.replace('.', "/"));
+    let args = glib::Variant::tuple_from_iter([
+        "open".to_variant(),
+        glib::Variant::array_from_iter_with_type(glib::VariantTy::VARIANT, [key.to_variant().to_variant()]),
+        glib::VariantDict::new(None).end(),
+    ]);
+    bus.call_sync(
+        Some(app_id),
+        &path,
+        "org.gtk.Actions",
+        "Activate",
+        Some(&args),
+        None,
+        gio::DBusCallFlags::NO_AUTO_START,
+        2000,
+        None::<&gio::Cancellable>,
+    )
+    .is_ok()
 }
 
 /// Results of the file search, filled from a background thread.
@@ -164,6 +213,7 @@ pub struct Launcher {
     /// `backslash dev`: watches the extension's files for hot reload.
     monitors: RefCell<Vec<gio::FileMonitor>>,
     reload_timer: RefCell<Option<glib::SourceId>>,
+    shortcuts: Rc<hotkey::Shortcuts>,
     _hold: gio::ApplicationHoldGuard,
 }
 
@@ -391,6 +441,7 @@ impl Launcher {
             setting_query: Cell::new(false),
             monitors: RefCell::default(),
             reload_timer: RefCell::default(),
+            shortcuts: Rc::default(),
             _hold: app.hold(),
         });
         launcher.build_chips();
@@ -480,24 +531,8 @@ impl Launcher {
     /// Background services, started once the application is registered.
     fn start_services(self: &Rc<Self>) {
         self.watch_dev_dir();
-        let (hotkey, clipboard_enabled) = {
-            let s = self.state.borrow();
-            (s.config.hotkey.clone(), s.config.clipboard.enabled)
-        };
-        if !hotkey.is_empty() && self.dev_dir.is_none() {
-            let weak = Rc::downgrade(self);
-            let app_id = self.window.application().and_then(|a| a.application_id()).unwrap_or_default();
-            hotkey::register(
-                &app_id,
-                &hotkey,
-                move || {
-                    if let Some(l) = weak.upgrade() {
-                        l.toggle();
-                    }
-                },
-                |status| eprintln!("backslash: {status}"),
-            );
-        }
+        let clipboard_enabled = self.state.borrow().config.clipboard.enabled;
+        self.bind_shortcuts();
         if clipboard_enabled {
             let weak = Rc::downgrade(self);
             clipboard::watch(&WidgetExt::display(&self.window), move |text| {
@@ -677,6 +712,71 @@ impl Launcher {
     }
 
     // -----------------------------------------------------------------------
+    /// Asks the desktop for the launcher's shortcut and those of items
+    /// (`[hotkeys]`). Does nothing when they did not change.
+    fn bind_shortcuts(self: &Rc<Self>) {
+        if self.dev_dir.is_some() {
+            return;
+        }
+        let bindings = {
+            let s = self.state.borrow();
+            let mut bindings = Vec::new();
+            if !s.config.hotkey.is_empty() {
+                bindings.push(hotkey::Binding {
+                    id: "toggle".into(),
+                    description: "Show or hide Backslash".into(),
+                    accel: s.config.hotkey.clone(),
+                });
+            }
+            for (key, accel) in s.config.hotkeys.iter().filter(|(_, a)| !a.trim().is_empty()) {
+                let title = rows::row_for_key(&s, key).map_or_else(|| key.clone(), |r| r.title);
+                bindings.push(hotkey::Binding {
+                    id: key.clone(),
+                    description: format!("Backslash: {title}"),
+                    accel: accel.clone(),
+                });
+            }
+            bindings
+        };
+        let weak = Rc::downgrade(self);
+        let app_id = self.window.application().and_then(|a| a.application_id()).unwrap_or_default();
+        self.shortcuts.bind(
+            &app_id,
+            bindings,
+            Rc::new(move |id| {
+                if let Some(l) = weak.upgrade() {
+                    if id == "toggle" {
+                        l.toggle();
+                    } else {
+                        l.open_key(id);
+                    }
+                }
+            }),
+            |status| eprintln!("backslash: {status}"),
+        );
+    }
+
+    /// Runs the main action of a root search item, by key (`app:…`,
+    /// `cmd:…`…): what item hotkeys and `backslash open` do.
+    pub fn open_key(self: &Rc<Self>, key: &str) {
+        self.reload();
+        let row = rows::row_for_key(&self.state.borrow(), key);
+        let Some(action) = row.and_then(|r| r.actions.into_iter().next()) else {
+            eprintln!("backslash: nothing to open for `{key}`");
+            return;
+        };
+        // Apps open directly; everything else shows in the launcher.
+        if !matches!(action.op, Op::LaunchApp(..)) {
+            if self.window.is_visible() && !self.is_root() {
+                self.hide();
+            }
+            if !self.window.is_visible() {
+                self.show();
+            }
+        }
+        self.execute(action);
+    }
+
     // Visibility
 
     fn toggle(self: &Rc<Self>) {
@@ -689,6 +789,8 @@ impl Launcher {
 
     fn show(self: &Rc<Self>) {
         self.reload();
+        // config.toml may have been edited by hand.
+        self.bind_shortcuts();
         let theme = self.state.borrow().config.theme;
         self.styles.apply(theme, &self.window);
         if self.layer_shell {
@@ -1521,6 +1623,22 @@ impl Launcher {
                 let current = self.state.borrow().config.hotkey.clone();
                 self.push(FrameKind::Form { purpose: FormPurpose::Hotkey, form: settings::hotkey_form(&current) });
             }
+            Op::EditAlias(key) => {
+                let form = {
+                    let s = self.state.borrow();
+                    let title = rows::row_for_key(&s, &key).map_or_else(|| key.clone(), |r| r.title);
+                    settings::alias_form(&title, s.config.aliases.get(&key).map_or("", String::as_str))
+                };
+                self.push(FrameKind::Form { purpose: FormPurpose::Alias { key }, form });
+            }
+            Op::EditKeyHotkey(key) => {
+                let form = {
+                    let s = self.state.borrow();
+                    let title = rows::row_for_key(&s, &key).map_or_else(|| key.clone(), |r| r.title);
+                    settings::key_hotkey_form(&title, s.config.hotkeys.get(&key).map_or("", String::as_str))
+                };
+                self.push(FrameKind::Form { purpose: FormPurpose::KeyHotkey { key }, form });
+            }
             Op::ToggleExtension(id) => {
                 let enabled = self.state.borrow().config.is_enabled(&id);
                 self.update_config(|c| c.extensions.entry(id.clone()).or_default().enabled = !enabled);
@@ -1828,7 +1946,40 @@ impl Launcher {
                 let hotkey = text("hotkey");
                 self.update_config(|c| c.hotkey = hotkey);
                 self.pop();
-                self.show_toast("Saved. The new shortcut applies at the next start", proto::ToastStyle::Info);
+                self.bind_shortcuts();
+                self.show_toast("Saved. Confirm the shortcut if your desktop asks", proto::ToastStyle::Info);
+            }
+            FormPurpose::Alias { key } => {
+                let alias = text("alias").trim().to_string();
+                let taken = {
+                    let s = self.state.borrow();
+                    s.config.alias_target(&alias).filter(|k| *k != key).map(str::to_owned)
+                };
+                if let Some(other) = taken {
+                    return self.fail(format!("`{alias}` is already the alias of {other}"));
+                }
+                self.update_config(|c| {
+                    if alias.is_empty() {
+                        c.aliases.remove(&key);
+                    } else {
+                        c.aliases.insert(key, alias);
+                    }
+                });
+                self.pop();
+                self.show_toast("Alias saved", proto::ToastStyle::Success);
+            }
+            FormPurpose::KeyHotkey { key } => {
+                let hotkey = text("hotkey").trim().to_string();
+                self.update_config(|c| {
+                    if hotkey.is_empty() {
+                        c.hotkeys.remove(&key);
+                    } else {
+                        c.hotkeys.insert(key, hotkey);
+                    }
+                });
+                self.pop();
+                self.bind_shortcuts();
+                self.show_toast("Saved. Confirm the shortcut if your desktop asks", proto::ToastStyle::Info);
             }
         }
     }

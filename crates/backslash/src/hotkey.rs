@@ -5,8 +5,9 @@
 //! Where the portal is missing, binding `backslash` to a key in the desktop
 //! settings keeps working: a second launch toggles the running instance.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
+use std::sync::atomic::{AtomicU32, Ordering};
 
 use gtk::gio;
 use gtk::glib::{self, Variant, VariantTy};
@@ -15,7 +16,6 @@ use gtk::prelude::*;
 const DEST: &str = "org.freedesktop.portal.Desktop";
 const PATH: &str = "/org/freedesktop/portal/desktop";
 const IFACE: &str = "org.freedesktop.portal.GlobalShortcuts";
-const SHORTCUT_ID: &str = "toggle";
 
 /// `Super+Space` → `LOGO+space`, the format of the XDG shortcuts specification.
 pub fn to_portal_trigger(accel: &str) -> String {
@@ -93,22 +93,102 @@ async fn request(
     result
 }
 
-/// Registers the shortcut and calls `on_activate` each time it is pressed.
-/// `on_status` receives a short human-readable outcome (for logs).
-pub fn register(app_id: &str, accel: &str, on_activate: impl Fn() + 'static, on_status: impl Fn(String) + 'static) {
-    let app_id = app_id.to_string();
-    let trigger = to_portal_trigger(accel);
-    glib::spawn_future_local(async move {
-        match setup(&app_id, &trigger, on_activate).await {
-            Ok(()) => on_status(format!("global shortcut {trigger} registered through the desktop portal")),
-            Err(e) => on_status(format!(
-                "global shortcut portal unavailable ({e}); bind `backslash` to a key in your desktop settings"
-            )),
-        }
-    });
+/// A shortcut to ask the desktop for.
+#[derive(Clone)]
+pub struct Binding {
+    /// Stable id: the desktop remembers the user's choice under it.
+    pub id: String,
+    pub description: String,
+    /// `Super+Space` style.
+    pub accel: String,
 }
 
-async fn setup(app_id: &str, trigger: &str, on_activate: impl Fn() + 'static) -> Result<(), String> {
+/// Same shortcut, whatever its description says.
+impl PartialEq for Binding {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id && self.accel == other.accel
+    }
+}
+
+struct Active {
+    bus: gio::DBusConnection,
+    session: String,
+    subscription: gio::SignalSubscriptionId,
+}
+
+/// The shortcuts registered with the portal. Binding again replaces them
+/// (a new portal session, as a session's shortcuts can only be bound once).
+#[derive(Default)]
+pub struct Shortcuts {
+    active: RefCell<Option<Active>>,
+    /// Bumped on each `bind`, so a slow, outdated setup gives up.
+    generation: Cell<u64>,
+    bound: RefCell<Vec<Binding>>,
+}
+
+impl Shortcuts {
+    /// Registers `bindings`, calling `on_activate(id)` when one is pressed.
+    /// `on_status` receives a short human-readable outcome (for logs).
+    pub fn bind(
+        self: &Rc<Self>,
+        app_id: &str,
+        bindings: Vec<Binding>,
+        on_activate: Rc<dyn Fn(&str)>,
+        on_status: impl Fn(String) + 'static,
+    ) {
+        // Unchanged, or the portal already failed for these.
+        if *self.bound.borrow() == bindings {
+            return;
+        }
+        self.bound.replace(bindings.clone());
+        let generation = self.generation.get() + 1;
+        self.generation.set(generation);
+        if let Some(old) = self.active.take() {
+            close(old);
+        }
+        if bindings.is_empty() {
+            return;
+        }
+        let this = self.clone();
+        let app_id = app_id.to_string();
+        glib::spawn_future_local(async move {
+            let summary = bindings.iter().map(|b| to_portal_trigger(&b.accel)).collect::<Vec<_>>().join(", ");
+            match setup(&app_id, &bindings, on_activate).await {
+                Ok(active) if this.generation.get() == generation => {
+                    this.active.replace(Some(active));
+                    on_status(format!("global shortcuts {summary} registered through the desktop portal"));
+                }
+                Ok(stale) => close(stale),
+                Err(e) => on_status(format!(
+                    "global shortcut portal unavailable ({e}); bind `backslash` to a key in your desktop settings"
+                )),
+            }
+        });
+    }
+}
+
+fn close(active: Active) {
+    #[allow(deprecated)]
+    active.bus.signal_unsubscribe(active.subscription);
+    active.bus.call(
+        Some(DEST),
+        &active.session,
+        "org.freedesktop.portal.Session",
+        "Close",
+        None,
+        None,
+        gio::DBusCallFlags::NONE,
+        -1,
+        None::<&gio::Cancellable>,
+        |result| {
+            if let Err(e) = result {
+                eprintln!("backslash: could not close the previous shortcuts session: {e}");
+            }
+        },
+    );
+}
+
+async fn setup(app_id: &str, bindings: &[Binding], on_activate: Rc<dyn Fn(&str)>) -> Result<Active, String> {
     let bus = gio::bus_get_future(gio::BusType::Session).await.map_err(|e| e.to_string())?;
 
     // Host (non-Flatpak) apps tell the portal who they are; older portals
@@ -126,7 +206,8 @@ async fn setup(app_id: &str, trigger: &str, on_activate: impl Fn() + 'static) ->
         )
         .await;
 
-    let token = format!("backslash{}", std::process::id());
+    static COUNTER: AtomicU32 = AtomicU32::new(0);
+    let token = format!("backslash{}_{}", std::process::id(), COUNTER.fetch_add(1, Ordering::Relaxed));
     let session_token = format!("{token}s");
     let created = request(
         &bus,
@@ -140,11 +221,18 @@ async fn setup(app_id: &str, trigger: &str, on_activate: impl Fn() + 'static) ->
         .and_then(|v| v.str().map(str::to_owned))
         .ok_or("no session handle")?;
 
-    let shortcut = Variant::tuple_from_iter([
-        SHORTCUT_ID.to_variant(),
-        dict(&[("description", "Show or hide Backslash".to_variant()), ("preferred_trigger", trigger.to_variant())]),
-    ]);
-    let shortcuts = Variant::array_from_iter_with_type(VariantTy::new("(sa{sv})").expect("valid type"), [shortcut]);
+    let shortcuts = Variant::array_from_iter_with_type(
+        VariantTy::new("(sa{sv})").expect("valid type"),
+        bindings.iter().map(|b| {
+            Variant::tuple_from_iter([
+                b.id.to_variant(),
+                dict(&[
+                    ("description", b.description.to_variant()),
+                    ("preferred_trigger", to_portal_trigger(&b.accel).to_variant()),
+                ]),
+            ])
+        }),
+    );
     let session_path = glib::variant::ObjectPath::try_from(session.clone()).map_err(|e| e.to_string())?;
     let bind_token = format!("{token}b");
     request(
@@ -157,8 +245,9 @@ async fn setup(app_id: &str, trigger: &str, on_activate: impl Fn() + 'static) ->
 
     // Debounce: some portals send Activated twice (press and repeat).
     let last = Rc::new(Cell::new(0i64));
+    let ours = session.clone();
     #[allow(deprecated)]
-    bus.signal_subscribe(
+    let subscription = bus.signal_subscribe(
         Some(DEST),
         Some(IFACE),
         Some("Activated"),
@@ -166,17 +255,18 @@ async fn setup(app_id: &str, trigger: &str, on_activate: impl Fn() + 'static) ->
         None,
         gio::DBusSignalFlags::NONE,
         move |_, _, _, _, _, params| {
+            if params.child_value(0).str() != Some(ours.as_str()) {
+                return;
+            }
             let id = params.child_value(1).str().map(str::to_owned).unwrap_or_default();
             let now = glib::monotonic_time();
-            if id == SHORTCUT_ID && now - last.get() > 250_000 {
+            if now - last.get() > 250_000 {
                 last.set(now);
-                on_activate();
+                on_activate(&id);
             }
         },
     );
-    // Keep the connection (and the subscription) alive for the process lifetime.
-    std::mem::forget(bus);
-    Ok(())
+    Ok(Active { bus, session, subscription })
 }
 
 #[cfg(test)]

@@ -80,6 +80,9 @@ pub enum Op {
     SetAutostart(bool),
     SetClipboard(bool),
     EditHotkey,
+    /// Alias or global shortcut of a root search item, by row key.
+    EditAlias(String),
+    EditKeyHotkey(String),
     ToggleExtension(String),
     ConfigureExtension(String),
     EditQuicklink(Option<usize>),
@@ -265,6 +268,12 @@ pub enum FormPurpose {
         index: Option<usize>,
     },
     Hotkey,
+    Alias {
+        key: String,
+    },
+    KeyHotkey {
+        key: String,
+    },
 }
 
 /// The command an extension view belongs to, to restart it (hot reload).

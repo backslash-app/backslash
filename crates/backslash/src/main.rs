@@ -32,6 +32,10 @@ struct Args {
 enum Cmd {
     /// Show or hide the launcher (bind this to a key in your desktop settings).
     Toggle,
+    /// Open an app, command or other root search item in the launcher, e.g.
+    /// `builtin:clipboard`, `cmd:github/pull-requests`, `app:firefox.desktop`.
+    /// Bind it to a key where the desktop has no shortcut portal.
+    Open { key: String },
     /// Run an extension command and print its results.
     Run {
         /// `extension/command`, e.g. `npm/search`.
@@ -105,17 +109,18 @@ fn main() {
 }
 
 fn run(args: Args) -> anyhow::Result<()> {
-    if !matches!(args.command, None | Some(Cmd::Toggle) | Some(Cmd::Dev { .. })) {
+    if !matches!(args.command, None | Some(Cmd::Toggle) | Some(Cmd::Dev { .. }) | Some(Cmd::Open { .. })) {
         // Behave like other Unix tools in pipelines (`backslash run … | head`):
         // die quietly on a closed pipe instead of panicking.
         // SAFETY: called before any thread is spawned; SIG_DFL is always valid.
         unsafe { libc::signal(libc::SIGPIPE, libc::SIG_DFL) };
     }
     match args.command {
-        None | Some(Cmd::Toggle) => launcher::run(launcher::Options { hidden: args.hidden, dev_dir: None }),
+        None | Some(Cmd::Toggle) => launcher::run(launcher::Options { hidden: args.hidden, dev_dir: None, open: None }),
+        Some(Cmd::Open { key }) => launcher::run(launcher::Options { hidden: false, dev_dir: None, open: Some(key) }),
         Some(Cmd::Dev { dir }) => {
             let dir = dir.unwrap_or_else(|| PathBuf::from(".")).canonicalize()?;
-            launcher::run(launcher::Options { hidden: false, dev_dir: Some(dir) })
+            launcher::run(launcher::Options { hidden: false, dev_dir: Some(dir), open: None })
         }
         Some(Cmd::Run { id, query, args, json, yes }) => {
             cli::run(&id, query.as_deref().unwrap_or(""), &args, json, yes)

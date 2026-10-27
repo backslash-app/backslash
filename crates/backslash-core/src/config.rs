@@ -17,6 +17,14 @@
 //! name = "Email signature"
 //! text = "Best,\nSteven"
 //! keyword = "sig"
+//!
+//! # Anything in the root search can get an alias and a global shortcut.
+//! [aliases]
+//! "app:org.mozilla.firefox.desktop" = "ff"
+//! "cmd:github/pull-requests" = "pr"
+//!
+//! [hotkeys]
+//! "builtin:clipboard" = "Super+V"
 //! ```
 //!
 //! Secret preferences go to the system keyring (see [`crate::secrets`]).
@@ -47,6 +55,10 @@ pub struct Config {
     pub extensions: BTreeMap<String, ExtensionConfig>,
     pub quicklinks: Vec<Quicklink>,
     pub snippets: Vec<Snippet>,
+    /// Root search item key (`app:…`, `cmd:…`, `builtin:…`…) → alias typed to find it first.
+    pub aliases: BTreeMap<String, String>,
+    /// Root search item key → global shortcut that opens it.
+    pub hotkeys: BTreeMap<String, String>,
 }
 
 impl Default for Config {
@@ -61,6 +73,8 @@ impl Default for Config {
             extensions: BTreeMap::new(),
             quicklinks: Vec::new(),
             snippets: Vec::new(),
+            aliases: BTreeMap::new(),
+            hotkeys: BTreeMap::new(),
         }
     }
 }
@@ -194,6 +208,15 @@ impl Config {
         (out, missing)
     }
 
+    /// The item whose alias is exactly `query` (case-insensitive).
+    pub fn alias_target(&self, query: &str) -> Option<&str> {
+        let q = query.trim();
+        if q.is_empty() {
+            return None;
+        }
+        self.aliases.iter().find(|(_, alias)| alias.eq_ignore_ascii_case(q)).map(|(key, _)| key.as_str())
+    }
+
     /// Path of the config file, for "Open Config" style actions.
     pub fn path() -> PathBuf {
         config_path()
@@ -209,6 +232,14 @@ impl Config {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn aliases() {
+        let c: Config = toml::from_str("[aliases]\n\"app:firefox.desktop\" = \"ff\"").unwrap();
+        assert_eq!(c.alias_target(" FF "), Some("app:firefox.desktop"));
+        assert_eq!(c.alias_target("f"), None);
+        assert_eq!(c.alias_target(""), None);
+    }
 
     #[test]
     fn defaults_and_round_trip() {
