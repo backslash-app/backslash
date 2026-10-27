@@ -106,6 +106,10 @@ pub enum Op {
     Spawn(String, Vec<String>),
     /// Leaves the welcome screen for the search.
     FinishWelcome,
+    /// Runs a script command by id, with its arguments once asked.
+    RunScript(String, Option<Vec<String>>),
+    NewScript,
+    OpenScriptsFolder,
     UninstallEntry(String),
     /// Download Deno, then run the command that needed it.
     InstallRuntime,
@@ -283,6 +287,10 @@ pub enum FormPurpose {
     Alias {
         key: String,
     },
+    ScriptArguments {
+        id: String,
+    },
+    NewScript,
     KeyHotkey {
         key: String,
     },
@@ -318,6 +326,15 @@ pub enum FrameKind {
     /// Store: "Install X? It will be allowed to…".
     ConfirmInstall {
         id: String,
+    },
+    /// What a script command printed (`output` and `list` modes).
+    Script {
+        id: String,
+        title: String,
+        arguments: Vec<String>,
+        /// `None` while it runs; then its output, or an error with the output.
+        result: Option<Result<String, String>>,
+        list: bool,
     },
     /// "This extension needs Deno": shown when the runtime is missing.
     InstallRuntime {

@@ -189,6 +189,33 @@ Built in:
 - **Switch Windows**: Hyprland, Sway, niri and X11.
 - **Change Theme**: light, dark, or following the system.
 
+## Script commands
+
+Any script can be a command, in any language, without the SDK. Put it in
+`~/.config/backslash/scripts/` (or run **Create Script Command**), make it
+executable, and describe it in its first comment lines:
+
+```sh
+#!/bin/bash
+# title: Restart Wi-Fi
+# description: Turns Wi-Fi off and on again
+# icon: 📶
+# mode: silent
+nmcli radio wifi off && nmcli radio wifi on
+```
+
+| Key | Meaning |
+|---|---|
+| `title` | Required: what you search for |
+| `mode` | `silent` (runs in the background, tells you only if it fails), `output` (shows what it prints), `list` (one item per printed line, to paste or copy), `paste` (pastes what it prints) |
+| `argument` | Asked before running, passed as `$1`, `$2`…: `# argument: name Placeholder`, or `name?` when optional; repeatable |
+| `description`, `icon`, `keywords` | Shown and searched |
+| `confirm` | A question asked before running |
+
+`//` and `--` comments work too (Node, Lua…). Script commands get aliases and
+hotkeys like everything else. They run as you, unsandboxed: they are your own
+files.
+
 ## Make it yours
 
 Everything is in the **Settings** command: theme, shortcut, launch at login,

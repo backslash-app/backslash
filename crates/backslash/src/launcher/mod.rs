@@ -26,6 +26,7 @@ use backslash_core::host::{Incoming, RpcError, Session};
 use backslash_core::manifest::Runtime;
 use backslash_core::protocol::{self as proto, Effect, FieldKind, Filtering, FormView, View};
 use backslash_core::registry::{CommandEntry, Registry};
+use backslash_core::scripts::{self, Mode as ScriptMode, Script};
 use backslash_core::search::{Ranker, Usage};
 use backslash_core::system::clipboard::ClipboardHistory;
 use backslash_core::system::files;
@@ -184,6 +185,8 @@ pub(super) struct State {
     paste: Option<paste::Method>,
     /// App id of the window focused before the launcher showed (paste target).
     paste_target: Option<String>,
+    /// Script commands from ~/.config/backslash/scripts.
+    scripts: Vec<Script>,
 }
 
 pub struct Launcher {
@@ -462,6 +465,7 @@ impl Launcher {
                 desktop: welcome::Desktop { shortcut: hotkey::Status::Disabled, layer_shell: false },
                 paste: paste::detect(),
                 paste_target: None,
+                scripts: scripts::discover(&[scripts::dir()]),
             }),
             dev_dir,
             setting_query: Cell::new(false),
@@ -902,6 +906,7 @@ impl Launcher {
         s.commands = registry.commands(|id| config.is_enabled(id));
         s.registry = registry;
         s.autostart = autostart::enabled();
+        s.scripts = scripts::discover(&[scripts::dir()]);
     }
 
     // -----------------------------------------------------------------------
@@ -925,6 +930,7 @@ impl Launcher {
                 FrameKind::Approval { .. } => ("Permissions".to_string(), "detail"),
                 FrameKind::ConfirmInstall { .. } => ("Extensions".to_string(), "detail"),
                 FrameKind::InstallRuntime { .. } => ("Runtime".to_string(), "detail"),
+                FrameKind::Script { title, list, .. } => (title.clone(), if *list { "list" } else { "detail" }),
             };
             (s.frames.len(), title, page)
         };
@@ -968,6 +974,21 @@ impl Launcher {
                     }
                     let rows = rows::list_rows(&mut s.ranker, list, &query, &session.extension_id);
                     (rows, list.placeholder.clone().unwrap_or_else(|| "Search…".into()), list.empty.clone())
+                }
+                FrameKind::Script { result, .. } => {
+                    self.spinner.set_spinning(result.is_none());
+                    let empty = match result {
+                        None => proto::EmptyState { title: "Running…".into(), description: None, icon: None },
+                        Some(Err(e)) => proto::EmptyState {
+                            title: "The script failed".into(),
+                            description: Some(e.clone()),
+                            icon: None,
+                        },
+                        Some(Ok(_)) => {
+                            proto::EmptyState { title: "It printed nothing".into(), description: None, icon: None }
+                        }
+                    };
+                    (rows::script_lines(s, &query), "Filter…".to_string(), Some(empty))
                 }
                 _ => unreachable!("render_list on a non-list frame"),
             }
@@ -1148,6 +1169,21 @@ impl Launcher {
                 };
                 &approval
             }
+            Some(FrameKind::Script { title, result, .. }) => {
+                self.spinner.set_spinning(result.is_none());
+                let fence = |t: &str| format!("```\n{}\n```", t.trim_end());
+                let markdown = match result {
+                    None => "Running…".to_string(),
+                    Some(Ok(out)) if out.trim().is_empty() => "_It printed nothing._".to_string(),
+                    Some(Ok(out)) => fence(out),
+                    Some(Err(e)) => {
+                        format!("**{}**", e.lines().next().unwrap_or("Failed"))
+                            + &e.split_once('\n').map(|(_, rest)| format!("\n\n{}", fence(rest))).unwrap_or_default()
+                    }
+                };
+                approval = proto::DetailView { title: Some(title.clone()), markdown, ..Default::default() };
+                &approval
+            }
             Some(FrameKind::InstallRuntime { .. }) => {
                 approval = proto::DetailView {
                     title: Some("Deno".into()),
@@ -1284,6 +1320,33 @@ impl Launcher {
                         UiAction::new("Install", Op::InstallEntry(id.clone())).icon("object-select"),
                         UiAction::new("Cancel", Op::Back).icon("window-close"),
                     ]
+                }
+                FrameKind::Script { id, arguments, result, list, .. } => {
+                    let path = s.scripts.iter().find(|x| &x.id == id).map(|x| x.path.display().to_string());
+                    let mut actions = Vec::new();
+                    if let (false, Some(Ok(out))) = (*list, result) {
+                        if s.paste.is_some() {
+                            actions.push(
+                                UiAction::new("Paste Output", Op::Paste(out.trim_end().to_string())).icon("edit-paste"),
+                            );
+                        }
+                        actions
+                            .push(UiAction::new("Copy Output", Op::Copy(out.trim_end().to_string())).icon("edit-copy"));
+                    }
+                    actions.push(
+                        UiAction::new("Run Again", Op::RunScript(id.clone(), Some(arguments.clone())))
+                            .icon("view-refresh")
+                            .shortcut("<Ctrl>r"),
+                    );
+                    if let Some(path) = path {
+                        actions.push(UiAction::new("Edit Script", Op::Open(path)).icon("document-edit"));
+                    }
+                    if *list {
+                        let mut row_actions = self.selected_row().map(|r| r.actions).unwrap_or_default();
+                        row_actions.extend(actions);
+                        return row_actions;
+                    }
+                    return actions;
                 }
                 FrameKind::InstallRuntime { .. } => {
                     return vec![
@@ -1918,6 +1981,16 @@ impl Launcher {
                     self.fail(format!("Could not start {program}: {e}"));
                 }
             }
+            Op::RunScript(id, arguments) => self.run_script(&id, arguments),
+            Op::NewScript => self.push(FrameKind::Form { purpose: FormPurpose::NewScript, form: new_script_form() }),
+            Op::OpenScriptsFolder => {
+                let dir = scripts::dir();
+                let _ = std::fs::create_dir_all(&dir);
+                match apps::open(&dir.display().to_string()) {
+                    Ok(()) => self.hide(),
+                    Err(e) => self.fail(e),
+                }
+            }
             Op::FinishWelcome => {
                 welcome::mark_seen();
                 {
@@ -2122,6 +2195,38 @@ impl Launcher {
                         self.start_command(&command_id, Some(args));
                     }
                     Err(e) => self.fail(e),
+                }
+            }
+            FormPurpose::ScriptArguments { id } => {
+                let names: Vec<String> = {
+                    let s = self.state.borrow();
+                    let Some(script) = s.scripts.iter().find(|x| x.id == id) else { return };
+                    script.arguments.iter().map(|a| a.name.clone()).collect()
+                };
+                let args = names.iter().map(|n| text(n)).collect();
+                self.pop();
+                self.run_script(&id, Some(args));
+            }
+            FormPurpose::NewScript => {
+                let title = text("title");
+                let mode = match text("mode").as_str() {
+                    "output" => ScriptMode::Output,
+                    "list" => ScriptMode::List,
+                    "paste" => ScriptMode::Paste,
+                    _ => ScriptMode::Silent,
+                };
+                match scripts::create(&scripts::dir(), &title, mode) {
+                    Ok(path) => {
+                        self.pop();
+                        self.reload();
+                        let _ = apps::open(&path.display().to_string());
+                        self.show_toast(
+                            &format!("Created {}: edit it, then search “{title}”", files::tilde(&path)),
+                            proto::ToastStyle::Success,
+                        );
+                        self.render();
+                    }
+                    Err(e) => self.fail(format!("Could not create the script: {e}")),
                 }
             }
             FormPurpose::Preferences { extension_id, then_run } => {
@@ -2697,6 +2802,95 @@ impl Launcher {
         });
     }
 
+    /// Runs a script command: asks for its arguments first, then runs it the
+    /// way its mode says.
+    fn run_script(self: &Rc<Self>, id: &str, arguments: Option<Vec<String>>) {
+        let Some(script) = self.state.borrow().scripts.iter().find(|x| x.id == id).cloned() else {
+            return self.fail(format!("No script command {id}"));
+        };
+        let arguments = match arguments {
+            Some(a) => a,
+            None if !script.arguments.is_empty() => {
+                let form = script_arguments_form(&script);
+                return self.push(FrameKind::Form { purpose: FormPurpose::ScriptArguments { id: id.into() }, form });
+            }
+            None => Vec::new(),
+        };
+        if !scripts::is_executable(&script.path) {
+            return self.fail(format!("{} is not executable: run chmod +x on it", files::tilde(&script.path)));
+        }
+        self.record(format!("script:{id}"));
+        let list = script.mode == ScriptMode::List;
+        match script.mode {
+            ScriptMode::Output | ScriptMode::List => {
+                let kind = FrameKind::Script {
+                    id: id.into(),
+                    title: script.title.clone(),
+                    arguments: arguments.clone(),
+                    result: None,
+                    list,
+                };
+                // Run Again replaces the view instead of stacking another.
+                let rerun = matches!(self.state.borrow().frames.last().map(|f| &f.kind), Some(FrameKind::Script { id: x, .. }) if x == id);
+                if rerun {
+                    self.state.borrow_mut().frames.last_mut().unwrap().kind = kind;
+                    self.render();
+                } else {
+                    self.push(kind);
+                }
+            }
+            ScriptMode::Silent => self.hide(),
+            ScriptMode::Paste => self.spinner.set_spinning(true),
+        }
+        let (tx, rx) = async_channel::bounded(1);
+        let path = script.path.clone();
+        std::thread::spawn(move || {
+            let _ = tx.send_blocking(execute_script(&path, &arguments));
+        });
+        let weak = Rc::downgrade(self);
+        let id = id.to_string();
+        let title = script.title.clone();
+        glib::spawn_future_local(async move {
+            let result = rx.recv().await.unwrap_or_else(|_| Err("the script thread died".into()));
+            let Some(l) = weak.upgrade() else { return };
+            match script.mode {
+                ScriptMode::Output | ScriptMode::List => {
+                    let mut s = l.state.borrow_mut();
+                    let Some(frame) = s
+                        .frames
+                        .iter_mut()
+                        .rev()
+                        .find(|f| matches!(&f.kind, FrameKind::Script { id: x, .. } if *x == id))
+                    else {
+                        return;
+                    };
+                    if let FrameKind::Script { result: r, .. } = &mut frame.kind {
+                        *r = Some(result);
+                    }
+                    drop(s);
+                    l.render();
+                }
+                ScriptMode::Paste => {
+                    l.spinner.set_spinning(false);
+                    match result {
+                        Ok(out) => l.paste_text(out.trim_end().to_string()),
+                        Err(e) => l.fail(e),
+                    }
+                }
+                ScriptMode::Silent => {
+                    if let Err(e) = result {
+                        eprintln!("backslash: {title}: {e}");
+                        if let Some(app) = l.window.application() {
+                            let n = gio::Notification::new(&format!("{title} failed"));
+                            n.set_body(Some(&e));
+                            app.send_notification(Some("script"), &n);
+                        }
+                    }
+                }
+            }
+        });
+    }
+
     /// Pastes (or copies) a snippet, expanding `{date}`, `{time}` and `{clipboard}`.
     fn copy_snippet(self: &Rc<Self>, text: String, paste: bool) {
         let now = glib::DateTime::now_local().ok();
@@ -2825,6 +3019,79 @@ fn matching_shortcut(actions: &[UiAction], key: gdk::Key, mods: gdk::ModifierTyp
                 .is_some_and(|(k, m)| k.to_lower() == key.to_lower() && (m & relevant) == pressed)
         })
         .cloned()
+}
+
+/// Runs a script and returns what it printed; an error carries the exit
+/// status on its first line, then what it printed.
+fn execute_script(path: &std::path::Path, arguments: &[String]) -> Result<String, String> {
+    let out = std::process::Command::new(path)
+        .args(arguments)
+        .current_dir(dirs::home_dir().unwrap_or_else(|| "/".into()))
+        .stdin(std::process::Stdio::null())
+        .output()
+        .map_err(|e| format!("Could not run it: {e}"))?;
+    let stdout = String::from_utf8_lossy(&out.stdout).to_string();
+    if out.status.success() {
+        Ok(stdout)
+    } else {
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        let code = out.status.code().map_or("a signal".to_string(), |c| format!("code {c}"));
+        Err(format!("It exited with {code}\n{}{}", stdout, stderr).trim_end().to_string())
+    }
+}
+
+fn script_arguments_form(script: &Script) -> FormView {
+    FormView {
+        id: None,
+        title: Some(script.title.clone()),
+        submit_title: Some("Run".into()),
+        fields: script
+            .arguments
+            .iter()
+            .map(|a| proto::Field {
+                id: a.name.clone(),
+                title: title_case(&a.name),
+                placeholder: a.placeholder.clone(),
+                required: a.required,
+                value: None,
+                kind: FieldKind::Text,
+            })
+            .collect(),
+    }
+}
+
+fn new_script_form() -> FormView {
+    let option = |value: &str, title: &str| proto::DropdownOption { value: value.into(), title: title.into() };
+    FormView {
+        id: None,
+        title: Some("New Script Command".into()),
+        submit_title: Some("Create and Edit".into()),
+        fields: vec![
+            proto::Field {
+                id: "title".into(),
+                title: "Title".into(),
+                placeholder: Some("Restart Wi-Fi".into()),
+                required: true,
+                value: None,
+                kind: FieldKind::Text,
+            },
+            proto::Field {
+                id: "mode".into(),
+                title: "When it runs".into(),
+                placeholder: None,
+                required: true,
+                value: None,
+                kind: FieldKind::Dropdown {
+                    options: vec![
+                        option("silent", "Run in the background"),
+                        option("output", "Show what it prints"),
+                        option("list", "List what it prints, one item per line"),
+                        option("paste", "Paste what it prints"),
+                    ],
+                },
+            },
+        ],
+    }
 }
 
 fn arguments_form(command: &backslash_core::manifest::CommandDef) -> FormView {

@@ -205,6 +205,13 @@ pub fn list() -> Result<()> {
             println!("    {}/{}{args}  {}", m.extension.id, c.name, c.title);
         }
     }
+    let scripts = backslash_core::scripts::discover(&[backslash_core::scripts::dir()]);
+    if !scripts.is_empty() {
+        println!("scripts — {}", backslash_core::scripts::dir().display());
+        for script in scripts {
+            println!("    {:<24} {}", script.id, script.title);
+        }
+    }
     for (dir, err) in &registry.errors {
         eprintln!("error: {}: {err}", dir.display());
     }

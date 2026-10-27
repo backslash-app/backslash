@@ -36,6 +36,7 @@ the CLI and two bundled extensions. Next steps, roughly in order.
 - [ ] OAuth helper (PKCE, loopback redirect).
 - [x] Hot reload in `backslash dev` (watch files, re-run the open command).
 - [ ] Sandbox exec-runtime extensions with bubblewrap.
+- [x] Script commands: any executable with a few comment lines, in any language.
 - [ ] Python SDK.
 
 ## Quality
