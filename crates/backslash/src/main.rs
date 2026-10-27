@@ -2,6 +2,7 @@
 
 mod apps;
 mod autostart;
+mod catalog_cli;
 mod cli;
 mod clipboard;
 mod currency;
@@ -64,6 +65,34 @@ enum Cmd {
     },
     /// Check the installation: runtime, extensions, desktop integration.
     Doctor,
+    /// Install an extension from the registry (`github`) or a git repository (URL or path).
+    Install {
+        /// Registry id, or git URL / local repository path.
+        target: String,
+        /// Branch, tag or commit (git sources).
+        #[arg(long)]
+        rev: Option<String>,
+        /// Folder of the extension inside the repository (git sources).
+        #[arg(long)]
+        path: Option<String>,
+        /// Don't ask for confirmation.
+        #[arg(short, long)]
+        yes: bool,
+    },
+    /// Remove an extension installed in your user folder.
+    Uninstall { id: String },
+    /// Update installed extensions (all, or one).
+    Update {
+        id: Option<String>,
+        #[arg(short, long)]
+        yes: bool,
+    },
+    /// List extensions with updates available.
+    Outdated,
+    /// Search the extension registry.
+    Search { query: Option<String> },
+    /// Print the registry entry for the extension in a git repository.
+    Publish { dir: Option<PathBuf> },
 }
 
 fn main() {
@@ -92,5 +121,11 @@ fn run(args: Args) -> anyhow::Result<()> {
         Some(Cmd::List) => cli::list(),
         Some(Cmd::New { name, dir }) => scaffold::create(&name, dir.as_deref()),
         Some(Cmd::Doctor) => cli::doctor(),
+        Some(Cmd::Install { target, rev, path, yes }) => catalog_cli::install(&target, rev, path, yes),
+        Some(Cmd::Uninstall { id }) => catalog_cli::uninstall(&id),
+        Some(Cmd::Update { id, yes }) => catalog_cli::update(id.as_deref(), yes),
+        Some(Cmd::Outdated) => catalog_cli::outdated(),
+        Some(Cmd::Search { query }) => catalog_cli::search(query.as_deref()),
+        Some(Cmd::Publish { dir }) => catalog_cli::publish(dir.as_deref()),
     }
 }

@@ -41,6 +41,8 @@ pub struct Config {
     pub layer_shell: bool,
     /// Applications whose desktop id is listed here are hidden from results.
     pub hidden_apps: Vec<String>,
+    /// Git URL of the extension registry.
+    pub registry: String,
     pub clipboard: ClipboardConfig,
     pub extensions: BTreeMap<String, ExtensionConfig>,
     pub quicklinks: Vec<Quicklink>,
@@ -54,6 +56,7 @@ impl Default for Config {
             hotkey: "Super+Space".into(),
             layer_shell: true,
             hidden_apps: Vec::new(),
+            registry: crate::catalog::DEFAULT_REGISTRY.into(),
             clipboard: ClipboardConfig::default(),
             extensions: BTreeMap::new(),
             quicklinks: Vec::new(),

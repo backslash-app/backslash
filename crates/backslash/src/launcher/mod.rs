@@ -10,6 +10,7 @@
 mod model;
 mod rows;
 mod settings;
+mod store;
 mod widgets;
 
 use std::cell::{Cell, RefCell};
@@ -123,6 +124,7 @@ pub(super) struct State {
     window_backend: Option<Backend>,
     currency: Currency,
     autostart: bool,
+    catalog: store::CatalogState,
 }
 
 pub struct Launcher {
@@ -379,6 +381,7 @@ impl Launcher {
                 window_backend: Backend::detect(),
                 currency: Currency::new(),
                 autostart: autostart::enabled(),
+                catalog: store::CatalogState::default(),
             }),
             dev_dir,
             setting_query: Cell::new(false),
@@ -761,6 +764,7 @@ impl Launcher {
                 FrameKind::Extension { view: View::Form(_), title, .. } => (title.clone(), "form"),
                 FrameKind::Form { form, .. } => (form.title.clone().unwrap_or_default(), "form"),
                 FrameKind::Approval { .. } => ("Permissions".to_string(), "detail"),
+                FrameKind::ConfirmInstall { .. } => ("Extensions".to_string(), "detail"),
             };
             (s.frames.len(), title, page)
         };
@@ -853,6 +857,16 @@ impl Launcher {
         let approval;
         let d = match s.frames.last().map(|f| &f.kind) {
             Some(FrameKind::Extension { view: View::Detail(d), .. }) => d,
+            Some(FrameKind::ConfirmInstall { id }) => {
+                let loc = backslash_core::catalog::Locations::user(&s.config);
+                let Some(entry) = s.catalog.entries.iter().find(|e| &e.id == id) else { return };
+                approval = proto::DetailView {
+                    title: Some(entry.title.clone()),
+                    markdown: store::confirm_markdown(&loc, entry),
+                    ..Default::default()
+                };
+                &approval
+            }
             Some(FrameKind::Approval { extension_id, .. }) => {
                 let Some(ext) = s.registry.find(extension_id) else { return };
                 approval = proto::DetailView {
@@ -973,6 +987,12 @@ impl Launcher {
             match &s.frames.last().unwrap().kind {
                 FrameKind::Extension { view: View::Detail(d), .. } => return from(&d.actions),
                 FrameKind::Extension { view: View::Form(_), .. } | FrameKind::Form { .. } => return Vec::new(),
+                FrameKind::ConfirmInstall { id } => {
+                    return vec![
+                        UiAction::new("Install", Op::InstallEntry(id.clone())).icon("object-select"),
+                        UiAction::new("Cancel", Op::Back).icon("window-close"),
+                    ]
+                }
                 FrameKind::Approval { .. } => {
                     return vec![
                         UiAction::new("Allow and Run", Op::Approve).icon("object-select"),
@@ -1552,6 +1572,19 @@ impl Launcher {
                 }
             }
             Op::Back => self.pop(),
+            Op::ReviewInstall(id) => self.push(FrameKind::ConfirmInstall { id }),
+            Op::InstallEntry(id) => self.install_entry(id),
+            Op::UninstallEntry(id) => {
+                let loc = backslash_core::catalog::Locations::user(&self.state.borrow().config);
+                match backslash_core::catalog::uninstall(&loc, &id) {
+                    Ok(()) => {
+                        self.reload();
+                        self.show_toast("Uninstalled", proto::ToastStyle::Success);
+                        self.render();
+                    }
+                    Err(e) => self.fail(format!("{e:#}")),
+                }
+            }
         }
     }
 
@@ -2036,6 +2069,7 @@ impl Launcher {
                 s.files.recent = files::recent(30);
                 s.files.results.clear();
             }
+            Builtin::Store => self.refresh_catalog(),
             Builtin::Clipboard | Builtin::Theme | Builtin::Settings => {}
         }
         self.record(format!("builtin:{}", builtin_id(builtin)));
@@ -2078,6 +2112,80 @@ impl Launcher {
         });
     }
 
+    /// Shows the cached registry at once, and refreshes it in the background
+    /// when it is older than an hour.
+    fn refresh_catalog(self: &Rc<Self>) {
+        let loc = backslash_core::catalog::Locations::user(&self.state.borrow().config);
+        self.state.borrow_mut().catalog.entries = backslash_core::catalog::entries(&loc);
+        let stale = backslash_core::catalog::age(&loc).is_none_or(|age| age > Duration::from_secs(3600));
+        if !stale || self.state.borrow().catalog.syncing {
+            return;
+        }
+        self.state.borrow_mut().catalog.syncing = true;
+        self.spinner.set_spinning(true);
+        let (tx, rx) = async_channel::bounded(1);
+        let thread_loc = loc.clone();
+        std::thread::spawn(move || {
+            let _ = tx.send_blocking(backslash_core::catalog::sync(&thread_loc).map_err(|e| format!("{e:#}")));
+        });
+        let weak = Rc::downgrade(self);
+        glib::spawn_future_local(async move {
+            let result = rx.recv().await.unwrap_or_else(|_| Err("sync thread died".into()));
+            let Some(l) = weak.upgrade() else { return };
+            l.spinner.set_spinning(false);
+            {
+                let mut s = l.state.borrow_mut();
+                s.catalog.syncing = false;
+                s.catalog.entries = backslash_core::catalog::entries(&loc);
+                s.catalog.error = result.as_ref().err().cloned();
+            }
+            if let Err(e) = result {
+                l.fail(format!("Could not update the extension list: {e}"));
+            }
+            if matches!(l.state.borrow().frames.last().map(|f| &f.kind), Some(FrameKind::Builtin(Builtin::Store))) {
+                l.render();
+            }
+        });
+    }
+
+    /// Downloads, verifies and installs a registry entry on a worker thread.
+    /// Confirming the install screen is the user's consent to its permissions.
+    fn install_entry(self: &Rc<Self>, id: String) {
+        let (entry, loc) = {
+            let s = self.state.borrow();
+            let Some(entry) = s.catalog.entries.iter().find(|e| e.id == id).cloned() else { return };
+            (entry, backslash_core::catalog::Locations::user(&s.config))
+        };
+        if self.state.borrow().catalog.busy.is_some() {
+            return self.fail("Another installation is running");
+        }
+        self.state.borrow_mut().catalog.busy = Some(id.clone());
+        if matches!(self.state.borrow().frames.last().map(|f| &f.kind), Some(FrameKind::ConfirmInstall { .. })) {
+            self.pop();
+        }
+        self.spinner.set_spinning(true);
+        self.render();
+        let (tx, rx) = async_channel::bounded(1);
+        std::thread::spawn(move || {
+            let result = backslash_core::catalog::install_entry(&loc, &entry)
+                .and_then(|(_, manifest)| approvals::approve(&manifest).map(|_| manifest.extension.title));
+            let _ = tx.send_blocking(result.map_err(|e| format!("{e:#}")));
+        });
+        let weak = Rc::downgrade(self);
+        glib::spawn_future_local(async move {
+            let result = rx.recv().await.unwrap_or_else(|_| Err("install thread died".into()));
+            let Some(l) = weak.upgrade() else { return };
+            l.spinner.set_spinning(false);
+            l.state.borrow_mut().catalog.busy = None;
+            l.reload();
+            match result {
+                Ok(title) => l.show_toast(&format!("{title} installed"), proto::ToastStyle::Success),
+                Err(e) => l.fail(e),
+            }
+            l.render();
+        });
+    }
+
     /// Copies a snippet, expanding `{date}`, `{time}` and `{clipboard}`.
     fn copy_snippet(self: &Rc<Self>, text: String) {
         let now = glib::DateTime::now_local().ok();
@@ -2106,6 +2214,7 @@ fn builtin_id(builtin: Builtin) -> &'static str {
         Builtin::Windows => "windows",
         Builtin::Theme => "theme",
         Builtin::Settings => "settings",
+        Builtin::Store => "store",
     }
 }
 

@@ -13,11 +13,23 @@ fn path() -> PathBuf {
     paths::state_dir().join("approved.json")
 }
 
-/// What the user agrees to, as readable lines. Changes when permissions grow.
+/// What the user agrees to, one readable line per permission, so an update
+/// adding one host shows exactly that host.
 pub fn requested(manifest: &Manifest) -> Vec<String> {
-    let mut lines = manifest.permissions.describe();
+    let p = &manifest.permissions;
+    let mut lines = Vec::new();
     if matches!(manifest.runtime, Runtime::Exec { .. }) {
-        lines.insert(0, "Run as a regular program, without sandbox".into());
+        lines.push("Run as a regular program, without sandbox".to_string());
+    }
+    for host in &p.net {
+        lines.push(if host == "*" { "Access any website".into() } else { format!("Access {host}") });
+    }
+    lines.extend(p.run.iter().map(|x| format!("Run {x}")));
+    lines.extend(p.read.iter().map(|x| format!("Read {x}")));
+    lines.extend(p.write.iter().map(|x| format!("Write {x}")));
+    lines.extend(p.env.iter().map(|x| format!("Read the environment variable {x}")));
+    if p.clipboard_read {
+        lines.push("Read the clipboard".into());
     }
     lines
 }

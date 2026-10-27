@@ -77,7 +77,18 @@ export default list({
 ```
 
 That's it. `backslash new <name>` scaffolds one, `backslash dev` loads it with
-logs in your terminal. Read the [extension guide](docs/EXTENSIONS.md).
+logs in your terminal and reloads it when you save. `backslash publish` prepares
+its registry entry. Read the [extension guide](docs/EXTENSIONS.md).
+
+## Extensions
+
+Open **Browse Extensions** (or `backslash search`, `backslash install github`).
+The [registry](https://github.com/backslash-app/plugins) lists extensions that
+live in their authors' repositories, each pinned to a reviewed commit with a
+checksum: you see exactly what an extension may do before installing, and
+Backslash refuses any file that differs from what was reviewed. First-party
+extensions: GitHub, Packages (apt/dnf/pacman/zypper/Flathub), Services
+(systemd), Containers (Docker/Podman), Emoji & Symbols.
 
 ## Install
 

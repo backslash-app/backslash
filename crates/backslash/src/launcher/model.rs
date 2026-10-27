@@ -19,6 +19,7 @@ pub enum Builtin {
     Windows,
     Theme,
     Settings,
+    Store,
 }
 
 impl Builtin {
@@ -29,6 +30,7 @@ impl Builtin {
             Self::Windows => "Switch Windows",
             Self::Theme => "Theme",
             Self::Settings => "Settings",
+            Self::Store => "Extensions",
         }
     }
 
@@ -39,6 +41,7 @@ impl Builtin {
             Self::Files => ("Search your files", "Type at least two letters. Recent files appear here."),
             Self::Windows => ("No open windows", ""),
             Self::Theme | Self::Settings => ("", ""),
+            Self::Store => ("No extensions found", "Check your connection, then open the store again."),
         }
     }
 
@@ -49,6 +52,7 @@ impl Builtin {
             Self::Windows => "Search open windows…",
             Self::Theme => "Choose a theme…",
             Self::Settings => "Search settings…",
+            Self::Store => "Search extensions…",
         }
     }
 }
@@ -85,6 +89,10 @@ pub enum Op {
     UnhideApp(String),
     /// Allow the extension of the approval screen, then run its command.
     Approve,
+    /// Store: show what an extension will be allowed to do, then install.
+    ReviewInstall(String),
+    InstallEntry(String),
+    UninstallEntry(String),
     Back,
 }
 
@@ -284,6 +292,10 @@ pub enum FrameKind {
         arguments: Option<Map<String, Value>>,
     },
     Builtin(Builtin),
+    /// Store: "Install X? It will be allowed to…".
+    ConfirmInstall {
+        id: String,
+    },
 }
 
 pub struct Frame {

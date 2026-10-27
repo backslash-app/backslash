@@ -4,6 +4,7 @@
 
 pub mod approvals;
 pub mod calc;
+pub mod catalog;
 pub mod config;
 pub mod host;
 pub mod manifest;

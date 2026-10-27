@@ -25,8 +25,10 @@ the CLI and two bundled extensions. Next steps, roughly in order.
       in the system keyring (libsecret), quicklinks, snippets, hidden apps.
 - [x] Ask for missing required preferences with a form on first run.
 - [x] Permission prompt on first run and when permissions grow.
-- [ ] Registry: a git index of extensions pinned by commit hash,
-      `backslash install <id>`, update checks, store view in the launcher.
+- [x] Registry: a git index of extensions pinned by commit hash and checksum,
+      `backslash install/update/uninstall/search/publish`, store view.
+- [ ] Update notifications in the launcher (a badge on Browse Extensions).
+- [ ] Signed registry commits, so a compromised mirror cannot serve entries.
 - [ ] `Grid` view (emoji, images), list item detail pane, menu-bar/tray items.
 - [ ] Background commands on an interval.
 - [ ] OAuth helper (PKCE, loopback redirect).

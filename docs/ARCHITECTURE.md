@@ -40,7 +40,7 @@
 
 | Path | Role |
 |---|---|
-| `crates/backslash-core` | Protocol types, manifest parsing, extension host, ranking, calculator, unit conversions, config, and `system/` (clipboard history store, file search, window backends). No GTK. |
+| `crates/backslash-core` | Protocol types, manifest parsing, extension host, ranking, calculator, unit conversions, config, `catalog` (registry: fetch, verify, install, publish), `approvals`, `secrets`, and `system/` (clipboard history store, file search, window backends). No GTK. |
 | `crates/backslash` | GTK4 window (`launcher/`: state and navigation, rows, widgets), CLI (`cli.rs`), app discovery (`apps.rs`), themes (`theme.rs` palettes + `style.css` layout), global shortcut portal (`hotkey.rs`), layer-shell (`layer.rs`), clipboard watcher, exchange rates, autostart. |
 | `sdk/` | TypeScript API (`mod.ts`) and protocol runtime (`runtime.ts`), run by Deno. |
 | `extensions/` | Bundled extensions, also the reference examples. |

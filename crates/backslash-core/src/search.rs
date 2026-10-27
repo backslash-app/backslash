@@ -65,9 +65,11 @@ impl Ranker {
         let mut scored: Vec<(usize, u32)> = matches
             .into_iter()
             .filter(|&(_, base, exact)| exact || base * 3 >= best * 2)
-            .map(|(i, base, _)| {
+            .map(|(i, base, exact)| {
                 let boost = usage.map_or(0, |(usage, id)| usage.boost(&id(&candidates[i]), query));
-                (i, base + boost)
+                // The query typed verbatim beats letters scattered in a longer title.
+                let verbatim = if exact && !query.is_empty() { base / 2 } else { 0 };
+                (i, base + verbatim + boost)
             })
             .collect();
         // Stable sort keeps the source order (e.g. alphabetical) for ties.
@@ -210,6 +212,16 @@ mod tests {
         assert_eq!(titles(&r.rank("brow", &c, None), &c), vec!["Firefox"]);
         assert_eq!(titles(&r.rank("task", &c, None), &c), vec!["System Monitor"]);
         assert_eq!(r.rank("", &c, None).len(), 3);
+    }
+
+    #[test]
+    fn verbatim_keyword_beats_scattered_title() {
+        let c = vec![
+            C("Reversed Rotated Floral Heart Bullet", vec![]),
+            C("Heavy Black Heart", vec!["red heart love".into()]),
+        ];
+        let ranked = Ranker::default().rank("red heart", &c, None);
+        assert_eq!(c[ranked[0].0].0, "Heavy Black Heart");
     }
 
     #[test]

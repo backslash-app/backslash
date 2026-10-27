@@ -250,7 +250,23 @@ Exec extensions are not sandboxed; `backslash list` flags them as such.
   asks again. Extensions declaring no permission run without a prompt.
   From a terminal, `backslash run` asks the same question (or `--yes`).
 
-## Installing
+## Sharing and installing
 
-Copy or symlink the folder into `~/.local/share/backslash/extensions/`.
-Extensions are rescanned every time the launcher opens.
+Users install extensions from the **Browse Extensions** command, or:
+
+```sh
+backslash install github                          # from the registry
+backslash install https://github.com/you/repo     # straight from git (not reviewed)
+backslash install ./my-repo --path extensions/x   # a local repository
+backslash update                                  # update everything installed
+```
+
+To list yours in the registry, push it to a public git repository and run
+`backslash publish`: it prints the registry entry for your last commit (commit
+hash, checksum of the files, permissions). Open a pull request adding it to
+[backslash-app/plugins](https://github.com/backslash-app/plugins) as
+`registry/<id>.toml`. Your code stays in your repository; Backslash installs
+exactly the reviewed commit and refuses anything that differs.
+
+For local development, copy or symlink the folder into
+`~/.local/share/backslash/extensions/`, or use `backslash dev`.

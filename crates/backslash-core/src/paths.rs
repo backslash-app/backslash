@@ -20,6 +20,11 @@ pub fn data_dir() -> PathBuf {
     base(dirs::data_dir(), ".local/share")
 }
 
+/// `~/.cache/backslash`: the extension catalog, downloads.
+pub fn cache_dir() -> PathBuf {
+    base(dirs::cache_dir(), ".cache")
+}
+
 /// `~/.local/state/backslash`: usage history, generated import maps.
 pub fn state_dir() -> PathBuf {
     base(dirs::state_dir(), ".local/state")
