@@ -347,3 +347,56 @@ export async function exec(
   }
   return decode(stdout);
 }
+
+// ---------------------------------------------------------------------------
+// OAuth
+
+/**
+ * An OAuth 2.0 service. The launcher signs in with the authorization code
+ * flow and PKCE, the browser coming back to `http://127.0.0.1:<port>/callback`
+ * (register that redirect with the service; `redirectPort` fixes the port
+ * for services that need an exact match).
+ *
+ * The token URL's host must be in your `[permissions] net`.
+ */
+export interface OAuthProvider {
+  /** Names the sign-in; one per provider and extension. */
+  id: string;
+  /** The service's name, shown while signing in. */
+  title?: string;
+  authorizeUrl: string;
+  tokenUrl: string;
+  clientId: string;
+  /** For services that require one even with PKCE. */
+  clientSecret?: string;
+  scopes?: string[];
+  /** Default `" "`; some services use `","`. */
+  scopeSeparator?: string;
+  /** Extra query parameters for the authorize URL. */
+  params?: Record<string, string>;
+  redirectPort?: number;
+  /** Default `/callback`. */
+  redirectPath?: string;
+  /** `"basic"` sends the client credentials as HTTP Basic auth. */
+  clientAuth?: "body" | "basic";
+}
+
+function signIn(provider: OAuthProvider, interactive: boolean): Promise<Json> {
+  return rpc().request("oauth/token", { provider: provider as unknown as Json, interactive });
+}
+
+export const oauth = {
+  /**
+   * A valid access token: the saved one, refreshed when it expired, or a new
+   * one after the user signs in through the browser. Tokens are kept in the
+   * system keyring, never in your extension's storage.
+   */
+  token: async (provider: OAuthProvider): Promise<string> => String(await signIn(provider, true)),
+  /** The saved token (refreshed if needed) without asking the user, if any. */
+  savedToken: async (provider: OAuthProvider): Promise<string | undefined> =>
+    (await signIn(provider, false) ?? undefined) as string | undefined,
+  /** Forgets the tokens, e.g. for a "Sign Out" action. */
+  signOut: async (provider: OAuthProvider): Promise<void> => {
+    await rpc().request("oauth/signOut", { provider: provider as unknown as Json });
+  },
+};

@@ -45,6 +45,14 @@ A cancelled request should answer with error code `-32800`.
 | `storage/get` | `{ key }` | value or `null` |
 | `storage/set` | `{ key, value }` (`null` deletes) | `null` |
 | `storage/keys` | `{}` | string[] |
+| `oauth/token` | `{ provider, interactive }` | access token; `null` when not signed in and `interactive` is `false` |
+| `oauth/signOut` | `{ provider }` | `null` |
+
+`provider` is an object with `id`, `authorizeUrl`, `tokenUrl`, `clientId`
+and optionally `title`, `clientSecret`, `scopes`, `scopeSeparator`, `params`,
+`redirectPort`, `redirectPath` and `clientAuth` (`"basic"`), see the SDK's
+`OAuthProvider`. The token URL's host must be in the extension's `net`
+permission.
 
 ## Views
 

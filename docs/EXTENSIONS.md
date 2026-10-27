@@ -242,6 +242,49 @@ const out = await exec("git", ["status"]);    // program must be in permissions.
 usual within the declared permissions. `console.log` goes to the log
 (`backslash dev` prints it), never to the protocol.
 
+## Signing in to a service (OAuth)
+
+For services with OAuth 2.0, describe the provider and ask for a token; the
+launcher does the rest (authorization code with PKCE, the browser, the
+redirect, the refresh):
+
+```ts
+import { list, oauth } from "@backslash/api";
+
+const linear = {
+  id: "linear",
+  title: "Linear",
+  authorizeUrl: "https://linear.app/oauth/authorize",
+  tokenUrl: "https://api.linear.app/oauth/token",
+  clientId: "your-client-id",
+  scopes: ["read"],
+  scopeSeparator: ",",
+};
+
+export default list({
+  items: async () => {
+    const token = await oauth.token(linear); // signs in the first time
+    const res = await fetch("https://api.linear.app/graphql", { headers: { Authorization: `Bearer ${token}` } /* … */ });
+    // …
+  },
+});
+```
+
+- Register `http://127.0.0.1/callback` as the redirect URI with the service
+  (RFC 8252: any port). If it insists on an exact match, set `redirectPort`
+  and register `http://127.0.0.1:<port>/callback`.
+- The token URL's host must be in your `[permissions] net`.
+- Tokens are stored in the system keyring, refreshed when they expire, and
+  never pass through your extension's storage. `oauth.savedToken(provider)`
+  returns the token without ever opening the browser (or `undefined`), and
+  `oauth.signOut(provider)` forgets it.
+- `clientSecret` is there for services that want one even with PKCE; it
+  ships with your extension, so treat it as public, as any desktop app does.
+- Opening the browser usually hides the launcher. Once the user has signed
+  in, the launcher comes back and runs your command again.
+- From a terminal (`backslash run`), saved tokens work; signing in needs the
+  launcher.
+
 ## Dependencies
 
 Import from npm or JSR directly, or map names in `deno.json`:

@@ -10,6 +10,7 @@
 mod model;
 mod rows;
 mod settings;
+mod signin;
 mod store;
 mod welcome;
 mod widgets;
@@ -165,7 +166,7 @@ pub(super) struct State {
     confirm: Option<UiAction>,
     search: Option<(Rc<Session>, u64)>,
     search_timer: Option<glib::SourceId>,
-    toast_timer: Option<glib::SourceId>,
+    toast_serial: Rc<Cell<u64>>,
     form: Vec<(proto::Field, FormInput)>,
     /// Keeps the selection on the same item when a view refreshes.
     selected_key: Option<String>,
@@ -457,7 +458,7 @@ impl Launcher {
                 confirm: None,
                 search: None,
                 search_timer: None,
-                toast_timer: None,
+                toast_serial: Rc::default(),
                 form: Vec::new(),
                 selected_key: None,
                 filter: Filter::All,
@@ -1428,11 +1429,16 @@ impl Launcher {
             proto::ToastStyle::Failure => self.toast.add_css_class("failure"),
             proto::ToastStyle::Info => {}
         }
-        let toast = self.toast.clone();
-        let id = glib::timeout_add_local_once(Duration::from_millis(3500), move || toast.set_text(""));
-        if let Some(old) = self.state.borrow_mut().toast_timer.replace(id) {
-            old.remove();
-        }
+        // Only the latest toast clears it (removing a timer that already
+        // fired would panic, so none is removed).
+        let serial = self.state.borrow().toast_serial.clone();
+        serial.set(serial.get() + 1);
+        let (toast, mine) = (self.toast.clone(), serial.get());
+        glib::timeout_add_local_once(Duration::from_millis(3500), move || {
+            if serial.get() == mine {
+                toast.set_text("");
+            }
+        });
     }
 
     fn fail(&self, err: impl std::fmt::Display) {
@@ -2561,6 +2567,7 @@ impl Launcher {
                         self.hide();
                         Ok(Value::Null)
                     }
+                    "oauth/token" | "oauth/signOut" => return self.oauth_request(session, id, &method, params),
                     _ => Err(RpcError::new(RpcError::METHOD_NOT_FOUND, format!("unknown method {method}"))),
                 };
                 session.respond(id, result);
