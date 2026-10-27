@@ -2,30 +2,40 @@
  * palette in theme.rs. Override anything, colors included, in
  * ~/.config/backslash/style.css, e.g.  @define-color bs_accent #c2410c;  */
 
+window.launcher,
+window.bs-settings {
+  color: @bs_fg;
+  font-family: "Inter", "Inter Variable", "Cantarell", "Noto Sans", sans-serif;
+  font-size: 13.5px;
+}
+
 window.launcher {
   background: transparent;
-  color: @bs_fg;
-  font-family: "Inter", "Manrope", "Cantarell", "Noto Sans", sans-serif;
-  font-size: 14px;
 }
 
 .panel {
   background-color: @bs_bg;
   border: 1px solid @bs_border;
-  border-radius: 18px;
+  border-radius: 14px;
   margin: 14px;
-  box-shadow: 0 22px 56px @bs_shadow;
+  box-shadow: 0 24px 60px @bs_shadow;
+}
+
+.mono,
+.kbd,
+.key {
+  font-family: "JetBrains Mono", "Fira Code", "DejaVu Sans Mono", monospace;
 }
 
 /* --- Search bar ----------------------------------------------------------- */
 
 .header {
-  padding: 10px 16px 10px 20px;
-  min-height: 46px;
+  padding: 0 16px;
+  min-height: 54px;
 }
 
 .header .search-icon {
-  color: @bs_dim;
+  color: @bs_faint;
 }
 
 .header .search {
@@ -33,8 +43,7 @@ window.launcher {
   border: none;
   box-shadow: none;
   outline: none;
-  font-size: 19px;
-  font-weight: 500;
+  font-size: 16px;
   color: @bs_fg;
   caret-color: @bs_accent;
   padding: 0;
@@ -45,32 +54,50 @@ window.launcher {
   color: @bs_faint;
 }
 
-.header .back {
-  min-width: 28px;
-  min-height: 28px;
-  padding: 0;
-  border-radius: 8px;
+.crumb {
   background: @bs_surface;
-  color: @bs_dim;
+  color: @bs_fg;
   border: none;
   box-shadow: none;
+  border-radius: 8px;
+  padding: 3px 9px 3px 5px;
+  min-height: 0;
+  font-size: 12.5px;
+  font-weight: 500;
+}
+
+.crumb:hover {
+  background: alpha(@bs_fg, 0.1);
+}
+
+.crumb .sep {
+  color: @bs_faint;
 }
 
 .chip {
   font-size: 12px;
-  font-weight: 600;
-  padding: 3px 11px;
+  font-weight: 500;
+  padding: 3px 10px;
   min-height: 0;
-  border-radius: 999px;
-  border: none;
+  border-radius: 7px;
+  border: 1px solid @bs_border;
   box-shadow: none;
-  background: @bs_surface;
+  background: none;
   color: @bs_dim;
 }
 
+.chip:hover {
+  background: alpha(@bs_fg, 0.05);
+}
+
 .chip.active {
-  background: @bs_fg;
-  color: @bs_bg;
+  background: @bs_surface;
+  border-color: transparent;
+  color: @bs_fg;
+}
+
+.filters {
+  padding: 8px 16px;
 }
 
 .divider {
@@ -88,15 +115,20 @@ window.launcher {
 }
 
 .results {
-  padding: 8px;
+  padding: 2px 8px 8px;
 }
 
 .results row {
-  border-radius: 12px;
-  padding: 8px 10px;
-  margin: 1px 0;
+  border-radius: 8px;
+  padding: 0 10px;
+  min-height: 40px;
+  margin: 0;
   outline: none;
-  transition: background-color 110ms ease-out;
+  transition: background-color 90ms ease-out;
+}
+
+.compact .results row {
+  min-height: 32px;
 }
 
 .results row:selected {
@@ -105,37 +137,46 @@ window.launcher {
 
 .section-header {
   color: @bs_faint;
-  font-size: 11px;
-  font-weight: 700;
-  padding: 10px 12px 4px;
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 12px 10px 5px;
+}
+
+.compact .section-header {
+  padding-top: 8px;
 }
 
 .title {
-  font-weight: 600;
-  font-size: 14px;
+  font-weight: 500;
 }
 
 .subtitle {
   color: @bs_dim;
-  font-size: 12.5px;
+}
+
+.row-subtitle {
+  color: @bs_faint;
 }
 
 .tile {
-  border-radius: 10px;
+  border-radius: 7px;
 }
 
-.tile.app { background: none; }
-.tile.tint-blue { background-color: @bs_blue_bg; color: @bs_blue; }
-.tile.tint-orange { background-color: @bs_orange_bg; color: @bs_orange; }
-.tile.tint-green { background-color: @bs_green_bg; color: @bs_green; }
-.tile.tint-purple { background-color: @bs_purple_bg; color: @bs_purple; }
-.tile.tint-yellow { background-color: @bs_yellow_bg; color: @bs_yellow; }
-.tile.tint-red { background-color: @bs_red_bg; color: @bs_red; }
-.tile.tint-teal { background-color: @bs_teal_bg; color: @bs_teal; }
-.tile.tint-gray { background-color: @bs_gray_bg; color: @bs_gray; }
+.tile.app {
+  background: none;
+}
 
 .emoji-icon {
-  font-size: 20px;
+  font-size: 18px;
+}
+
+.plain-icon {
+  color: @bs_dim;
+}
+
+.swatch {
+  border-radius: 6px;
+  border: 1px solid @bs_border;
 }
 
 .accessory {
@@ -145,36 +186,53 @@ window.launcher {
 
 .tag {
   background-color: @bs_surface;
-  border-radius: 6px;
-  padding: 1px 7px;
+  border-radius: 999px;
+  padding: 1px 8px;
   font-size: 11.5px;
-  font-weight: 600;
+  font-weight: 500;
   color: @bs_dim;
 }
 
-.accent-red { color: @bs_red; }
-.accent-orange { color: @bs_orange; }
-.accent-yellow { color: @bs_yellow; }
-.accent-green { color: @bs_green; }
-.accent-blue { color: @bs_blue; }
-.accent-purple { color: @bs_purple; }
-.accent-gray { color: @bs_gray; }
+.kbd,
+.key {
+  background-color: @bs_surface;
+  border: 1px solid @bs_border;
+  border-radius: 5px;
+  padding: 0 6px;
+  color: @bs_dim;
+  font-size: 11px;
+  font-weight: 500;
+}
 
-/* Colored pills: tinted background, colored text. */
-.accent-red .tag { color: @bs_red; background-color: @bs_red_bg; }
-.accent-orange .tag { color: @bs_orange; background-color: @bs_orange_bg; }
-.accent-yellow .tag { color: @bs_yellow; background-color: @bs_yellow_bg; }
-.accent-green .tag { color: @bs_green; background-color: @bs_green_bg; }
-.accent-blue .tag { color: @bs_blue; background-color: @bs_blue_bg; }
-.accent-purple .tag { color: @bs_purple; background-color: @bs_purple_bg; }
+.avatar {
+  border-radius: 999px;
+  color: #ffffff;
+  font-size: 9px;
+  font-weight: 700;
+  min-width: 20px;
+  min-height: 20px;
+}
+
+.avatar.big {
+  font-size: 11px;
+}
+
+.avatar.c0 { background-color: #8b5cf6; }
+.avatar.c1 { background-color: #0ea5e9; }
+.avatar.c2 { background-color: #f59e0b; }
+.avatar.c3 { background-color: #10b981; }
+.avatar.c4 { background-color: #ef4444; }
+.avatar.c5 { background-color: #ec4899; }
+.avatar.c6 { background-color: #6366f1; }
+.avatar.c7 { background-color: #14b8a6; }
 
 .answer {
-  padding: 12px 6px;
+  padding: 12px 4px;
 }
 
 .answer .result {
   font-size: 28px;
-  font-weight: 700;
+  font-weight: 650;
   color: @bs_fg;
 }
 
@@ -185,23 +243,70 @@ window.launcher {
 
 /* --- Preview panel ------------------------------------------------------- */
 
+.preview-scroll {
+  background-color: @bs_preview_bg;
+}
+
 .preview {
   background-color: @bs_preview_bg;
-  padding: 24px 24px 18px;
+  padding: 20px 20px 16px;
 }
 
 .preview-title {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.stat {
+  background-color: @bs_bg;
+  border: 1px solid @bs_border;
+  border-radius: 10px;
+  padding: 8px 12px;
+}
+
+.stat-value {
   font-size: 19px;
-  font-weight: 700;
+  font-weight: 600;
 }
 
-.facts .fact-label {
+.stat-label {
+  font-size: 11.5px;
   color: @bs_dim;
+}
+
+.meta-label {
+  color: @bs_faint;
   font-size: 12.5px;
 }
 
-.facts .fact-value {
+.meta-value {
   font-size: 12.5px;
+}
+
+.meta-value.link {
+  color: @bs_accent;
+}
+
+.meta-separator {
+  background-color: @bs_divider;
+  min-height: 1px;
+  margin: 2px 0;
+}
+
+progressbar.meta-progress trough {
+  min-width: 40px;
+  min-height: 5px;
+  border-radius: 3px;
+  background-color: @bs_surface;
+  border: none;
+}
+
+progressbar.meta-progress progress {
+  min-width: 0;
+  min-height: 5px;
+  border-radius: 3px;
+  background-color: @bs_green;
+  border: none;
 }
 
 .preview-body-box {
@@ -211,25 +316,24 @@ window.launcher {
 }
 
 .preview-body {
-  font-family: "JetBrains Mono", "DejaVu Sans Mono", monospace;
+  font-family: "JetBrains Mono", "Fira Code", "DejaVu Sans Mono", monospace;
   font-size: 12px;
   padding: 10px 12px;
 }
 
-.preview-section {
-  color: @bs_faint;
-  font-size: 11px;
-  font-weight: 700;
-  margin-top: 4px;
-}
-
-.preview-action {
+.preview-body.preview-prose {
+  font-family: "Inter", "Cantarell", "Noto Sans", sans-serif;
   font-size: 13px;
 }
 
-.preview-key {
-  font-size: 11.5px;
-  color: @bs_faint;
+.preview-text {
+  font-size: 13px;
+}
+
+.big-swatch {
+  border-radius: 12px;
+  border: 1px solid @bs_border;
+  min-height: 120px;
 }
 
 .destructive {
@@ -239,27 +343,31 @@ window.launcher {
 /* --- Empty, detail, form -------------------------------------------------- */
 
 .empty .title {
-  font-size: 16px;
+  font-size: 15px;
+  font-weight: 600;
 }
 
 .empty .subtitle {
   font-size: 13px;
 }
 
+.empty glyph {
+  color: @bs_faint;
+}
+
 .detail {
-  padding: 20px 24px;
+  padding: 22px 26px;
+  font-size: 13.5px;
+}
+
+.detail-stats {
+  padding: 18px 26px 0;
 }
 
 .metadata {
   border-left: 1px solid @bs_divider;
   background-color: @bs_preview_bg;
-  padding: 20px;
-  min-width: 210px;
-}
-
-.metadata .label {
-  color: @bs_dim;
-  font-size: 12px;
+  padding: 20px 18px;
 }
 
 .form {
@@ -270,11 +378,17 @@ window.launcher {
 .form passwordentry,
 .form textview,
 .form dropdown > button {
-  background-color: @bs_surface;
+  background-color: @bs_preview_bg;
   border: 1px solid @bs_border;
-  border-radius: 9px;
+  border-radius: 8px;
   color: @bs_fg;
   box-shadow: none;
+  min-height: 32px;
+}
+
+.form entry:focus-within,
+.form passwordentry:focus-within {
+  border-color: @bs_accent;
 }
 
 .form textview text {
@@ -284,17 +398,18 @@ window.launcher {
 
 .form .field-title {
   color: @bs_dim;
-  font-weight: 600;
+  font-weight: 500;
   font-size: 12.5px;
 }
 
 /* --- Footer --------------------------------------------------------------- */
 
 .footer {
-  padding: 9px 16px;
-  min-height: 22px;
+  padding: 0 14px;
+  min-height: 40px;
   font-size: 12px;
   color: @bs_dim;
+  background-color: @bs_preview_bg;
 }
 
 .footer .context {
@@ -303,23 +418,22 @@ window.launcher {
 
 .footer .primary {
   color: @bs_fg;
-  font-weight: 600;
+  font-weight: 500;
+}
+
+.footer .vsep {
+  background-color: @bs_divider;
+  min-width: 1px;
+  min-height: 16px;
 }
 
 .hint {
   color: @bs_dim;
 }
 
-.hint .key {
-  border: 1px solid @bs_border;
-  border-radius: 6px;
-  padding: 0 6px;
-  color: @bs_fg;
-  font-size: 11.5px;
-}
-
 .toast {
-  font-weight: 600;
+  font-weight: 500;
+  color: @bs_fg;
 }
 
 .toast.success { color: @bs_green; }
@@ -335,19 +449,43 @@ window.launcher {
   color: @bs_fg;
   background-color: @bs_bg;
   border: 1px solid @bs_border;
-  border-radius: 14px;
-  padding: 6px;
-  box-shadow: 0 14px 34px @bs_shadow;
+  border-radius: 12px;
+  box-shadow: 0 18px 46px @bs_shadow;
+}
+
+.dark .actions-panel {
+  background-color: #1e1e24;
+}
+
+.actions-panel .actions-search {
+  background: none;
+  border: none;
+  box-shadow: none;
+  outline: none;
+  padding: 0;
+  min-height: 0;
+  font-size: 13px;
+}
+
+.actions-panel .actions-head {
+  padding: 9px 12px;
+}
+
+.actions-panel .actions-context {
+  color: @bs_faint;
+  font-size: 11.5px;
 }
 
 .actions-panel list {
   background: none;
+  padding: 4px 6px 6px;
 }
 
 .actions-panel row {
   color: @bs_fg;
-  border-radius: 9px;
-  padding: 7px 10px;
+  border-radius: 7px;
+  padding: 0 10px;
+  min-height: 34px;
   background: none;
 }
 
@@ -355,9 +493,14 @@ window.launcher {
   background-color: @bs_selected;
 }
 
-.actions-panel .kind {
-  color: @bs_faint;
-  font-size: 11.5px;
+.actions-panel glyph,
+.actions-panel image {
+  color: @bs_dim;
+}
+
+.actions-panel .destructive glyph,
+.actions-panel row .destructive {
+  color: @bs_red;
 }
 
 /* --- Grid ---------------------------------------------------------------- */
@@ -367,11 +510,11 @@ window.launcher {
 }
 
 .grid-cell {
-  border-radius: 14px;
+  border-radius: 12px;
   padding: 12px 6px 8px;
   min-height: 92px;
   background-color: alpha(@bs_fg, 0.035);
-  transition: background-color 110ms ease-out;
+  transition: background-color 90ms ease-out;
 }
 
 .grid-cell.selected {
@@ -389,4 +532,205 @@ window.launcher {
 
 .grid-cell.selected .grid-title {
   color: @bs_fg;
+}
+
+/* --- Settings window ------------------------------------------------------ */
+
+window.bs-settings {
+  background-color: @bs_bg;
+}
+
+.bs-settings headerbar {
+  background: @bs_preview_bg;
+  color: @bs_fg;
+  border-bottom: 1px solid @bs_divider;
+  box-shadow: none;
+  min-height: 44px;
+}
+
+.bs-settings headerbar label {
+  color: @bs_fg;
+}
+
+.bs-settings windowcontrols button {
+  background: none;
+  color: @bs_dim;
+  box-shadow: none;
+  border: none;
+}
+
+.bs-settings windowcontrols button:hover {
+  background: @bs_surface;
+}
+
+.settings-sidebar {
+  background-color: @bs_preview_bg;
+  border-right: 1px solid @bs_divider;
+  padding: 10px 8px;
+}
+
+.settings-sidebar row {
+  border-radius: 7px;
+  padding: 0 10px;
+  min-height: 34px;
+  color: @bs_dim;
+  background: none;
+}
+
+.settings-sidebar row:selected {
+  background-color: @bs_selected;
+  color: @bs_fg;
+}
+
+.settings-page {
+  padding: 22px 32px 32px;
+}
+
+.settings-heading {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: @bs_faint;
+  margin: 18px 0 8px 2px;
+}
+
+.settings-page .settings-heading:first-child {
+  margin-top: 0;
+}
+
+.card {
+  background-color: @bs_preview_bg;
+  border: 1px solid @bs_border;
+  border-radius: 11px;
+}
+
+.dark .card {
+  background-color: #1c1c21;
+}
+
+.card-row {
+  padding: 10px 16px;
+  min-height: 34px;
+}
+
+.card-row + .card-row,
+.card > box + box {
+  border-top: 1px solid @bs_divider;
+}
+
+.card-title {
+  font-weight: 500;
+}
+
+.card-subtitle {
+  color: @bs_faint;
+  font-size: 12px;
+}
+
+.bs-settings switch {
+  background: @bs_surface;
+  border: none;
+  border-radius: 999px;
+}
+
+.bs-settings switch:checked {
+  background: @bs_accent;
+}
+
+.bs-settings switch slider {
+  background: #ffffff;
+  border: none;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+.bs-settings button.flat-button,
+.bs-settings dropdown > button,
+.bs-settings entry,
+.bs-settings passwordentry,
+.bs-settings spinbutton {
+  background: @bs_bg;
+  border: 1px solid @bs_border;
+  border-radius: 7px;
+  box-shadow: none;
+  color: @bs_fg;
+  min-height: 28px;
+  padding: 0 10px;
+}
+
+.bs-settings button.flat-button:hover {
+  background: @bs_surface;
+}
+
+.bs-settings button.suggested {
+  background: @bs_accent;
+  color: @bs_on_accent;
+  border: none;
+  border-radius: 7px;
+  padding: 0 14px;
+  min-height: 30px;
+  font-weight: 500;
+}
+
+.bs-settings button.danger {
+  color: @bs_red;
+}
+
+.segmented {
+  background-color: @bs_surface;
+  border-radius: 8px;
+  padding: 2px;
+}
+
+.segmented button {
+  background: none;
+  border: none;
+  box-shadow: none;
+  border-radius: 6px;
+  padding: 3px 12px;
+  min-height: 0;
+  color: @bs_dim;
+  font-weight: 500;
+  font-size: 12.5px;
+}
+
+.segmented button.active {
+  background: @bs_bg;
+  color: @bs_fg;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
+}
+
+.bs-settings textview,
+.bs-settings textview text {
+  background: @bs_bg;
+  color: @bs_fg;
+}
+
+.bs-settings label {
+  color: inherit;
+}
+
+.accent-dot {
+  min-width: 20px;
+  min-height: 20px;
+  padding: 0;
+  border-radius: 999px;
+  border: 2px solid transparent;
+  box-shadow: none;
+}
+
+.accent-dot.active {
+  border-color: @bs_fg;
+}
+
+.shortcut-capture {
+  font-family: "JetBrains Mono", "DejaVu Sans Mono", monospace;
+  font-size: 12px;
+}
+
+.shortcut-capture.listening {
+  border-color: @bs_accent;
+  color: @bs_accent;
+}
+
+.ext-row-commands {
+  padding-left: 46px;
 }

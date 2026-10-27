@@ -10,6 +10,7 @@
 mod model;
 mod rows;
 mod settings;
+mod settings_window;
 mod signin;
 mod store;
 mod welcome;
@@ -37,8 +38,8 @@ use gtk::prelude::*;
 use gtk::{gdk, gio, glib};
 use serde_json::{json, Map, Value};
 
-use self::model::{Builtin, Filter, FormInput, FormPurpose, Frame, FrameKind, Launched, Op, Row, UiAction};
-use self::widgets::{key_hint, label, pretty_accel, row_widget};
+use self::model::{tint_for, Builtin, Filter, FormInput, FormPurpose, Frame, FrameKind, Launched, Op, Row, UiAction};
+use self::widgets::{key_hint, label, row_widget};
 use crate::apps::{self, App};
 use crate::currency::Currency;
 use crate::icons::{self, Icon};
@@ -56,7 +57,7 @@ pub struct Options {
 
 const WIDTH: i32 = 860;
 const HEIGHT: i32 = 540;
-const LIST_WIDTH: i32 = 400;
+const LIST_WIDTH: i32 = 450;
 
 pub fn run(options: Options) -> anyhow::Result<()> {
     layer::reexec_if_needed(Config::load().layer_shell);
@@ -192,6 +193,38 @@ pub(super) struct State {
     kwin: bool,
     /// GNOME without a window extension yet.
     gnome_helper_needed: bool,
+    /// What commands said about themselves ("3 in progress").
+    command_meta: CommandMeta,
+    /// View updates that arrived before their view was shown.
+    early_updates: Vec<(Rc<Session>, View)>,
+}
+
+/// Subtitles set by commands with `updateCommandMetadata`, kept on disk.
+#[derive(Default)]
+pub(super) struct CommandMeta(std::collections::BTreeMap<String, String>);
+
+impl CommandMeta {
+    fn path() -> PathBuf {
+        paths::state_dir().join("command-metadata.json")
+    }
+
+    fn load() -> Self {
+        Self(backslash_core::store::read_json(&Self::path()))
+    }
+
+    pub fn get(&self, command: &str) -> Option<&str> {
+        self.0.get(command).map(String::as_str)
+    }
+
+    fn set(&mut self, command: &str, subtitle: Option<String>) {
+        match subtitle.filter(|s| !s.trim().is_empty()) {
+            Some(s) => self.0.insert(command.to_string(), s),
+            None => self.0.remove(command),
+        };
+        if let Err(e) = backslash_core::store::write_json(&Self::path(), &self.0) {
+            eprintln!("backslash: cannot save command metadata: {e}");
+        }
+    }
 }
 
 pub struct Launcher {
@@ -199,9 +232,15 @@ pub struct Launcher {
     styles: Styles,
     layer_shell: bool,
     entry: gtk::Entry,
+    /// "Linear › My Issues": where you are; clicking goes back.
     back: gtk::Button,
-    search_icon: gtk::Image,
+    crumb_icon: gtk::Box,
+    crumb_label: gtk::Label,
+    search_icon: gtk::Widget,
     chips: gtk::Box,
+    /// Chips of an extension list's `filter`, under the search bar.
+    filters: gtk::Box,
+    filters_divider: gtk::Box,
     spinner: gtk::Spinner,
     pages: gtk::Stack,
     list: gtk::ListBox,
@@ -216,6 +255,7 @@ pub struct Launcher {
     empty_title: gtk::Label,
     empty_subtitle: gtk::Label,
     detail: gtk::Label,
+    detail_stats: gtk::Box,
     metadata: gtk::Box,
     form_box: gtk::Box,
     context: gtk::Label,
@@ -224,8 +264,13 @@ pub struct Launcher {
     primary_key: gtk::Box,
     actions_hint: gtk::Box,
     action_panel: gtk::Box,
+    actions_entry: gtk::Entry,
+    actions_context: gtk::Label,
     popover_list: gtk::ListBox,
+    /// Actions shown in the panel (after filtering), in list order.
     popover_actions: RefCell<Vec<UiAction>>,
+    /// Open submenus: title and actions of each level, the top one shown.
+    menu_levels: RefCell<Vec<(String, Vec<UiAction>)>>,
     state: RefCell<State>,
     dev_dir: Option<PathBuf>,
     /// Set while the code (not the user) changes the search text.
@@ -236,6 +281,9 @@ pub struct Launcher {
     shortcuts: Rc<hotkey::Shortcuts>,
     paster: Rc<paste::Paster>,
     kwin: Option<Rc<crate::kwin::Kwin>>,
+    /// The settings window, while open, and its pages.
+    settings_window: RefCell<Option<gtk::Window>>,
+    settings_stack: RefCell<Option<gtk::Stack>>,
     _hold: gio::ApplicationHoldGuard,
 }
 
@@ -257,17 +305,25 @@ impl Launcher {
         panel.set_overflow(gtk::Overflow::Hidden);
         panel.set_size_request(WIDTH - 28, HEIGHT - 28);
 
-        // Header: back or search icon, query, filters, spinner.
+        // Header: where you are (or the search icon), query, chips, spinner.
         let header = gtk::Box::new(gtk::Orientation::Horizontal, 12);
         header.add_css_class("header");
-        let back = gtk::Button::from_icon_name("go-previous-symbolic");
-        back.add_css_class("back");
+        let back = gtk::Button::new();
+        back.add_css_class("crumb");
         back.set_valign(gtk::Align::Center);
         back.set_focusable(false);
         back.set_visible(false);
-        let search_icon = gtk::Image::from_icon_name("system-search-symbolic");
+        let crumb = gtk::Box::new(gtk::Orientation::Horizontal, 7);
+        let crumb_icon = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+        let crumb_label = gtk::Label::new(None);
+        crumb_label.set_ellipsize(gtk::pango::EllipsizeMode::End);
+        crumb_label.set_max_width_chars(36);
+        crumb.append(&crumb_icon);
+        crumb.append(&crumb_label);
+        back.set_child(Some(&crumb));
+        back.set_tooltip_text(Some("Back (Esc)"));
+        let search_icon: gtk::Widget = crate::glyphs::Glyph::new("bs-search", 18).upcast();
         search_icon.add_css_class("search-icon");
-        search_icon.set_pixel_size(18);
         let entry = gtk::Entry::new();
         entry.add_css_class("search");
         entry.set_has_frame(false);
@@ -305,10 +361,18 @@ impl Launcher {
         let preview = gtk::Box::new(gtk::Orientation::Vertical, 16);
         preview.add_css_class("preview");
         preview.set_hexpand(true);
+        preview.set_vexpand(true);
+        // Long panels scroll instead of growing the window.
+        let preview_scroll = gtk::ScrolledWindow::builder()
+            .hscrollbar_policy(gtk::PolicyType::Never)
+            .child(&preview)
+            .hexpand(true)
+            .build();
+        preview_scroll.add_css_class("preview-scroll");
         let list_page = gtk::Box::new(gtk::Orientation::Horizontal, 0);
         list_page.append(&scroller);
         list_page.append(&divider());
-        list_page.append(&preview);
+        list_page.append(&preview_scroll);
         pages.add_named(&list_page, Some("list"));
 
         let grid_box = gtk::Box::new(gtk::Orientation::Vertical, 0);
@@ -320,9 +384,8 @@ impl Launcher {
         let empty = gtk::Box::new(gtk::Orientation::Vertical, 6);
         empty.add_css_class("empty");
         empty.set_valign(gtk::Align::Center);
-        let empty_icon = gtk::Image::from_icon_name("system-search-symbolic");
-        empty_icon.set_pixel_size(42);
-        empty_icon.set_opacity(0.4);
+        let empty_icon = crate::glyphs::Glyph::new("bs-search", 40);
+        empty_icon.set_margin_bottom(6);
         let empty_title = label("", "title");
         let empty_subtitle = label("", "subtitle");
         empty_title.set_xalign(0.5);
@@ -336,19 +399,31 @@ impl Launcher {
         let detail = gtk::Label::new(None);
         detail.add_css_class("detail");
         detail.set_wrap(true);
+        detail.set_wrap_mode(gtk::pango::WrapMode::WordChar);
         detail.set_xalign(0.0);
         detail.set_yalign(0.0);
         detail.set_selectable(true);
+        detail.set_can_focus(false);
         detail.set_hexpand(true);
+        let detail_stats = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        detail_stats.add_css_class("detail-stats");
+        let detail_column = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        detail_column.append(&detail_stats);
+        detail_column.append(&detail);
         let detail_scroll = gtk::ScrolledWindow::builder()
             .hscrollbar_policy(gtk::PolicyType::Never)
-            .child(&detail)
+            .child(&detail_column)
             .hexpand(true)
             .build();
         let metadata = gtk::Box::new(gtk::Orientation::Vertical, 4);
         metadata.add_css_class("metadata");
+        metadata.set_size_request(270, -1);
+        metadata.set_hexpand(false);
+        let metadata_scroll =
+            gtk::ScrolledWindow::builder().hscrollbar_policy(gtk::PolicyType::Never).child(&metadata).build();
+        metadata.set_vexpand(true);
         detail_row.append(&detail_scroll);
-        detail_row.append(&metadata);
+        detail_row.append(&metadata_scroll);
         pages.add_named(&detail_row, Some("detail"));
 
         let form_box = gtk::Box::new(gtk::Orientation::Vertical, 10);
@@ -357,26 +432,42 @@ impl Launcher {
             gtk::ScrolledWindow::builder().hscrollbar_policy(gtk::PolicyType::Never).child(&form_box).build();
         pages.add_named(&form_scroll, Some("form"));
 
-        // Footer: context, toast, primary action, action panel hint.
+        // Footer: context or toast, primary action, action panel hint.
         let footer = gtk::Box::new(gtk::Orientation::Horizontal, 10);
         footer.add_css_class("footer");
         let context = label("Backslash", "context");
+        context.set_ellipsize(gtk::pango::EllipsizeMode::End);
         let toast = label("", "toast");
-        toast.set_hexpand(true);
-        toast.set_xalign(1.0);
         toast.set_ellipsize(gtk::pango::EllipsizeMode::End);
+        toast.set_visible(false);
+        let left = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+        left.set_hexpand(true);
+        left.append(&context);
+        left.append(&toast);
         let primary = label("", "primary");
         let primary_key = key_hint("", "↵");
+        let vsep = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+        vsep.add_css_class("vsep");
+        vsep.set_valign(gtk::Align::Center);
         let actions_hint = key_hint("Actions", "Ctrl K");
-        actions_hint.set_margin_start(6);
-        footer.append(&context);
-        footer.append(&toast);
+        footer.append(&left);
         footer.append(&primary);
         footer.append(&primary_key);
+        footer.append(&vsep);
         footer.append(&actions_hint);
+        actions_hint.bind_property("visible", &vsep, "visible").sync_create().build();
+
+        // Filter chips of extension lists.
+        let filters = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+        filters.add_css_class("filters");
+        filters.set_visible(false);
+        let filters_divider = divider();
+        filters_divider.set_visible(false);
 
         panel.append(&header);
         panel.append(&divider());
+        panel.append(&filters);
+        panel.append(&filters_divider);
         panel.append(&pages);
         panel.append(&divider());
         panel.append(&footer);
@@ -389,19 +480,39 @@ impl Launcher {
         action_panel.set_halign(gtk::Align::End);
         action_panel.set_valign(gtk::Align::End);
         action_panel.set_margin_end(24);
-        action_panel.set_margin_bottom(58);
-        action_panel.set_size_request(280, -1);
+        action_panel.set_margin_bottom(60);
+        action_panel.set_size_request(340, -1);
         action_panel.set_visible(false);
+        let actions_head = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        actions_head.add_css_class("actions-head");
+        let actions_context = label("", "actions-context");
+        actions_context.set_ellipsize(gtk::pango::EllipsizeMode::End);
+        actions_context.set_max_width_chars(18);
+        let actions_entry = gtk::Entry::new();
+        actions_entry.add_css_class("actions-search");
+        actions_entry.set_has_frame(false);
+        actions_entry.set_hexpand(true);
+        actions_entry.set_placeholder_text(Some("Search actions…"));
+        actions_head.append(&actions_context);
+        actions_head.append(&actions_entry);
+        action_panel.append(&actions_head);
+        action_panel.append(&divider());
         let popover_list = gtk::ListBox::new();
         popover_list.set_selection_mode(gtk::SelectionMode::Browse);
-        action_panel.append(&popover_list);
+        let popover_scroll = gtk::ScrolledWindow::builder()
+            .hscrollbar_policy(gtk::PolicyType::Never)
+            .propagate_natural_height(true)
+            .max_content_height(360)
+            .child(&popover_list)
+            .build();
+        action_panel.append(&popover_scroll);
         let overlay = gtk::Overlay::new();
         overlay.set_child(Some(&panel));
         overlay.add_overlay(&action_panel);
         window.set_child(Some(&overlay));
 
         let config = Config::load();
-        styles.apply(config.theme, &window);
+        styles.apply(&config, &[window.upcast_ref()]);
         let mut registry = Registry::scan(&paths::extension_dirs());
         if let Some(dir) = &dev_dir {
             registry.add_dir(dir);
@@ -421,8 +532,12 @@ impl Launcher {
             layer_shell,
             entry,
             back,
+            crumb_icon,
+            crumb_label,
             search_icon,
             chips,
+            filters,
+            filters_divider,
             spinner,
             pages,
             list,
@@ -436,6 +551,7 @@ impl Launcher {
             empty_title,
             empty_subtitle,
             detail,
+            detail_stats,
             metadata,
             form_box,
             context,
@@ -444,8 +560,11 @@ impl Launcher {
             primary_key,
             actions_hint,
             action_panel,
+            actions_entry,
+            actions_context,
             popover_list,
             popover_actions: RefCell::default(),
+            menu_levels: RefCell::default(),
             state: RefCell::new(State {
                 registry,
                 config,
@@ -475,6 +594,8 @@ impl Launcher {
                 paste_target: None,
                 scripts: scripts::discover(&[scripts::dir()]),
                 kwin: kwin.is_some(),
+                command_meta: CommandMeta::load(),
+                early_updates: Vec::new(),
                 gnome_helper_needed: window_backend.is_none()
                     && backslash_core::system::windows::is_gnome()
                     && std::env::var_os("WAYLAND_DISPLAY").is_some(),
@@ -486,6 +607,8 @@ impl Launcher {
             shortcuts: Rc::default(),
             paster: Rc::default(),
             kwin,
+            settings_window: RefCell::default(),
+            settings_stack: RefCell::default(),
             _hold: app.hold(),
         });
         launcher.build_chips();
@@ -575,6 +698,14 @@ impl Launcher {
     /// Background services, started once the application is registered.
     fn start_services(self: &Rc<Self>) {
         self.watch_dev_dir();
+        // Pictures (avatars, favicons) arrive after the rows: redraw them.
+        let weak = Rc::downgrade(self);
+        crate::images::on_ready(move || {
+            let Some(l) = weak.upgrade() else { return };
+            if l.window.is_visible() && !l.action_panel.is_visible() && !l.is_form() {
+                l.render();
+            }
+        });
         let clipboard_enabled = self.state.borrow().config.clipboard.enabled;
         self.bind_shortcuts();
         if self.dev_dir.is_none() {
@@ -591,8 +722,7 @@ impl Launcher {
         let weak = Rc::downgrade(self);
         theme::watch_system(move || {
             if let Some(l) = weak.upgrade() {
-                let theme = l.state.borrow().config.theme;
-                l.styles.apply(theme, &l.window);
+                l.apply_style();
             }
         });
         let weak = Rc::downgrade(self);
@@ -696,9 +826,7 @@ impl Launcher {
             let current = sections.get(row.index() as usize).cloned().flatten();
             let previous = before.and_then(|b| sections.get(b.index() as usize).cloned().flatten());
             match current {
-                Some(s) if previous.as_ref() != Some(&s) => {
-                    row.set_header(Some(&label(&s.to_uppercase(), "section-header")))
-                }
+                Some(s) if previous.as_ref() != Some(&s) => row.set_header(Some(&label(&s, "section-header"))),
                 _ => row.set_header(gtk::Widget::NONE),
             }
         });
@@ -707,10 +835,15 @@ impl Launcher {
         self.popover_list.connect_row_activated(move |_, row| {
             if let Some(l) = weak.upgrade() {
                 let action = l.popover_actions.borrow().get(row.index() as usize).cloned();
-                l.close_action_panel();
                 if let Some(action) = action {
-                    l.run_action(action);
+                    l.pick_action(action);
                 }
+            }
+        });
+        let weak = Rc::downgrade(self);
+        self.actions_entry.connect_changed(move |_| {
+            if let Some(l) = weak.upgrade() {
+                l.on_actions_query_changed();
             }
         });
 
@@ -855,8 +988,7 @@ impl Launcher {
             welcome::mark_seen();
             self.push(FrameKind::Builtin(Builtin::Welcome));
         }
-        let theme = self.state.borrow().config.theme;
-        self.styles.apply(theme, &self.window);
+        self.apply_style();
         if self.layer_shell {
             let height = WidgetExt::display(&self.window)
                 .monitors()
@@ -922,6 +1054,17 @@ impl Launcher {
         s.scripts = scripts::discover(&[scripts::dir()]);
     }
 
+    /// Theme, accent and density, on the launcher and the settings window.
+    pub(super) fn apply_style(&self) {
+        let config = self.state.borrow().config.clone();
+        let mut windows: Vec<gtk::Widget> = vec![self.window.clone().upcast()];
+        if let Some(w) = self.settings_window.borrow().as_ref() {
+            windows.push(w.clone().upcast());
+        }
+        let refs: Vec<&gtk::Widget> = windows.iter().collect();
+        self.styles.apply(&config, &refs);
+    }
+
     // -----------------------------------------------------------------------
     // Rendering
 
@@ -949,14 +1092,163 @@ impl Launcher {
         };
         self.back.set_visible(depth > 1);
         self.search_icon.set_visible(depth == 1);
+        self.update_crumb();
         self.context.set_text(&title);
         self.update_chips();
+        self.update_filters();
         match page {
             "list" => self.render_list(),
             "detail" => self.render_detail(),
             _ => self.render_form(),
         }
         self.update_footer();
+    }
+
+    /// "Linear › My Issues", or "My Issues › ENG-142" one level deeper.
+    fn update_crumb(&self) {
+        let s = self.state.borrow();
+        let frames = &s.frames;
+        let Some(frame) = frames.last() else { return };
+        while let Some(child) = self.crumb_icon.first_child() {
+            self.crumb_icon.remove(&child);
+        }
+        let (icon, text) = match &frame.kind {
+            FrameKind::Root => return,
+            FrameKind::Extension { session, view, title, .. } => {
+                let ext = s.registry.find(&session.extension_id).map(|e| &e.manifest.extension);
+                let icon = ext.map(|e| e.icon.clone().unwrap_or_else(|| "bs-package".into()));
+                let view_title = match view {
+                    View::List(l) => l.title.clone(),
+                    View::Detail(d) => d.title.clone(),
+                    View::Form(f) => f.title.clone(),
+                };
+                let parent = frames.len().checked_sub(2).map(|i| &frames[i].kind);
+                let text = match (parent, view_title) {
+                    (Some(FrameKind::Extension { session: p, title: pt, .. }), Some(vt))
+                        if Rc::ptr_eq(p, session) && vt != *title =>
+                    {
+                        format!("{pt}  ›  {vt}")
+                    }
+                    (Some(FrameKind::Extension { session: p, .. }), _) if Rc::ptr_eq(p, session) => title.clone(),
+                    _ => format!("{}  ›  {title}", ext.map_or(session.extension_id.as_str(), |e| e.title.as_str())),
+                };
+                (icon.map(|i| (i, Some(tint_for(&session.extension_id)))), text)
+            }
+            FrameKind::Builtin(b) => (None, b.title().to_string()),
+            FrameKind::Form { form, .. } => (None, form.title.clone().unwrap_or_default()),
+            FrameKind::Approval { extension_id, .. } => {
+                let title =
+                    s.registry.find(extension_id).map_or(extension_id.clone(), |e| e.manifest.extension.title.clone());
+                (None, format!("{title}  ›  Permissions"))
+            }
+            FrameKind::ConfirmInstall { .. } => (None, "Extensions  ›  Install".into()),
+            FrameKind::InstallRuntime { .. } => (None, "Runtime".into()),
+            FrameKind::Script { title, .. } => {
+                (Some(("bs-terminal".to_string(), Some("green"))), format!("Scripts  ›  {title}"))
+            }
+        };
+        match icon {
+            Some((icon, tint)) => {
+                self.crumb_icon.append(&icons::tile(Some(&Icon::Spec(icon)), tint, 18));
+                self.crumb_icon.set_visible(true);
+            }
+            None => {
+                self.crumb_icon.append(&crate::glyphs::Glyph::new("bs-back", 14));
+                self.crumb_icon.set_visible(true);
+            }
+        }
+        self.crumb_label.set_text(&text);
+    }
+
+    /// The chips of an extension list's filter.
+    fn update_filters(self: &Rc<Self>) {
+        while let Some(child) = self.filters.first_child() {
+            self.filters.remove(&child);
+        }
+        let filter = match &self.state.borrow().frames.last().unwrap().kind {
+            FrameKind::Extension { view: View::List(l), .. } => l.filter.clone(),
+            _ => None,
+        };
+        let Some(filter) = filter.filter(|f| f.options.len() > 1) else {
+            self.filters.set_visible(false);
+            self.filters_divider.set_visible(false);
+            return;
+        };
+        for option in &filter.options {
+            let chip = gtk::Button::with_label(&option.title);
+            chip.add_css_class("chip");
+            chip.set_focusable(false);
+            if option.value == filter.value {
+                chip.add_css_class("active");
+            }
+            let weak = Rc::downgrade(self);
+            let value = option.value.clone();
+            chip.connect_clicked(move |_| {
+                if let Some(l) = weak.upgrade() {
+                    l.pick_filter(&value);
+                }
+            });
+            self.filters.append(&chip);
+        }
+        let hint = key_hint("", "Tab");
+        hint.set_hexpand(true);
+        hint.set_halign(gtk::Align::End);
+        self.filters.append(&hint);
+        self.filters.set_visible(true);
+        self.filters_divider.set_visible(true);
+    }
+
+    /// Tab in a list with a filter: the next chip.
+    fn cycle_list_filter(self: &Rc<Self>, delta: i32) -> bool {
+        let filter = match &self.state.borrow().frames.last().unwrap().kind {
+            FrameKind::Extension { view: View::List(l), .. } => l.filter.clone(),
+            _ => None,
+        };
+        let Some(filter) = filter.filter(|f| f.options.len() > 1) else { return false };
+        let i = filter.options.iter().position(|o| o.value == filter.value).unwrap_or(0) as i32;
+        let next = (i + delta).rem_euclid(filter.options.len() as i32) as usize;
+        self.pick_filter(&filter.options[next].value.clone());
+        true
+    }
+
+    /// Asks the extension for the list with another filter value.
+    fn pick_filter(self: &Rc<Self>, value: &str) {
+        let (session, view_id) = {
+            let s = self.state.borrow();
+            match &s.frames.last().unwrap().kind {
+                FrameKind::Extension { session, view: View::List(l), .. } => (session.clone(), l.id.clone()),
+                _ => return,
+            }
+        };
+        // Show the choice at once; the items follow.
+        if let Some(FrameKind::Extension { view: View::List(l), .. }) =
+            self.state.borrow_mut().frames.last_mut().map(|f| &mut f.kind)
+        {
+            if let Some(f) = l.filter.as_mut() {
+                f.value = value.to_string();
+            }
+        }
+        self.update_filters();
+        let pending = match session.request("filter", json!({ "view": view_id, "value": value })) {
+            Ok(p) => p,
+            Err(e) => return self.fail(e),
+        };
+        self.spinner.set_spinning(true);
+        let weak = Rc::downgrade(self);
+        glib::spawn_future_local(async move {
+            let reply = pending.get().await;
+            let Some(l) = weak.upgrade() else { return };
+            l.spinner.set_spinning(false);
+            match reply
+                .and_then(|v| serde_json::from_value::<View>(v).map_err(|e| RpcError::new(-32700, e.to_string())))
+            {
+                Ok(view) => {
+                    l.state.borrow_mut().selected_key = None;
+                    l.replace_top(&session, view);
+                }
+                Err(e) => l.fail(e),
+            }
+        });
     }
 
     fn render_list(self: &Rc<Self>) {
@@ -976,6 +1268,24 @@ impl Launcher {
                 FrameKind::Root => (rows::root_rows(s, &query), "Search apps, commands, math…".to_string(), None),
                 FrameKind::Builtin(b) => {
                     let b = *b;
+                    let status = match b {
+                        Builtin::Clipboard => Some(format!("{} entries", s.clipboard.entries().len())),
+                        Builtin::Windows => Some(format!("{} windows", s.windows.len())),
+                        Builtin::Store => {
+                            let loc = backslash_core::catalog::Locations::user(&s.config);
+                            let installed = s
+                                .catalog
+                                .entries
+                                .iter()
+                                .filter(|e| backslash_core::catalog::installed(&loc, &e.id).is_some())
+                                .count();
+                            Some(format!("{} extensions · {installed} installed", s.catalog.entries.len()))
+                        }
+                        _ => None,
+                    };
+                    if let Some(status) = status {
+                        self.context.set_text(&status);
+                    }
                     let (title, description) = b.empty();
                     let empty =
                         proto::EmptyState { title: title.into(), description: Some(description.into()), icon: None };
@@ -985,7 +1295,15 @@ impl Launcher {
                     if s.search.is_none() {
                         self.spinner.set_spinning(list.loading);
                     }
-                    let rows = rows::list_rows(&mut s.ranker, list, &query, &session.extension_id);
+                    if let Some(status) = &list.status {
+                        self.context.set_text(status);
+                    }
+                    let hosts = s
+                        .registry
+                        .find(&session.extension_id)
+                        .map(|e| e.manifest.permissions.net.clone())
+                        .unwrap_or_default();
+                    let rows = rows::list_rows(&mut s.ranker, list, &query, &hosts);
                     (rows, list.placeholder.clone().unwrap_or_else(|| "Search…".into()), list.empty.clone())
                 }
                 FrameKind::Script { result, .. } => {
@@ -1067,7 +1385,7 @@ impl Launcher {
             if flow.is_none() || row.section.as_deref() != section {
                 section = row.section.as_deref();
                 if let Some(title) = section {
-                    self.grid_box.append(&label(&title.to_uppercase(), "section-header"));
+                    self.grid_box.append(&label(title, "section-header"));
                 }
                 let f = gtk::FlowBox::builder()
                     .selection_mode(gtk::SelectionMode::None)
@@ -1164,7 +1482,7 @@ impl Launcher {
             }
             return;
         };
-        widgets::fill_preview(&self.preview, &row.preview(), &self.current_actions());
+        widgets::fill_preview(&self.preview, &row.preview());
     }
 
     fn render_detail(&self) {
@@ -1225,14 +1543,21 @@ impl Launcher {
         while let Some(child) = self.metadata.first_child() {
             self.metadata.remove(&child);
         }
-        self.metadata.set_visible(!d.metadata.is_empty());
-        for m in &d.metadata {
-            self.metadata.append(&label(&m.label, "label"));
-            let value = label(&m.value, "value");
-            value.set_selectable(true);
-            value.set_wrap(true);
-            value.set_margin_bottom(8);
-            self.metadata.append(&value);
+        while let Some(child) = self.detail_stats.first_child() {
+            self.detail_stats.remove(&child);
+        }
+        self.detail_stats.set_visible(!d.stats.is_empty());
+        if !d.stats.is_empty() {
+            self.detail_stats.append(&widgets::stats(&d.stats));
+        }
+        if let Some(scroll) = self.metadata.parent().and_then(|v| v.parent()) {
+            scroll.set_visible(!d.metadata.is_empty());
+        }
+        if !d.metadata.is_empty() {
+            self.metadata.append(&widgets::metadata_grid(&d.metadata, 78));
+        }
+        if let Some(status) = &d.status {
+            self.context.set_text(status);
         }
         self.pages.set_visible_child_name("detail");
     }
@@ -1330,8 +1655,8 @@ impl Launcher {
                 FrameKind::Extension { view: View::Form(_), .. } | FrameKind::Form { .. } => return Vec::new(),
                 FrameKind::ConfirmInstall { id } => {
                     return vec![
-                        UiAction::new("Install", Op::InstallEntry(id.clone())).icon("object-select"),
-                        UiAction::new("Cancel", Op::Back).icon("window-close"),
+                        UiAction::new("Install", Op::InstallEntry(id.clone())).icon("bs-check"),
+                        UiAction::new("Cancel", Op::Back).icon("bs-x"),
                     ]
                 }
                 FrameKind::Script { id, arguments, result, list, .. } => {
@@ -1340,19 +1665,19 @@ impl Launcher {
                     if let (false, Some(Ok(out))) = (*list, result) {
                         if s.paste.is_some() {
                             actions.push(
-                                UiAction::new("Paste Output", Op::Paste(out.trim_end().to_string())).icon("edit-paste"),
+                                UiAction::new("Paste Output", Op::Paste(out.trim_end().to_string())).icon("bs-paste"),
                             );
                         }
                         actions
-                            .push(UiAction::new("Copy Output", Op::Copy(out.trim_end().to_string())).icon("edit-copy"));
+                            .push(UiAction::new("Copy Output", Op::Copy(out.trim_end().to_string())).icon("bs-copy"));
                     }
                     actions.push(
                         UiAction::new("Run Again", Op::RunScript(id.clone(), Some(arguments.clone())))
-                            .icon("view-refresh")
+                            .icon("bs-refresh")
                             .shortcut("<Ctrl>r"),
                     );
                     if let Some(path) = path {
-                        actions.push(UiAction::new("Edit Script", Op::Open(path)).icon("document-edit"));
+                        actions.push(UiAction::new("Edit Script", Op::Open(path)).icon("bs-code"));
                     }
                     if *list {
                         let mut row_actions = self.selected_row().map(|r| r.actions).unwrap_or_default();
@@ -1363,14 +1688,14 @@ impl Launcher {
                 }
                 FrameKind::InstallRuntime { .. } => {
                     return vec![
-                        UiAction::new("Download and Run", Op::InstallRuntime).icon("folder-download"),
-                        UiAction::new("Cancel", Op::Back).icon("window-close"),
+                        UiAction::new("Download and Run", Op::InstallRuntime).icon("bs-download"),
+                        UiAction::new("Cancel", Op::Back).icon("bs-x"),
                     ]
                 }
                 FrameKind::Approval { .. } => {
                     return vec![
-                        UiAction::new("Allow and Run", Op::Approve).icon("object-select"),
-                        UiAction::new("Cancel", Op::Back).icon("window-close"),
+                        UiAction::new("Allow and Run", Op::Approve).icon("bs-check"),
+                        UiAction::new("Cancel", Op::Back).icon("bs-x"),
                     ]
                 }
                 FrameKind::Extension { view: View::List(l), .. } => from(&l.actions),
@@ -1429,14 +1754,19 @@ impl Launcher {
             proto::ToastStyle::Failure => self.toast.add_css_class("failure"),
             proto::ToastStyle::Info => {}
         }
+        // The toast takes the place of the context line for a while.
+        self.toast.set_visible(true);
+        self.context.set_visible(false);
         // Only the latest toast clears it (removing a timer that already
         // fired would panic, so none is removed).
         let serial = self.state.borrow().toast_serial.clone();
         serial.set(serial.get() + 1);
-        let (toast, mine) = (self.toast.clone(), serial.get());
+        let (toast, context, mine) = (self.toast.clone(), self.context.clone(), serial.get());
         glib::timeout_add_local_once(Duration::from_millis(3500), move || {
             if serial.get() == mine {
                 toast.set_text("");
+                toast.set_visible(false);
+                context.set_visible(true);
             }
         });
     }
@@ -1579,6 +1909,8 @@ impl Launcher {
                 self.cycle_filter(-1);
                 return Stop;
             }
+            gdk::Key::Tab if !self.is_form() && self.cycle_list_filter(1) => return Stop,
+            gdk::Key::ISO_Left_Tab if !self.is_form() && self.cycle_list_filter(-1) => return Stop,
             gdk::Key::Escape => {
                 if !self.is_root() {
                     self.pop();
@@ -1696,28 +2028,59 @@ impl Launcher {
         let select = |i: i32| {
             if let Some(row) = self.popover_list.row_at_index(i.clamp(0, actions.len() as i32 - 1)) {
                 self.popover_list.select_row(Some(&row));
+                row.grab_focus();
+                self.actions_entry.grab_focus_without_selecting();
             }
         };
         match key {
-            gdk::Key::Escape => self.close_action_panel(),
+            gdk::Key::Escape => {
+                if self.menu_levels.borrow().len() > 1 {
+                    self.menu_back();
+                } else {
+                    self.close_action_panel();
+                }
+            }
+            gdk::Key::BackSpace if self.actions_entry.text().is_empty() && self.menu_levels.borrow().len() > 1 => {
+                self.menu_back();
+            }
+            gdk::Key::Left if self.actions_entry.text().is_empty() && self.menu_levels.borrow().len() > 1 => {
+                self.menu_back();
+            }
             gdk::Key::k | gdk::Key::K if ctrl => self.close_action_panel(),
             gdk::Key::Down => select(selected + 1),
             gdk::Key::Up => select(selected - 1),
-            gdk::Key::Return | gdk::Key::KP_Enter => {
-                self.close_action_panel();
+            gdk::Key::n | gdk::Key::j if ctrl => select(selected + 1),
+            gdk::Key::p if ctrl => select(selected - 1),
+            gdk::Key::Right if self.actions_entry.text().is_empty() => {
                 if let Some(action) = actions.get(selected as usize).cloned() {
-                    self.run_action(action);
+                    if matches!(action.op, Op::Submenu(_) | Op::LazySubmenu(_)) {
+                        self.pick_action(action);
+                    }
+                }
+            }
+            gdk::Key::Return | gdk::Key::KP_Enter => {
+                if let Some(action) = actions.get(selected as usize).cloned() {
+                    self.pick_action(action);
                 }
             }
             _ => match matching_shortcut(&actions, key, mods) {
-                Some(action) => {
-                    self.close_action_panel();
-                    self.run_action(action);
-                }
+                Some(action) => self.pick_action(action),
                 None => return Proceed,
             },
         }
         Stop
+    }
+
+    /// Runs an action from the panel, or opens its submenu.
+    fn pick_action(self: &Rc<Self>, action: UiAction) {
+        match &action.op {
+            Op::Submenu(children) => self.open_submenu(&action.title, children.clone()),
+            Op::LazySubmenu(id) => self.load_submenu(&action.title, id.clone()),
+            _ => {
+                self.close_action_panel();
+                self.run_action(action);
+            }
+        }
     }
 
     fn open_action_panel(&self) {
@@ -1725,40 +2088,162 @@ impl Launcher {
         if actions.is_empty() {
             return;
         }
+        let context = self.selected_row().map(|r| r.title).unwrap_or_default();
+        self.menu_levels.replace(vec![(context, actions)]);
+        self.show_menu_level();
+        self.action_panel.set_visible(true);
+        self.actions_entry.grab_focus();
+    }
+
+    fn open_submenu(&self, title: &str, actions: Vec<UiAction>) {
+        if !self.action_panel.is_visible() {
+            // Opened by its shortcut: Escape goes back to all the actions.
+            let context = self.selected_row().map(|r| r.title).unwrap_or_default();
+            self.menu_levels.replace(vec![(context, self.current_actions())]);
+            self.action_panel.set_visible(true);
+        }
+        self.menu_levels.borrow_mut().push((title.to_string(), actions));
+        self.show_menu_level();
+        self.actions_entry.grab_focus();
+    }
+
+    /// A submenu whose actions the extension gives when asked.
+    fn load_submenu(self: &Rc<Self>, title: &str, action_id: String) {
+        let Some(session) = self.top_session() else { return };
+        self.open_submenu(title, Vec::new());
+        self.actions_entry.set_placeholder_text(Some("Loading…"));
+        let pending = match session.request("submenu", json!({ "action": action_id })) {
+            Ok(p) => p,
+            Err(e) => return self.fail(e),
+        };
+        let weak = Rc::downgrade(self);
+        let title = title.to_string();
+        glib::spawn_future_local(async move {
+            let reply = pending.get().await;
+            let Some(l) = weak.upgrade() else { return };
+            let actions = reply.and_then(|v| {
+                serde_json::from_value::<Vec<proto::Action>>(v).map_err(|e| RpcError::new(-32700, e.to_string()))
+            });
+            // Still showing that submenu?
+            let current = l.menu_levels.borrow().last().is_some_and(|(t, a)| *t == title && a.is_empty());
+            match actions {
+                Ok(actions) if current => {
+                    if let Some(level) = l.menu_levels.borrow_mut().last_mut() {
+                        level.1 = actions.iter().map(UiAction::from_proto).collect();
+                    }
+                    l.show_menu_level();
+                }
+                Ok(_) => {}
+                Err(e) => {
+                    l.close_action_panel();
+                    l.fail(e);
+                }
+            }
+        });
+    }
+
+    fn menu_back(&self) {
+        self.menu_levels.borrow_mut().pop();
+        self.show_menu_level();
+    }
+
+    /// Shows the top menu level, filtered by what is typed in the panel.
+    fn show_menu_level(&self) {
+        let levels = self.menu_levels.borrow();
+        let Some((title, actions)) = levels.last() else { return };
+        let path: Vec<&str> = levels.iter().skip(1).map(|(t, _)| t.as_str()).collect();
+        let context = if path.is_empty() { title.clone() } else { path.join(" › ") };
+        self.actions_context.set_text(&context);
+        self.actions_context.set_visible(!context.is_empty());
+        let depth = levels.len();
+        let actions = actions.clone();
+        drop(levels);
+        self.setting_query.set(true);
+        self.actions_entry.set_text("");
+        self.setting_query.set(false);
+        self.actions_entry.set_placeholder_text(Some(if depth > 1 { "Search…" } else { "Search actions…" }));
+        self.fill_action_list(&actions, "");
+    }
+
+    fn fill_action_list(&self, actions: &[UiAction], query: &str) {
         while let Some(child) = self.popover_list.first_child() {
             self.popover_list.remove(&child);
         }
-        for (i, a) in actions.iter().enumerate() {
+        let q = query.trim().to_lowercase();
+        let shown: Vec<UiAction> =
+            actions.iter().filter(|a| q.is_empty() || a.title.to_lowercase().contains(&q)).cloned().collect();
+        let top_level = self.menu_levels.borrow().len() <= 1;
+        let sections: Vec<Option<String>> = shown.iter().map(|a| a.section.clone()).collect();
+        for (i, a) in shown.iter().enumerate() {
             let b = gtk::Box::new(gtk::Orientation::Horizontal, 10);
-            b.append(&icons::widget(a.icon.clone().map(Icon::Spec).as_ref(), 16));
+            let icon = a.icon.clone().map(Icon::Spec).or_else(|| Icon::named("bs-dot"));
+            let w = icons::widget(icon.as_ref(), 15);
+            if a.destructive {
+                w.add_css_class("destructive");
+            }
+            b.append(&w);
             let title = label(&a.title, "title");
             title.set_hexpand(true);
+            title.set_ellipsize(gtk::pango::EllipsizeMode::End);
             if a.destructive {
                 title.add_css_class("destructive");
             }
             b.append(&title);
-            let shortcut = match (i, &a.shortcut) {
-                (0, _) => Some("↵".to_string()),
-                (1, None) => Some("Ctrl ↵".to_string()),
-                (_, Some(s)) => Some(pretty_accel(s)),
+            if matches!(a.op, Op::Submenu(_) | Op::LazySubmenu(_)) {
+                b.append(&crate::glyphs::Glyph::new("bs-chevron-right", 13));
+            }
+            // Enter and Ctrl+Enter run the first two actions of an item.
+            let keys = match (i, &a.shortcut) {
+                (_, Some(s)) => Some(widgets::accel_keys(s)),
+                (0, None) if top_level && q.is_empty() => Some("↵".to_string()),
+                (1, None) if top_level && q.is_empty() => Some("Ctrl ↵".to_string()),
                 _ => None,
             };
-            if let Some(s) = shortcut {
-                b.append(&label(&s, "kind"));
+            if let Some(k) = keys {
+                b.append(&key_hint("", &k));
             }
             let row = gtk::ListBoxRow::new();
             row.set_child(Some(&b));
+            row.set_focusable(false);
             self.popover_list.append(&row);
         }
-        *self.popover_actions.borrow_mut() = actions;
+        let sections_for_header = Rc::new(sections);
+        self.popover_list.set_header_func(move |row, before| {
+            let current = sections_for_header.get(row.index() as usize).cloned().flatten();
+            let previous = before.and_then(|b| sections_for_header.get(b.index() as usize).cloned().flatten());
+            match current {
+                Some(s) if previous.as_ref() != Some(&s) => {
+                    let h = label(&s, "section-header");
+                    h.set_margin_start(4);
+                    row.set_header(Some(&h));
+                }
+                None if previous.is_some() => {
+                    let line = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+                    line.add_css_class("meta-separator");
+                    line.set_margin_top(4);
+                    line.set_margin_bottom(4);
+                    row.set_header(Some(&line));
+                }
+                _ => row.set_header(gtk::Widget::NONE),
+            }
+        });
+        *self.popover_actions.borrow_mut() = shown;
         if let Some(first) = self.popover_list.row_at_index(0) {
             self.popover_list.select_row(Some(&first));
         }
-        self.action_panel.set_visible(true);
+    }
+
+    fn on_actions_query_changed(&self) {
+        if self.setting_query.get() {
+            return;
+        }
+        let actions = self.menu_levels.borrow().last().map(|(_, a)| a.clone()).unwrap_or_default();
+        self.fill_action_list(&actions, &self.actions_entry.text());
     }
 
     fn close_action_panel(&self) {
         self.action_panel.set_visible(false);
+        self.menu_levels.replace(Vec::new());
         self.entry.grab_focus_without_selecting();
     }
 
@@ -1788,6 +2273,9 @@ impl Launcher {
 
     fn execute(self: &Rc<Self>, action: UiAction) {
         match action.op {
+            Op::OpenSettings => self.open_settings(None),
+            Op::Submenu(children) => self.open_submenu(&action.title, children),
+            Op::LazySubmenu(id) => self.load_submenu(&action.title, id),
             Op::LaunchApp(id, desktop_action) => {
                 let app = self.state.borrow().apps.iter().find(|a| a.id == id).cloned();
                 let Some(app) = app else { return };
@@ -1897,7 +2385,7 @@ impl Launcher {
                         return self.fail(e);
                     }
                 }
-                self.styles.apply(theme, &self.window);
+                self.apply_style();
                 self.pop();
             }
             Op::SetAutostart(enabled) => match autostart::set(enabled) {
@@ -1940,48 +2428,6 @@ impl Launcher {
                     settings::key_hotkey_form(&title, s.config.hotkeys.get(&key).map_or("", String::as_str))
                 };
                 self.push(FrameKind::Form { purpose: FormPurpose::KeyHotkey { key }, form });
-            }
-            Op::ToggleExtension(id) => {
-                let enabled = self.state.borrow().config.is_enabled(&id);
-                self.update_config(|c| c.extensions.entry(id.clone()).or_default().enabled = !enabled);
-                self.render();
-            }
-            Op::ConfigureExtension(id) => {
-                let form = {
-                    let s = self.state.borrow();
-                    let Some(ext) = s.registry.find(&id) else { return };
-                    settings::preferences_form(&ext.manifest, &s.config)
-                };
-                let purpose = FormPurpose::Preferences { extension_id: id, then_run: None };
-                self.push(FrameKind::Form { purpose, form });
-            }
-            Op::EditQuicklink(index) => {
-                let form = settings::quicklink_form(
-                    index.and_then(|i| self.state.borrow().config.quicklinks.get(i).cloned()).as_ref(),
-                );
-                self.push(FrameKind::Form { purpose: FormPurpose::Quicklink { index }, form });
-            }
-            Op::DeleteQuicklink(index) => {
-                self.update_config(|c| {
-                    if index < c.quicklinks.len() {
-                        c.quicklinks.remove(index);
-                    }
-                });
-                self.render();
-            }
-            Op::EditSnippet(index) => {
-                let form = settings::snippet_form(
-                    index.and_then(|i| self.state.borrow().config.snippets.get(i).cloned()).as_ref(),
-                );
-                self.push(FrameKind::Form { purpose: FormPurpose::Snippet { index }, form });
-            }
-            Op::DeleteSnippet(index) => {
-                self.update_config(|c| {
-                    if index < c.snippets.len() {
-                        c.snippets.remove(index);
-                    }
-                });
-                self.render();
             }
             Op::UnhideApp(id) => {
                 self.update_config(|c| c.hidden_apps.retain(|h| *h != id));
@@ -2219,7 +2665,6 @@ impl Launcher {
         };
         let Some(purpose) = purpose else { return };
         let text = |k: &str| values.get(k).and_then(Value::as_str).unwrap_or_default().trim().to_string();
-        let optional = |k: &str| Some(text(k)).filter(|t| !t.is_empty());
         match purpose {
             FormPurpose::Arguments { command_id } => {
                 let parsed = {
@@ -2276,34 +2721,6 @@ impl Launcher {
                     Some(command) => self.start_command(&command, None),
                     None => self.show_toast("Preferences saved", proto::ToastStyle::Success),
                 }
-            }
-            FormPurpose::Quicklink { index } => {
-                let link = backslash_core::config::Quicklink {
-                    name: text("name"),
-                    url: text("url"),
-                    keyword: optional("keyword"),
-                    icon: index.and_then(|i| self.state.borrow().config.quicklinks.get(i).and_then(|l| l.icon.clone())),
-                };
-                if !link.url.contains("://") {
-                    return self.fail("The URL must start with https:// (or another scheme)");
-                }
-                self.update_config(|c| match index {
-                    Some(i) if i < c.quicklinks.len() => c.quicklinks[i] = link,
-                    _ => c.quicklinks.push(link),
-                });
-                self.pop();
-            }
-            FormPurpose::Snippet { index } => {
-                let snippet = backslash_core::config::Snippet {
-                    name: text("name"),
-                    text: values.get("text").and_then(Value::as_str).unwrap_or_default().to_string(),
-                    keyword: optional("keyword"),
-                };
-                self.update_config(|c| match index {
-                    Some(i) if i < c.snippets.len() => c.snippets[i] = snippet,
-                    _ => c.snippets.push(snippet),
-                });
-                self.pop();
             }
             FormPurpose::Hotkey => {
                 let hotkey = text("hotkey");
@@ -2423,6 +2840,23 @@ impl Launcher {
             s.frames.push(Frame { kind, query: String::new(), selected: None });
             s.confirm = None;
             s.selected_key = None;
+            // An update may have come before the view it updates.
+            let early = match &s.frames.last().unwrap().kind {
+                FrameKind::Extension { session, view, .. } => {
+                    let id = view_id(view);
+                    s.early_updates
+                        .iter()
+                        .rposition(|(es, v)| Rc::ptr_eq(es, session) && view_id(v) == id)
+                        .map(|i| s.early_updates.swap_remove(i).1)
+                }
+                _ => None,
+            };
+            s.early_updates.clear();
+            if let (Some(update), Some(Frame { kind: FrameKind::Extension { view, .. }, .. })) =
+                (early, s.frames.last_mut())
+            {
+                *view = update;
+            }
         }
         self.set_query("");
         self.render();
@@ -2484,7 +2918,11 @@ impl Launcher {
                 }
                 _ => false,
             });
-            let Some(i) = position else { return };
+            let Some(i) = position else {
+                // Its view is not shown yet (the start reply is on its way).
+                s.early_updates.push((session.clone(), view));
+                return;
+            };
             if let FrameKind::Extension { view: v, .. } = &mut s.frames[i].kind {
                 *v = view;
             }
@@ -2568,6 +3006,19 @@ impl Launcher {
                         Ok(Value::Null)
                     }
                     "oauth/token" | "oauth/signOut" => return self.oauth_request(session, id, &method, params),
+                    "command/metadata" => {
+                        let command = self.state.borrow().frames.iter().find_map(|f| match &f.kind {
+                            FrameKind::Extension { session: s, launched, .. } if Rc::ptr_eq(s, session) => {
+                                Some(launched.command_id.clone())
+                            }
+                            _ => None,
+                        });
+                        if let Some(command) = command {
+                            let subtitle = params.get("subtitle").and_then(Value::as_str).map(str::to_owned);
+                            self.state.borrow_mut().command_meta.set(&command, subtitle);
+                        }
+                        Ok(Value::Null)
+                    }
                     _ => Err(RpcError::new(RpcError::METHOD_NOT_FOUND, format!("unknown method {method}"))),
                 };
                 session.respond(id, result);
@@ -2634,7 +3085,7 @@ impl Launcher {
                 s.files.results.clear();
             }
             Builtin::Store => self.refresh_catalog(),
-            Builtin::Clipboard | Builtin::Theme | Builtin::Settings | Builtin::Welcome => {}
+            Builtin::Clipboard | Builtin::Theme | Builtin::Welcome => {}
         }
         self.record(format!("builtin:{}", builtin_id(builtin)));
         self.push(FrameKind::Builtin(builtin));
@@ -3010,7 +3461,6 @@ fn builtin_id(builtin: Builtin) -> &'static str {
         Builtin::Files => "files",
         Builtin::Windows => "windows",
         Builtin::Theme => "theme",
-        Builtin::Settings => "settings",
         Builtin::Store => "store",
         Builtin::Welcome => "welcome",
     }

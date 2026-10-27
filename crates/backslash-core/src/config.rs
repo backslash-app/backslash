@@ -2,6 +2,8 @@
 //!
 //! ```toml
 //! theme = "system"            # "light", "dark" or "system"
+//! accent = "indigo"           # indigo, blue, green, orange, pink, graphite
+//! density = "comfortable"     # or "compact"
 //! hotkey = "Super+Space"      # asked to the desktop through the GlobalShortcuts portal
 //!
 //! [extensions.github]
@@ -43,6 +45,11 @@ use crate::paths;
 #[serde(default)]
 pub struct Config {
     pub theme: Theme,
+    /// Color of the selection, keys and links: `indigo`, `blue`, `green`,
+    /// `orange`, `pink` or `graphite`.
+    pub accent: Accent,
+    /// `compact` fits more rows.
+    pub density: Density,
     /// Shortcut requested from the desktop, e.g. `Super+Space`. Empty disables it.
     pub hotkey: String,
     /// Show as an overlay on compositors supporting wlr-layer-shell (Sway, Hyprland, KDE…).
@@ -65,6 +72,8 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             theme: Theme::System,
+            accent: Accent::default(),
+            density: Density::default(),
             hotkey: "Super+Space".into(),
             layer_shell: true,
             hidden_apps: Vec::new(),
@@ -87,6 +96,41 @@ pub enum Theme {
     System,
     Light,
     Dark,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Accent {
+    #[default]
+    Indigo,
+    Blue,
+    Green,
+    Orange,
+    Pink,
+    Graphite,
+}
+
+impl Accent {
+    pub const ALL: [Accent; 6] = [Self::Indigo, Self::Blue, Self::Green, Self::Orange, Self::Pink, Self::Graphite];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Indigo => "Indigo",
+            Self::Blue => "Blue",
+            Self::Green => "Green",
+            Self::Orange => "Orange",
+            Self::Pink => "Pink",
+            Self::Graphite => "Graphite",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Density {
+    #[default]
+    Comfortable,
+    Compact,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

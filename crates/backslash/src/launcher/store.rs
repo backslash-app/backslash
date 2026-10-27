@@ -1,7 +1,7 @@
 //! The extension store: browsing the registry, installing, updating.
 
 use backslash_core::catalog::{self, Entry, Locations};
-use backslash_core::protocol::Accessory;
+use backslash_core::protocol::{Accessory, MetadataEntry, Tag};
 
 use super::model::{tint_for, Op, Preview, Row, UiAction};
 use super::State;
@@ -55,22 +55,22 @@ pub fn rows(s: &State) -> Vec<Row> {
             let mut actions = Vec::new();
             match status {
                 Status::Available => {
-                    actions.push(UiAction::new("Install…", Op::ReviewInstall(e.id.clone())).icon("list-add"))
+                    actions.push(UiAction::new("Install…", Op::ReviewInstall(e.id.clone())).icon("bs-plus"))
                 }
                 Status::Update => {
-                    actions.push(UiAction::new("Update…", Op::ReviewInstall(e.id.clone())).icon("view-refresh"));
+                    actions.push(UiAction::new("Update…", Op::ReviewInstall(e.id.clone())).icon("bs-refresh"));
                     if s.catalog.updates.len() > 1 {
-                        actions.push(UiAction::new("Update All", Op::UpdateAll).icon("view-refresh"));
+                        actions.push(UiAction::new("Update All", Op::UpdateAll).icon("bs-refresh"));
                     }
                 }
                 Status::Installed => {}
             }
             let page = repository_page(e);
-            actions.push(UiAction::new("Open Source Code", Op::Open(page.clone())).icon("web-browser"));
+            actions.push(UiAction::new("Open Source Code", Op::Open(page.clone())).icon("bs-external"));
             if !matches!(status, Status::Available) {
                 actions.push(
                     UiAction::new("Uninstall", Op::UninstallEntry(e.id.clone()))
-                        .icon("edit-delete")
+                        .icon("bs-trash")
                         .destructive()
                         .confirm(&format!("Uninstall {}?", e.title)),
                 );
@@ -85,7 +85,7 @@ pub fn rows(s: &State) -> Vec<Row> {
             } else if !tag.is_empty() {
                 accessories.push(Accessory { tag: Some(tag.into()), color: Some(color.into()), ..Default::default() });
             }
-            let icon = Icon::Spec(e.icon.clone().unwrap_or_else(|| "application-x-addon".into()));
+            let icon = Icon::Spec(e.icon.clone().unwrap_or_else(|| "bs-package".into()));
             let row = Row {
                 key: format!("store:{}", e.id),
                 title: e.title.clone(),
@@ -97,17 +97,11 @@ pub fn rows(s: &State) -> Vec<Row> {
                 actions,
                 preview: Some(Preview {
                     icon: Some(icon),
+                    tint: Some(tint_for(&e.id).into()),
                     title: e.title.clone(),
                     subtitle: Some(e.description.clone()).filter(|d| !d.is_empty()),
-                    facts: vec![
-                        ("Author".into(), if e.author.is_empty() { "Unknown".into() } else { e.author.clone() }),
-                        ("Version".into(), e.version.clone()),
-                        ("Commands".into(), e.commands.join("\n")),
-                        ("Permissions".into(), permissions(e).join("\n")),
-                        ("Source".into(), short_source(e)),
-                        ("Reviewed at".into(), e.commit.chars().take(12).collect()),
-                    ],
-                    body: None,
+                    metadata: entry_metadata(e, &status),
+                    ..Default::default()
                 }),
                 ..Default::default()
             };
@@ -116,6 +110,55 @@ pub fn rows(s: &State) -> Vec<Row> {
         .collect();
     rows.sort_by_key(|(order, r)| (*order, r.title.to_lowercase()));
     rows.into_iter().map(|(_, r)| r).collect()
+}
+
+/// The side panel of a store entry: what it is, what it can do, where it comes from.
+fn entry_metadata(e: &Entry, status: &Status) -> Vec<MetadataEntry> {
+    let line = |label: &str, value: String| MetadataEntry { label: label.into(), value, ..Default::default() };
+    let mut lines = vec![
+        match status {
+            Status::Installed => MetadataEntry {
+                label: "Status".into(),
+                value: "Installed".into(),
+                icon: Some("bs-circle-check".into()),
+                color: Some("green".into()),
+                ..Default::default()
+            },
+            Status::Update => MetadataEntry {
+                label: "Status".into(),
+                value: "Update available".into(),
+                icon: Some("bs-download".into()),
+                color: Some("orange".into()),
+                ..Default::default()
+            },
+            Status::Available => line("Status", "Not installed".into()),
+        },
+        line("Version", e.version.clone()),
+        line("Author", if e.author.is_empty() { "Unknown".into() } else { e.author.clone() }),
+        MetadataEntry {
+            label: "Commands".into(),
+            tags: e.commands.iter().map(|c| Tag { text: c.clone(), color: None }).collect(),
+            ..Default::default()
+        },
+        MetadataEntry { separator: true, ..Default::default() },
+    ];
+    for (i, p) in permissions(e).into_iter().enumerate() {
+        lines.push(MetadataEntry {
+            label: if i == 0 { "Can".into() } else { String::new() },
+            value: p,
+            icon: Some(if e.permissions.is_empty() { "bs-shield" } else { "bs-check" }.into()),
+            ..Default::default()
+        });
+    }
+    lines.push(MetadataEntry { separator: true, ..Default::default() });
+    lines.push(MetadataEntry {
+        label: "Source".into(),
+        value: short_source(e),
+        link: Some(repository_page(e)),
+        ..Default::default()
+    });
+    lines.push(line("Reviewed", e.commit.chars().take(12).collect()));
+    lines
 }
 
 fn permissions(e: &Entry) -> Vec<String> {

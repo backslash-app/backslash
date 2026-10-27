@@ -17,7 +17,7 @@ the CLI and two bundled extensions. Next steps, roughly in order.
 - [x] File search with recents and previews.
 - [x] Window switcher for Hyprland, Sway, niri, KDE Plasma, GNOME and X11.
 - [x] Unit and currency conversions.
-- [x] Quicklinks and snippets in `config.toml` (an editor in the launcher to do).
+- [x] Quicklinks and snippets, edited in the settings window.
 - [x] Light, dark and system themes with a preview panel.
 - [x] Aliases and per-item global shortcuts, `backslash open <item>`.
 
@@ -31,7 +31,10 @@ the CLI and two bundled extensions. Next steps, roughly in order.
 - [x] Update badge on Browse Extensions (registry checked every 6 hours), Update All.
 - [ ] Signed registry commits, so a compromised mirror cannot serve entries.
 - [x] Grid layout for lists (emoji, images).
-- [ ] List item detail pane, menu-bar/tray items.
+- [x] Rich preview panel for list items: stats, tags, people, links, progress.
+- [x] List filters, footer status, command subtitles, action sections and submenus.
+- [x] Backslash's own icon set, drawn in the theme colors.
+- [ ] Menu-bar/tray items.
 - [ ] Background commands on an interval.
 - [x] OAuth helper (PKCE, loopback redirect, refresh, tokens in the keyring).
 - [x] Hot reload in `backslash dev` (watch files, re-run the open command).
@@ -41,6 +44,7 @@ the CLI and two bundled extensions. Next steps, roughly in order.
 
 ## Quality
 - [x] Welcome checklist on first launch, with the real state of each step on this desktop.
-- [ ] Settings window for theme and window size; more themes.
+- [x] Settings window: shortcut, theme, accent color, density, extensions, clipboard, quicklinks, snippets.
+- [ ] More themes and window sizes.
 - [ ] Localization (French first).
 - [ ] UI tests driving the window under a virtual display in CI.

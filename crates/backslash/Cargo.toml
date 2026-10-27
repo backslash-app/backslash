@@ -18,6 +18,7 @@ gtk = { version = "0.10.3", package = "gtk4", features = ["v4_14"] }
 libc = "0.2.191"
 ureq = { version = "3.5.0", features = ["json", "platform-verifier"] }
 dirs = "7.0.0"
+sha2 = "0.11.0"
 
 [dev-dependencies]
 tempfile = "3.27.0"

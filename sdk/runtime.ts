@@ -5,7 +5,20 @@
 // wire views and keeps the callbacks they reference.
 
 import { type Json, KIND, type Rpc, setRpc } from "./internal.ts";
-import type { Action, Command, Context, DetailSpec, Effect, Item, ListSpec, Outcome, View } from "./mod.ts";
+import type {
+  Action,
+  Command,
+  Context,
+  DetailSpec,
+  Effect,
+  Icon,
+  Item,
+  ListSpec,
+  Metadata,
+  Outcome,
+  Stat,
+  View,
+} from "./mod.ts";
 
 // stdout belongs to the protocol: everything printed goes to the log instead.
 for (const level of ["log", "info", "debug", "warn"] as const) {
@@ -40,12 +53,13 @@ setRpc(host);
 // --- State -------------------------------------------------------------------
 
 interface Session {
+  command: string;
   args: Record<string, unknown>;
   preferences: Record<string, unknown>;
   query: string;
 }
 
-let session: Session = { args: {}, preferences: {}, query: "" };
+let session: Session = { command: "", args: {}, preferences: {}, query: "" };
 const lifetime = new AbortController();
 let viewCounter = 0;
 let actionCounter = 0;
@@ -53,11 +67,18 @@ const views = new Map<string, View>();
 const callbacks = new Map<string, { viewId: string; run: (ctx: Context, values?: unknown) => unknown }>();
 const inflight = new Map<number, AbortController>();
 
-function context(signal: AbortSignal = lifetime.signal): Context {
-  return { ...session, signal };
+/** The chip picked in each filtered list, by view id. */
+const filters = new Map<string, string>();
+
+function context(signal: AbortSignal = lifetime.signal, filter?: string): Context {
+  const { args, preferences, query } = session;
+  return { args, preferences, query, signal, filter };
 }
 
 // --- Serialization -----------------------------------------------------------
+
+/** Lazy submenus, by action id. */
+const submenus = new Map<string, { viewId: string; load: (ctx: Context) => unknown }>();
 
 function serializeActions(actions: Action[] | undefined, viewId: string): Json[] {
   return (actions ?? []).map((a) => {
@@ -66,7 +87,14 @@ function serializeActions(actions: Action[] | undefined, viewId: string): Json[]
     if (a.shortcut) base.shortcut = a.shortcut;
     if (a.destructive) base.destructive = true;
     if (a.confirm) base.confirm = a.confirm;
+    if (a.section) base.section = a.section;
     switch (a[KIND]) {
+      case "submenu":
+        if (typeof a.actions === "function") {
+          submenus.set(base.id as string, { viewId, load: a.actions });
+          return { ...base, kind: "submenu", actions: [], lazy: true };
+        }
+        return { ...base, kind: "submenu", actions: serializeActions(a.actions, viewId) };
       case "open":
         return { ...base, kind: "open", target: a.target };
       case "copy":
@@ -80,6 +108,38 @@ function serializeActions(actions: Action[] | undefined, viewId: string): Json[]
   });
 }
 
+/** `icon` and `iconTint` from a plain or tinted icon. */
+function iconJson(icon: Icon | undefined): { icon: Json; tint: Json } {
+  if (icon === undefined || icon === null) return { icon: null, tint: null };
+  if (typeof icon === "string") return { icon, tint: null };
+  return { icon: icon.source, tint: icon.tint ?? null };
+}
+
+function metadataJson(metadata: Record<string, string | number> | Metadata[] | undefined): Json[] {
+  if (!metadata) return [];
+  if (!Array.isArray(metadata)) {
+    return Object.entries(metadata).map(([label, value]) => ({ label, value: String(value) }));
+  }
+  return metadata.map((m) => {
+    const { icon, tint } = iconJson(m.icon);
+    return {
+      label: m.label,
+      value: m.value ?? "",
+      icon,
+      color: m.color ?? (tint as string | null) ?? null,
+      tags: (m.tags ?? []).map((t) => ({ text: t.text, color: t.color ?? null })),
+      link: m.link ?? null,
+      avatar: m.avatar ?? null,
+      progress: m.progress ?? null,
+      separator: m.separator ?? false,
+    };
+  });
+}
+
+function statsJson(stats: Stat[] | undefined): Json[] {
+  return (stats ?? []).map((s) => ({ label: s.label, value: String(s.value), color: s.color ?? null }));
+}
+
 function serializeItems(items: Item[], viewId: string): Json[] {
   const seen = new Map<string, number>();
   return items.map((item) => {
@@ -87,18 +147,31 @@ function serializeItems(items: Item[], viewId: string): Json[] {
     const n = seen.get(id) ?? 0;
     seen.set(id, n + 1);
     if (n > 0) id = `${id}#${n}`;
+    const { icon, tint } = iconJson(item.icon);
     return {
       id,
       title: item.title,
       subtitle: item.subtitle ?? null,
-      icon: item.icon ?? null,
+      icon,
+      iconTint: tint,
       section: item.section ?? null,
       keywords: item.keywords ?? [],
       accessories: [
-        ...(item.accessories ?? []).map((a) => ({ ...a }) as Json),
+        ...(item.accessories ?? []).map((a) => {
+          const { icon, tint } = iconJson(a.icon);
+          return { ...a, icon, color: a.color ?? tint } as Json;
+        }),
         ...(item.tags ?? []).map((tag) => ({ tag })),
       ],
       actions: serializeActions(item.actions, viewId),
+      detail: item.detail
+        ? {
+          image: item.detail.image ?? null,
+          stats: statsJson(item.detail.stats),
+          markdown: item.detail.markdown ?? null,
+          metadata: metadataJson(item.detail.metadata),
+        }
+        : null,
     };
   });
 }
@@ -120,7 +193,25 @@ function listJson(spec: ListSpec, id: string, items: Item[], loading: boolean): 
     actions: serializeActions(spec.actions, id),
     layout: spec.layout ?? "list",
     columns: spec.columns ?? null,
+    filter: spec.filter
+      ? {
+        options: spec.filter.options.map((o) => typeof o === "string" ? { value: o, title: o } : o),
+        value: filters.get(id) ?? "",
+      }
+      : null,
+    status: typeof spec.status === "function" ? spec.status(items) : spec.status ?? null,
   };
+}
+
+const filterKey = (spec: ListSpec) => `$filter:${session.command}:${spec.title ?? spec.placeholder ?? ""}`;
+
+/** The filter value of a new list view: remembered, else the default, else the first option. */
+async function initialFilter(spec: ListSpec): Promise<string | undefined> {
+  if (!spec.filter) return undefined;
+  const values = spec.filter.options.map((o) => typeof o === "string" ? o : o.value);
+  const saved = await host.request("storage/get", { key: filterKey(spec) }).catch(() => null);
+  if (typeof saved === "string" && values.includes(saved)) return saved;
+  return spec.filter.default ?? values[0];
 }
 
 /** Renders a view to its wire form. Async generators keep updating it afterwards. */
@@ -131,14 +222,18 @@ function retire(viewId: string) {
   viewAborts.get(viewId)?.abort();
   viewAborts.delete(viewId);
   views.delete(viewId);
+  filters.delete(viewId);
 }
 
-async function render(view: View, signal: AbortSignal = lifetime.signal): Promise<Json> {
+async function render(view: View, signal: AbortSignal = lifetime.signal, filter?: string): Promise<Json> {
   const id = `v${++viewCounter}`;
   views.set(id, view);
   const own = new AbortController();
   viewAborts.set(id, own);
-  const ctx = context(AbortSignal.any([signal, own.signal]));
+  if (view[KIND] === "list" && view.filter) {
+    filters.set(id, filter ?? await initialFilter(view) ?? "");
+  }
+  const ctx = context(AbortSignal.any([signal, own.signal]), filters.get(id));
   switch (view[KIND]) {
     case "list": {
       if (view.search) {
@@ -181,7 +276,9 @@ function detailJson(spec: DetailSpec, id: string, markdown: string, loading: boo
     id,
     title: spec.title ?? null,
     markdown,
-    metadata: Object.entries(spec.metadata ?? {}).map(([label, value]) => ({ label, value: String(value) })),
+    metadata: metadataJson(spec.metadata),
+    stats: statsJson(spec.stats),
+    status: spec.status ?? null,
     actions: serializeActions(spec.actions, id),
     loading,
   };
@@ -247,8 +344,9 @@ async function toEffect(outcome: Outcome, viewId: string): Promise<Json> {
     case "refresh": {
       const view = views.get(viewId);
       if (!view) return { type: "none" };
+      const filter = filters.get(viewId);
       retire(viewId);
-      return { type: "replace", view: await render(view) };
+      return { type: "replace", view: await render(view, lifetime.signal, filter) };
     }
   }
   throw new Error(`Unexpected action result: ${JSON.stringify(outcome)}`);
@@ -269,6 +367,7 @@ async function loadCommand(): Promise<Command> {
 const handlers: Record<string, (params: any, signal: AbortSignal) => Promise<Json>> = {
   async start(params): Promise<Json> {
     session = {
+      command: params.command ?? "",
       args: params.arguments ?? {},
       preferences: params.preferences ?? {},
       query: params.query ?? "",
@@ -288,8 +387,24 @@ const handlers: Record<string, (params: any, signal: AbortSignal) => Promise<Jso
     const view = views.get(viewId);
     if (!view || view[KIND] !== "list" || !view.search) throw new Error(`view ${viewId} is not searchable`);
     session.query = query;
-    const items = await view.search(query, context(signal));
+    const items = await view.search(query, context(signal, filters.get(viewId)));
     return listJson(view, viewId, items, false);
+  },
+
+  /** Another chip was picked: the list again, as a new view. */
+  async filter({ view: viewId, value }) {
+    const view = views.get(viewId);
+    if (!view || view[KIND] !== "list") throw new Error(`view ${viewId} has no filter`);
+    host.request("storage/set", { key: filterKey(view), value }).catch(() => {});
+    retire(viewId);
+    return await render(view, lifetime.signal, String(value));
+  },
+
+  async submenu({ action }, signal) {
+    const menu = submenus.get(action);
+    if (!menu) throw new Error(`unknown submenu ${action}`);
+    const actions = (await menu.load(context(signal))) as Action[];
+    return serializeActions(actions, menu.viewId);
   },
 
   async action({ action, values }, signal) {

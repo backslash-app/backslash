@@ -72,8 +72,8 @@ pub fn ago(time: u64) -> String {
 
 fn copy_actions(value: &str, full: &str) -> Vec<UiAction> {
     vec![
-        UiAction::new("Copy Result", Op::Copy(value.to_string())).icon("edit-copy"),
-        UiAction::new("Copy Full Answer", Op::Copy(full.to_string())).icon("edit-copy"),
+        UiAction::new("Copy Result", Op::Copy(value.to_string())).icon("bs-copy"),
+        UiAction::new("Copy Full Answer", Op::Copy(full.to_string())).icon("bs-copy"),
     ]
 }
 
@@ -82,12 +82,13 @@ fn answer(key: &str, value: String, detail: String, kind: &str, facts: Vec<(Stri
         key: key.into(),
         title: value.clone(),
         subtitle: Some(detail.clone()),
-        icon: Some(Icon::Spec("accessories-calculator".into())),
+        icon: Icon::named("bs-calculator"),
         tint: Some("orange"),
         style: RowStyle::Answer,
         actions: copy_actions(&value, &detail),
         preview: Some(Preview {
-            icon: Some(Icon::Spec("accessories-calculator".into())),
+            icon: Icon::named("bs-calculator"),
+            tint: Some("orange".into()),
             title: value,
             subtitle: Some(kind.into()),
             facts,
@@ -127,7 +128,7 @@ fn answers(s: &mut State, query: &str) -> Vec<Row> {
                 key: "currency".into(),
                 title: "Fetching exchange rates…".into(),
                 subtitle: Some(format!("{amount} {from} → {to}")),
-                icon: Some(Icon::Spec("network-transmit-receive".into())),
+                icon: Icon::named("bs-refresh"),
                 tint: Some("orange"),
                 ..Default::default()
             }),
@@ -135,7 +136,7 @@ fn answers(s: &mut State, query: &str) -> Vec<Row> {
                 key: "currency".into(),
                 title: "Exchange rates unavailable".into(),
                 subtitle: Some(e),
-                icon: Some(Icon::Spec("network-offline".into())),
+                icon: Icon::named("bs-wifi-off"),
                 tint: Some("red"),
                 ..Default::default()
             }),
@@ -152,11 +153,11 @@ fn answers(s: &mut State, query: &str) -> Vec<Row> {
                     key: format!("quicklink-run:{}", link.name),
                     title: format!("{} “{rest}”", link.name),
                     subtitle: Some(url.clone()),
-                    icon: Some(Icon::Spec(link.icon.clone().unwrap_or_else(|| "web-browser".into()))),
+                    icon: Some(Icon::Spec(link.icon.clone().unwrap_or_else(|| "bs-link".into()))),
                     tint: Some("blue"),
                     actions: vec![
-                        UiAction::new("Open", Op::Open(url.clone())).icon("web-browser"),
-                        UiAction::new("Copy URL", Op::Copy(url)).icon("edit-copy"),
+                        UiAction::new("Open", Op::Open(url.clone())).icon("bs-external"),
+                        UiAction::new("Copy URL", Op::Copy(url)).icon("bs-copy"),
                     ],
                     ..Default::default()
                 });
@@ -173,16 +174,17 @@ fn builtin_commands(s: &State) -> Vec<(Entry, Row)> {
         let row = Row {
             key: format!("builtin:{id}"),
             title: title.into(),
-            subtitle: Some("Command · Backslash".into()),
-            icon: Some(Icon::Spec(icon.into())),
+            subtitle: Some("Backslash".into()),
+            icon: Icon::named(icon),
             tint: Some(tint),
             section: Some("Commands".into()),
-            actions: vec![UiAction::new("Open Command", op).icon("system-run")],
+            actions: vec![UiAction::new("Open Command", op).icon("bs-arrow-right")],
             preview: Some(Preview {
-                icon: Some(Icon::Spec(icon.into())),
+                icon: Icon::named(icon),
+                tint: Some(tint.into()),
                 title: title.into(),
                 subtitle: Some("Built into Backslash".into()),
-                body: Some(about.into()),
+                markdown: Some(about.into()),
                 ..Default::default()
             }),
             ..Default::default()
@@ -196,17 +198,17 @@ fn builtin_commands(s: &State) -> Vec<(Entry, Row)> {
             "clipboard",
             "Clipboard History",
             &["paste", "copy", "history", "presse-papier"],
-            "edit-paste",
+            "bs-paste",
             "purple",
             Op::OpenBuiltin(Builtin::Clipboard),
-            "Everything you copied, searchable. Pin what you reuse.",
+            "Everything you copied, searchable. Pin what you reuse; Enter pastes it where you were.",
         );
     }
     add(
         "files",
         "Search Files",
         &["find", "document", "fichier", "recent"],
-        "system-search",
+        "bs-folder",
         "blue",
         Op::OpenBuiltin(Builtin::Files),
         "Find files in your home folder. Recent files appear first.",
@@ -216,17 +218,17 @@ fn builtin_commands(s: &State) -> Vec<(Entry, Row)> {
             "windows",
             "Switch Windows",
             &["window", "focus", "fenêtre", "alt tab"],
-            "preferences-system-windows",
+            "bs-window",
             "teal",
             Op::OpenBuiltin(Builtin::Windows),
-            "Jump to any open window.",
+            "Jump to any open window, on any workspace.",
         );
     }
     add(
         "theme",
         "Change Theme",
         &["dark", "light", "appearance", "mode", "thème", "sombre", "clair"],
-        "preferences-desktop-appearance",
+        "bs-palette",
         "yellow",
         Op::OpenBuiltin(Builtin::Theme),
         "Light, dark, or follow the system.",
@@ -240,12 +242,12 @@ fn builtin_commands(s: &State) -> Vec<(Entry, Row)> {
             "Start Backslash in the background with your session, so it opens instantly.",
         )
     };
-    add("autostart", title, &["startup", "autostart", "login", "démarrage"], "system-run", "green", op, about);
+    add("autostart", title, &["startup", "autostart", "login", "démarrage"], "bs-power", "green", op, about);
     add(
         "store",
         "Browse Extensions",
         &["store", "install", "extensions", "plugins", "registry", "update"],
-        "system-software-install",
+        "bs-package",
         "blue",
         Op::OpenBuiltin(Builtin::Store),
         "Find, install and update extensions. You see what each one is allowed to do before installing.",
@@ -254,7 +256,7 @@ fn builtin_commands(s: &State) -> Vec<(Entry, Row)> {
         "new-script",
         "Create Script Command",
         &["script", "shell", "bash", "python", "new", "automation", "créer"],
-        "text-x-script",
+        "bs-terminal",
         "green",
         Op::NewScript,
         "Turn any shell, Python or other script into a command: a few comment lines at the top describe it.",
@@ -262,17 +264,17 @@ fn builtin_commands(s: &State) -> Vec<(Entry, Row)> {
     add(
         "scripts",
         "Open Scripts Folder",
-        &["script", "scripts", "folder", "dossier"],
-        "folder",
+        &["script", "scripts", "bs-folder", "dossier"],
+        "bs-folder",
         "green",
         Op::OpenScriptsFolder,
-        "Script commands live in ~/.config/backslash/scripts. Edit them with any editor; changes show up the next time Backslash opens.",
+        "Script commands live in `~/.config/backslash/scripts`. Edit them with any editor; changes show up the next time Backslash opens.",
     );
     add(
         "welcome",
         "Welcome to Backslash",
         &["setup", "onboarding", "getting started", "tour", "bienvenue", "configurer", "help"],
-        "help-about",
+        "bs-sparkle",
         "teal",
         Op::OpenBuiltin(Builtin::Welcome),
         "Set up the shortcut, theme, clipboard history and extensions.",
@@ -280,20 +282,20 @@ fn builtin_commands(s: &State) -> Vec<(Entry, Row)> {
     add(
         "settings",
         "Settings",
-        &["preferences", "extensions", "quicklinks", "snippets", "réglages", "configure"],
-        "preferences-system",
+        &["preferences", "extensions", "quicklinks", "snippets", "réglages", "configure", "accent", "density"],
+        "bs-settings",
         "gray",
-        Op::OpenBuiltin(Builtin::Settings),
-        "Theme, shortcut, extensions and their preferences, quicklinks, snippets.",
+        Op::OpenSettings,
+        "Appearance, shortcuts, extensions and their accounts, quicklinks, snippets.",
     );
     add(
         "config",
         "Open Config File",
         &["settings", "preferences", "quicklinks", "snippets", "réglages"],
-        "preferences-system",
+        "bs-file",
         "gray",
         Op::Open(backslash_core::config::Config::path().display().to_string()),
-        "Theme, hotkey, quicklinks, snippets, hidden apps and extension preferences live in config.toml.",
+        "Everything in the settings lives in `config.toml`, easy to keep in your dotfiles.",
     );
     if let Some((_, row)) =
         out.iter_mut().find(|(e, _)| e.key == "builtin:store").filter(|_| !s.catalog.updates.is_empty())
@@ -309,8 +311,8 @@ fn builtin_commands(s: &State) -> Vec<(Entry, Row)> {
 }
 
 fn script_row(script: &Script) -> Row {
-    let icon = script.icon.clone().unwrap_or_else(|| "utilities-terminal".into());
-    let mut run = UiAction::new("Run Script", Op::RunScript(script.id.clone(), None)).icon("system-run");
+    let icon = script.icon.clone().unwrap_or_else(|| "bs-terminal".into());
+    let mut run = UiAction::new("Run Script", Op::RunScript(script.id.clone(), None)).icon("bs-play");
     if let Some(question) = &script.confirm {
         run = run.confirm(question).destructive();
     }
@@ -323,17 +325,18 @@ fn script_row(script: &Script) -> Row {
     Row {
         key: format!("script:{}", script.id),
         title: script.title.clone(),
-        subtitle: Some(format!("Script · {}", script.description.as_deref().unwrap_or(&script.id))),
+        subtitle: Some("Script".into()),
         icon: Some(Icon::Spec(icon.clone())),
-        tint: Some(tint_for(&script.id)),
+        tint: Some("green"),
         section: Some("Commands".into()),
         actions: vec![
             run,
-            UiAction::new("Edit Script", Op::Open(script.path.display().to_string())).icon("document-edit"),
-            UiAction::new("Show in Folder", Op::Reveal(script.path.clone())).icon("folder-open"),
+            UiAction::new("Edit Script", Op::Open(script.path.display().to_string())).icon("bs-code"),
+            UiAction::new("Show in Folder", Op::Reveal(script.path.clone())).icon("bs-folder"),
         ],
         preview: Some(Preview {
             icon: Some(Icon::Spec(icon)),
+            tint: Some("green".into()),
             title: script.title.clone(),
             subtitle: script.description.clone(),
             facts: vec![
@@ -348,7 +351,7 @@ fn script_row(script: &Script) -> Row {
                     },
                 ),
             ],
-            body: None,
+            ..Default::default()
         }),
         ..Default::default()
     }
@@ -357,25 +360,24 @@ fn script_row(script: &Script) -> Row {
 fn snippet_row(snippet: &Snippet, can_paste: bool) -> Row {
     let mut actions = Vec::new();
     if can_paste {
-        actions.push(UiAction::new("Paste Snippet", Op::Snippet(snippet.text.clone(), true)).icon("edit-paste"));
+        actions.push(UiAction::new("Paste Snippet", Op::Snippet(snippet.text.clone(), true)).icon("bs-paste"));
     }
-    actions.push(UiAction::new("Copy Snippet", Op::Snippet(snippet.text.clone(), false)).icon("edit-copy"));
+    actions.push(UiAction::new("Copy Snippet", Op::Snippet(snippet.text.clone(), false)).icon("bs-copy"));
     Row {
         key: format!("snippet:{}", snippet.name),
         title: snippet.name.clone(),
-        subtitle: Some(match &snippet.keyword {
-            Some(kw) => format!("Snippet · {kw}"),
-            None => "Snippet".into(),
-        }),
-        icon: Some(Icon::Spec("insert-text".into())),
+        subtitle: Some("Snippet".into()),
+        icon: Icon::named("bs-text"),
         tint: Some("green"),
         section: Some("Commands".into()),
         actions,
         preview: Some(Preview {
-            icon: Some(Icon::Spec("insert-text".into())),
+            icon: Icon::named("bs-text"),
+            tint: Some("green".into()),
             title: snippet.name.clone(),
             subtitle: Some("Snippet".into()),
             body: Some(snippet.text.clone()),
+            facts: snippet.keyword.iter().map(|k| ("Keyword".to_string(), k.clone())).collect(),
             ..Default::default()
         }),
         ..Default::default()
@@ -401,35 +403,53 @@ pub fn is_assignable(key: &str) -> bool {
     ["app:", "cmd:", "builtin:", "quicklink:", "snippet:", "script:"].iter().any(|p| key.starts_with(p))
 }
 
-/// Shows the alias and hotkey of a root row, and actions to change them.
+/// Shows the alias, hotkey and usage of a root row, and actions to change them.
 fn decorate(s: &State, row: &mut Row) {
     if !is_assignable(&row.key) {
         return;
     }
     let alias = s.config.aliases.get(&row.key);
     let hotkey = s.config.hotkeys.get(&row.key);
-    if let Some(alias) = alias {
-        row.accessories
-            .insert(0, Accessory { tag: Some(alias.clone()), color: Some("gray".into()), ..Default::default() });
-    }
+    row.alias = alias.cloned();
     if let Some(p) = row.preview.as_mut() {
+        let mut lines = Vec::new();
         if let Some(alias) = alias {
-            p.facts.push(("Alias".into(), alias.clone()));
+            lines.push(proto::MetadataEntry { label: "Alias".into(), value: alias.clone(), ..Default::default() });
         }
         if let Some(hotkey) = hotkey {
-            p.facts.push(("Hotkey".into(), hotkey.clone()));
+            lines.push(proto::MetadataEntry {
+                label: "Hotkey".into(),
+                value: hotkey.clone(),
+                icon: Some("bs-keyboard".into()),
+                ..Default::default()
+            });
         }
+        if let Some((count, last)) = s.usage.stats(&row.key) {
+            lines.push(proto::MetadataEntry { label: "Last used".into(), value: ago(last), ..Default::default() });
+            lines.push(proto::MetadataEntry {
+                label: "Used".into(),
+                value: if count == 1 { "once".into() } else { format!("{count} times") },
+                ..Default::default()
+            });
+        }
+        if !lines.is_empty() && !(p.facts.is_empty() && p.metadata.is_empty()) {
+            lines.push(proto::MetadataEntry { separator: true, ..Default::default() });
+        }
+        lines.append(&mut p.metadata);
+        p.metadata = lines;
     }
     row.actions.push(
         UiAction::new(if alias.is_some() { "Change Alias…" } else { "Set Alias…" }, Op::EditAlias(row.key.clone()))
-            .icon("insert-text"),
+            .icon("bs-text")
+            .section("Shortcuts"),
     );
     row.actions.push(
         UiAction::new(
             if hotkey.is_some() { "Change Hotkey…" } else { "Set Hotkey…" },
             Op::EditKeyHotkey(row.key.clone()),
         )
-        .icon("input-keyboard"),
+        .icon("bs-keyboard")
+        .section("Shortcuts"),
     );
 }
 
@@ -439,46 +459,50 @@ fn quicklink_row(link: &Quicklink) -> Row {
         (None, true) => ("Open", Op::Open(link.url_for(""))),
         _ => ("Open", Op::Open(link.url.clone())),
     };
-    let icon = link.icon.clone().unwrap_or_else(|| "web-browser".into());
+    let icon = link.icon.clone().unwrap_or_else(|| "bs-link".into());
     Row {
         key: format!("quicklink:{}", link.name),
         title: link.name.clone(),
-        subtitle: Some(match &link.keyword {
-            Some(kw) => format!("Quicklink · {kw}"),
-            None => "Quicklink".into(),
-        }),
+        subtitle: Some("Quicklink".into()),
         icon: Some(Icon::Spec(icon.clone())),
         tint: Some("blue"),
         section: Some("Commands".into()),
         actions: vec![
-            UiAction::new(title, op).icon("web-browser"),
-            UiAction::new("Copy URL", Op::Copy(link.url.clone())),
+            UiAction::new(title, op).icon("bs-external"),
+            UiAction::new("Copy URL", Op::Copy(link.url.clone())).icon("bs-copy"),
         ],
         preview: Some(Preview {
             icon: Some(Icon::Spec(icon)),
+            tint: Some("blue".into()),
             title: link.name.clone(),
             subtitle: Some("Quicklink".into()),
-            facts: vec![
-                ("URL".into(), link.url.clone()),
-                ("Keyword".into(), link.keyword.clone().unwrap_or_else(|| "—".into())),
+            metadata: vec![
+                proto::MetadataEntry {
+                    label: "URL".into(),
+                    value: link.url.clone(),
+                    link: (!link.takes_query()).then(|| link.url.clone()),
+                    ..Default::default()
+                },
+                proto::MetadataEntry {
+                    label: "Keyword".into(),
+                    value: link.keyword.clone().unwrap_or_else(|| "—".into()),
+                    ..Default::default()
+                },
             ],
-            body: None,
+            ..Default::default()
         }),
         ..Default::default()
     }
 }
 
-fn app_row(a: &App, usage: Option<(u32, u64)>) -> Row {
-    let mut actions = vec![UiAction::new("Open Application", Op::LaunchApp(a.id.clone(), None)).icon("document-open")];
-    actions.extend(
-        a.actions.iter().map(|(id, name)| UiAction::new(name.clone(), Op::LaunchApp(a.id.clone(), Some(id.clone())))),
-    );
-    actions.push(UiAction::new("Hide from Results", Op::HideApp(a.id.clone())).icon("view-conceal"));
-    let mut facts = vec![("Source".to_string(), a.source.to_string())];
-    if let Some((count, last)) = usage {
-        facts.push(("Last opened".into(), ago(last)));
-        facts.push(("Opened".into(), if count == 1 { "once".into() } else { format!("{count} times") }));
-    }
+fn app_row(a: &App, _usage: Option<(u32, u64)>) -> Row {
+    let mut actions = vec![UiAction::new("Open Application", Op::LaunchApp(a.id.clone(), None)).icon("bs-external")];
+    actions.extend(a.actions.iter().map(|(id, name)| {
+        UiAction::new(name.clone(), Op::LaunchApp(a.id.clone(), Some(id.clone())))
+            .icon("bs-arrow-right")
+            .section("Application")
+    }));
+    actions.push(UiAction::new("Hide from Results", Op::HideApp(a.id.clone())).icon("bs-eye-off"));
     Row {
         key: format!("app:{}", a.id),
         title: a.name.clone(),
@@ -490,8 +514,8 @@ fn app_row(a: &App, usage: Option<(u32, u64)>) -> Row {
             icon: a.icon.clone(),
             title: a.name.clone(),
             subtitle: a.description.clone().or_else(|| a.generic_name.clone()),
-            facts,
-            body: None,
+            facts: vec![("Source".to_string(), a.source.to_string())],
+            ..Default::default()
         }),
         ..Default::default()
     }
@@ -501,26 +525,47 @@ fn command_row(s: &State, c: &CommandEntry) -> Row {
     let ext = &s.registry.extensions[c.extension];
     let manifest = &ext.manifest;
     let command = manifest.commands.iter().find(|cmd| format!("{}/{}", manifest.extension.id, cmd.name) == c.id);
-    let mut facts = vec![("Extension".to_string(), manifest.extension.title.clone())];
-    if !manifest.extension.author.is_empty() {
-        facts.push(("Author".into(), manifest.extension.author.clone()));
+    let icon = c.icon.clone().or_else(|| manifest.extension.icon.clone()).unwrap_or_else(|| "bs-bolt".into());
+    let tint = tint_for(&manifest.extension.id);
+    let mut accessories = Vec::new();
+    if let Some(sub) = s.command_meta.get(&c.id) {
+        accessories.push(Accessory { tag: Some(sub.to_string()), color: Some(tint.into()), ..Default::default() });
     }
     let permissions = manifest.permissions.describe();
-    facts.push(("Permissions".into(), if permissions.is_empty() { "None".into() } else { permissions.join("\n") }));
+    let mut metadata = vec![proto::MetadataEntry {
+        label: "Extension".into(),
+        value: format!("{} {}", manifest.extension.title, manifest.extension.version),
+        ..Default::default()
+    }];
+    if !manifest.extension.author.is_empty() {
+        metadata.push(proto::MetadataEntry {
+            label: "Author".into(),
+            value: manifest.extension.author.clone(),
+            ..Default::default()
+        });
+    }
+    metadata.push(proto::MetadataEntry {
+        label: "Can".into(),
+        value: if permissions.is_empty() { "Nothing outside its sandbox".into() } else { permissions.join("\n") },
+        ..Default::default()
+    });
     Row {
         key: format!("cmd:{}", c.id),
         title: c.title.clone(),
-        subtitle: Some(format!("Command · {}", c.subtitle)),
-        icon: Some(Icon::Spec(c.icon.clone().unwrap_or_else(|| "system-run".into()))),
-        tint: Some(tint_for(&manifest.extension.id)),
+        subtitle: Some(manifest.extension.title.clone()),
+        icon: Some(Icon::Spec(icon.clone())),
+        tint: Some(tint),
+        accessories,
         section: Some("Commands".into()),
-        actions: vec![UiAction::new("Open Command", Op::StartCommand(c.id.clone())).icon("system-run")],
+        actions: vec![UiAction::new("Open Command", Op::StartCommand(c.id.clone())).icon("bs-arrow-right")],
         preview: Some(Preview {
-            icon: Some(Icon::Spec(c.icon.clone().unwrap_or_else(|| "system-run".into()))),
+            icon: Some(Icon::Spec(icon)),
+            tint: Some(tint.into()),
             title: c.title.clone(),
             subtitle: command.map(|c| c.description.clone()).filter(|d| !d.is_empty()),
-            facts,
-            body: None,
+            markdown: s.command_meta.get(&c.id).map(|m| format!("**{m}**")),
+            metadata,
+            ..Default::default()
         }),
         ..Default::default()
     }
@@ -615,7 +660,9 @@ impl Searchable for &Entry {
     }
 }
 
-pub fn list_rows(ranker: &mut Ranker, list: &proto::ListView, query: &str, extension_id: &str) -> Vec<Row> {
+/// Rows of an extension list. `hosts` are the extension's `net` hosts:
+/// pictures elsewhere are not fetched (that would leak what is shown).
+pub fn list_rows(ranker: &mut Ranker, list: &proto::ListView, query: &str, hosts: &[String]) -> Vec<Row> {
     let ranked = list.filtering == Filtering::Host && !query.trim().is_empty();
     let order: Vec<usize> = if ranked {
         let refs: Vec<ItemRef> = list.items.iter().map(ItemRef).collect();
@@ -623,22 +670,58 @@ pub fn list_rows(ranker: &mut Ranker, list: &proto::ListView, query: &str, exten
     } else {
         (0..list.items.len()).collect()
     };
-    let tint = tint_for(extension_id);
+    let allowed = |spec: &Option<String>| -> Option<String> {
+        spec.clone().filter(|s| !crate::images::is_url(s) || crate::images::allowed(s, hosts))
+    };
     order
         .into_iter()
         .take(500)
         .map(|i| {
             let item = &list.items[i];
+            let icon = allowed(&item.icon).map(Icon::Spec);
+            let accessories: Vec<Accessory> = item
+                .accessories
+                .iter()
+                .map(|a| Accessory {
+                    icon: allowed(&a.icon),
+                    avatar: a.avatar.clone().filter(|v| !crate::images::is_url(v) || crate::images::allowed(v, hosts)),
+                    ..a.clone()
+                })
+                .collect();
+            let preview = item.detail.as_ref().map(|d| Preview {
+                picture: d.image.as_ref().filter(|i| i.starts_with('/')).map(std::path::PathBuf::from),
+                image_url: allowed(&d.image).filter(|i| crate::images::is_url(i)),
+                icon: icon.clone(),
+                tint: item.icon_tint.clone(),
+                title: item.title.clone(),
+                subtitle: item.subtitle.clone(),
+                stats: d.stats.clone(),
+                markdown: d.markdown.clone(),
+                metadata: d
+                    .metadata
+                    .iter()
+                    .map(|m| proto::MetadataEntry {
+                        icon: allowed(&m.icon),
+                        avatar: m
+                            .avatar
+                            .clone()
+                            .filter(|v| !crate::images::is_url(v) || crate::images::allowed(v, hosts)),
+                        ..m.clone()
+                    })
+                    .collect(),
+                ..Default::default()
+            });
             Row {
                 key: item.id.clone(),
                 title: item.title.clone(),
                 subtitle: item.subtitle.clone(),
-                icon: item.icon.clone().map(Icon::Spec),
-                tint: Some(tint),
-                accessories: item.accessories.clone(),
+                icon,
+                icon_tint: item.icon_tint.clone(),
+                accessories,
                 // Sections only make sense in the extension's own order.
                 section: if ranked { None } else { item.section.clone() },
                 actions: item.actions.iter().map(UiAction::from_proto).collect(),
+                preview,
                 ..Default::default()
             }
         })
@@ -657,48 +740,108 @@ fn ranked_rows(ranker: &mut Ranker, query: &str, entries: Vec<(Entry, Row)>) -> 
 pub fn builtin_rows(s: &mut State, builtin: Builtin, query: &str) -> Vec<Row> {
     match builtin {
         Builtin::Clipboard => {
+            let today = day_start(0);
             let entries: Vec<(Entry, Row)> = s
                 .clipboard
                 .entries()
                 .into_iter()
                 .map(|e| {
+                    let kind = clip_kind(&e.text);
                     let lines = e.text.lines().count().max(1);
                     let chars = e.text.chars().count();
                     let pin_title = if e.pinned { "Unpin" } else { "Pin" };
+                    let section = if e.pinned {
+                        "Pinned"
+                    } else if e.time >= today {
+                        "Today"
+                    } else if e.time >= day_start(1) {
+                        "Yesterday"
+                    } else if e.time >= day_start(6) {
+                        "This Week"
+                    } else {
+                        "Older"
+                    };
+                    let mut metadata = vec![
+                        proto::MetadataEntry {
+                            label: "Type".into(),
+                            value: kind.label(),
+                            icon: Some(kind.icon().into()),
+                            ..Default::default()
+                        },
+                        proto::MetadataEntry { label: "Copied".into(), value: when(e.time), ..Default::default() },
+                        proto::MetadataEntry {
+                            label: "Size".into(),
+                            value: format!(
+                                "{lines} line{} · {chars} character{}",
+                                if lines > 1 { "s" } else { "" },
+                                if chars > 1 { "s" } else { "" }
+                            ),
+                            ..Default::default()
+                        },
+                    ];
+                    if let ClipKind::Link = kind {
+                        if let Some(host) = crate::images::host(e.text.trim()) {
+                            metadata.push(proto::MetadataEntry {
+                                label: "Site".into(),
+                                value: host.to_string(),
+                                link: Some(e.text.trim().to_string()),
+                                ..Default::default()
+                            });
+                        }
+                    }
+                    let mut actions: Vec<UiAction> = [
+                        s.paste.map(|_| UiAction::new("Paste", Op::Paste(e.text.clone())).icon("bs-paste")),
+                        Some(UiAction::new("Copy to Clipboard", Op::ClipCopy(e.id)).icon("bs-copy")),
+                    ]
+                    .into_iter()
+                    .flatten()
+                    .collect();
+                    if matches!(kind, ClipKind::Link) {
+                        actions
+                            .push(UiAction::new("Open Link", Op::Open(e.text.trim().to_string())).icon("bs-external"));
+                    }
+                    actions.extend([
+                        UiAction::new(pin_title, Op::ClipPin(e.id)).icon("bs-pin").shortcut("<Ctrl><Shift>p"),
+                        UiAction::new("Delete", Op::ClipDelete(e.id))
+                            .icon("bs-trash")
+                            .shortcut("<Ctrl>d")
+                            .destructive()
+                            .section("Manage"),
+                        UiAction::new("Clear History", Op::ClipClear)
+                            .icon("bs-trash")
+                            .destructive()
+                            .section("Manage")
+                            .confirm("Delete all unpinned entries?"),
+                    ]);
+                    let (icon, color) = match &kind {
+                        ClipKind::Color(c) => (format!("color:{c}"), None),
+                        k => (
+                            k.icon().to_string(),
+                            Some(if e.pinned { "orange".to_string() } else { "gray".to_string() }),
+                        ),
+                    };
                     let row = Row {
                         key: format!("clip:{}", e.id),
                         title: clipboard::summary(&e.text),
-                        subtitle: Some(if e.pinned { format!("Pinned · {}", ago(e.time)) } else { ago(e.time) }),
-                        icon: Some(Icon::Spec(if e.pinned { "view-pin" } else { "edit-paste" }.into())),
-                        tint: Some(if e.pinned { "orange" } else { "purple" }),
-                        section: Some(if e.pinned { "Pinned" } else { "History" }.into()),
-                        actions: [
-                            s.paste.map(|_| UiAction::new("Paste", Op::Paste(e.text.clone())).icon("edit-paste")),
-                            Some(UiAction::new("Copy to Clipboard", Op::ClipCopy(e.id)).icon("edit-copy")),
-                        ]
-                        .into_iter()
-                        .flatten()
-                        .chain([
-                            UiAction::new(pin_title, Op::ClipPin(e.id)).icon("view-pin").shortcut("<Ctrl><Shift>p"),
-                            UiAction::new("Delete", Op::ClipDelete(e.id))
-                                .icon("edit-delete")
-                                .shortcut("<Ctrl>d")
-                                .destructive(),
-                            UiAction::new("Clear History", Op::ClipClear)
-                                .icon("edit-clear-all")
-                                .destructive()
-                                .confirm("Delete all unpinned entries?"),
-                        ])
-                        .collect(),
+                        icon: Some(Icon::Spec(icon.clone())),
+                        icon_tint: color,
+                        accessories: vec![Accessory { text: Some(short_ago(e.time)), ..Default::default() }],
+                        section: Some(section.into()),
+                        actions,
                         preview: Some(Preview {
-                            icon: Some(Icon::Spec("edit-paste".into())),
-                            title: "Text".into(),
-                            subtitle: Some(format!(
-                                "{chars} characters · {lines} line{}",
-                                if lines > 1 { "s" } else { "" }
-                            )),
-                            facts: vec![("Copied".into(), ago(e.time))],
-                            body: Some(e.text.chars().take(4000).collect()),
+                            icon: Some(Icon::Spec(icon)),
+                            title: kind.label(),
+                            subtitle: Some(when(e.time)),
+                            swatch: match &kind {
+                                ClipKind::Color(c) => Some(c.clone()),
+                                _ => None,
+                            },
+                            body: matches!(kind, ClipKind::Code(_) | ClipKind::Path)
+                                .then(|| e.text.chars().take(4000).collect()),
+                            text: (!matches!(kind, ClipKind::Code(_) | ClipKind::Path | ClipKind::Color(_)))
+                                .then(|| e.text.chars().take(4000).collect()),
+                            metadata,
+                            ..Default::default()
                         }),
                         ..Default::default()
                     };
@@ -729,7 +872,7 @@ pub fn builtin_rows(s: &mut State, builtin: Builtin, query: &str) -> Vec<Row> {
                 .map(|w| {
                     let app = find_app(&s.apps, &w.app_id);
                     let app_name = app.map_or_else(|| w.app_id.clone(), |a| a.name.clone());
-                    let icon = app.and_then(|a| a.icon.clone()).or(Some(Icon::Spec("application-x-executable".into())));
+                    let icon = app.and_then(|a| a.icon.clone()).or(Some(Icon::Spec("bs-box".into())));
                     let mut facts = vec![("Application".into(), app_name.clone())];
                     if let Some(ws) = &w.workspace {
                         facts.push(("Workspace".into(), ws.clone()));
@@ -743,13 +886,16 @@ pub fn builtin_rows(s: &mut State, builtin: Builtin, query: &str) -> Vec<Row> {
                         }),
                         icon: icon.clone(),
                         tint: Some("teal"),
-                        actions: vec![UiAction::new("Switch to Window", Op::FocusWindow(w.id.clone())).icon("go-jump")],
+                        actions: vec![
+                            UiAction::new("Switch to Window", Op::FocusWindow(w.id.clone())).icon("bs-arrow-right")
+                        ],
                         preview: Some(Preview {
                             icon,
                             title: w.title.clone(),
                             subtitle: Some(app_name.clone()),
                             facts,
                             body: None,
+                            ..Default::default()
                         }),
                         ..Default::default()
                     };
@@ -790,26 +936,12 @@ pub fn builtin_rows(s: &mut State, builtin: Builtin, query: &str) -> Vec<Row> {
             }
             rows
         }
-        Builtin::Settings => {
-            let entries = super::settings::rows(s)
-                .into_iter()
-                .map(|row| {
-                    let keywords = [row.section.clone(), row.subtitle.clone()].into_iter().flatten().collect();
-                    (Entry { key: row.key.clone(), title: row.title.clone(), keywords, subtitle: None }, row)
-                })
-                .collect();
-            let mut rows = ranked_rows(&mut s.ranker, query, entries);
-            if !query.trim().is_empty() {
-                rows.iter_mut().for_each(|r| r.section = None);
-            }
-            rows
-        }
         Builtin::Theme => {
             let current = s.config.theme;
             let entries = [
-                (Theme::System, "System", "Follow the desktop's light or dark preference", "emblem-system"),
-                (Theme::Light, "Light", "Bright and calm", "weather-clear"),
-                (Theme::Dark, "Dark", "Easy on the eyes at night", "weather-clear-night"),
+                (Theme::System, "System", "Follow the desktop's light or dark preference", "bs-monitor"),
+                (Theme::Light, "Light", "Bright and calm", "bs-sun"),
+                (Theme::Dark, "Dark", "Easy on the eyes at night", "bs-moon"),
             ]
             .into_iter()
             .map(|(theme, title, about, icon)| {
@@ -824,7 +956,7 @@ pub fn builtin_rows(s: &mut State, builtin: Builtin, query: &str) -> Vec<Row> {
                     } else {
                         Vec::new()
                     },
-                    actions: vec![UiAction::new("Use Theme", Op::SetTheme(theme)).icon("object-select")],
+                    actions: vec![UiAction::new("Use Theme", Op::SetTheme(theme)).icon("bs-check")],
                     ..Default::default()
                 };
                 (entry(title, &[]), row)
@@ -832,6 +964,137 @@ pub fn builtin_rows(s: &mut State, builtin: Builtin, query: &str) -> Vec<Row> {
             .collect();
             ranked_rows(&mut s.ranker, query, entries)
         }
+    }
+}
+
+/// What a clipboard entry looks like it is.
+#[derive(Clone, PartialEq)]
+pub enum ClipKind {
+    Link,
+    Email,
+    Color(String),
+    Path,
+    Number,
+    Code(&'static str),
+    Text,
+}
+
+impl ClipKind {
+    pub fn label(&self) -> String {
+        match self {
+            Self::Link => "Link".into(),
+            Self::Email => "Email address".into(),
+            Self::Color(_) => "Color".into(),
+            Self::Path => "Path".into(),
+            Self::Number => "Number".into(),
+            Self::Code("") => "Code".into(),
+            Self::Code(lang) => format!("Code · {lang}"),
+            Self::Text => "Text".into(),
+        }
+    }
+
+    pub fn icon(&self) -> &'static str {
+        match self {
+            Self::Link => "bs-link",
+            Self::Email => "bs-mail",
+            Self::Color(_) => "bs-palette",
+            Self::Path => "bs-folder",
+            Self::Number => "bs-hash",
+            Self::Code(_) => "bs-code",
+            Self::Text => "bs-text",
+        }
+    }
+}
+
+/// Guesses what copied text is, to pick an icon and a preview.
+pub fn clip_kind(text: &str) -> ClipKind {
+    let t = text.trim();
+    let one_line = !t.contains('\n');
+    if one_line && (t.starts_with("https://") || t.starts_with("http://")) && !t.contains(' ') {
+        return ClipKind::Link;
+    }
+    if one_line && !t.contains(' ') && t.contains('@') && t.rsplit('@').next().is_some_and(|d| d.contains('.')) {
+        return ClipKind::Email;
+    }
+    let hex = t.strip_prefix('#').filter(|h| matches!(h.len(), 3 | 6 | 8) && h.chars().all(|c| c.is_ascii_hexdigit()));
+    if hex.is_some()
+        || (one_line && (t.starts_with("rgb(") || t.starts_with("rgba(") || t.starts_with("hsl(")) && t.ends_with(')'))
+    {
+        return ClipKind::Color(t.to_string());
+    }
+    if one_line && !t.contains(' ') && (t.starts_with('/') || t.starts_with("~/")) && t.len() > 1 {
+        return ClipKind::Path;
+    }
+    if one_line && !t.is_empty() && t.replace([' ', ',', '.', '_'], "").chars().all(|c| c.is_ascii_digit() || c == '-')
+    {
+        return ClipKind::Number;
+    }
+    let lines: Vec<&str> = t.lines().collect();
+    let has = |words: &[&str]| words.iter().any(|w| t.contains(w));
+    let lang = if has(&["fn ", "let mut ", "impl ", "pub fn", "::new("]) {
+        Some("Rust")
+    } else if has(&["def ", "import ", "self.", "elif "]) && !t.contains(';') {
+        Some("Python")
+    } else if has(&["const ", "=> ", "function ", "export ", "await "]) {
+        Some("JavaScript")
+    } else if t.starts_with('{') && t.ends_with('}') && t.contains("\":") {
+        Some("JSON")
+    } else if t.starts_with('<') && t.ends_with('>') {
+        Some("HTML")
+    } else if has(&["sudo ", "#!/bin", " | ", "apt ", "dnf ", "export "]) && lines.len() <= 20 {
+        Some("Shell")
+    } else if has(&["SELECT ", "INSERT INTO", "UPDATE "]) {
+        Some("SQL")
+    } else {
+        None
+    };
+    if let Some(lang) = lang {
+        return ClipKind::Code(lang);
+    }
+    let codey = lines
+        .iter()
+        .filter(|l| l.ends_with(';') || l.ends_with('{') || l.ends_with('}') || l.starts_with("    "))
+        .count();
+    if lines.len() > 2 && codey * 2 >= lines.len() {
+        return ClipKind::Code("");
+    }
+    ClipKind::Text
+}
+
+/// Start of the day `days` days ago, local time, in seconds.
+fn day_start(days: i64) -> u64 {
+    gtk::glib::DateTime::now_local()
+        .ok()
+        .and_then(|now| gtk::glib::DateTime::from_local(now.year(), now.month(), now.day_of_month(), 0, 0, 0.0).ok())
+        .and_then(|d| d.add_days(-(days as i32)).ok())
+        .map_or(0, |d| d.to_unix().max(0) as u64)
+}
+
+/// "Today at 22:41", "Yesterday at 9:05", or a date.
+pub fn when(time: u64) -> String {
+    let Ok(t) = gtk::glib::DateTime::from_unix_local(time as i64) else { return String::new() };
+    let clock = t.format("%H:%M").map(|s| s.to_string()).unwrap_or_default();
+    if time >= day_start(0) {
+        format!("Today at {clock}")
+    } else if time >= day_start(1) {
+        format!("Yesterday at {clock}")
+    } else {
+        t.format("%e %b %Y at %H:%M").map(|s| s.trim().to_string()).unwrap_or_default()
+    }
+}
+
+/// "now", "5m", "3h", "2d" or a short date: fits a row.
+pub fn short_ago(time: u64) -> String {
+    let age = now().saturating_sub(time);
+    match age {
+        0..=59 => "now".into(),
+        60..=3599 => format!("{}m", age / 60),
+        3600..=86_399 => format!("{}h", age / 3600),
+        86_400..=604_799 => format!("{}d", age / 86_400),
+        _ => gtk::glib::DateTime::from_unix_local(time as i64)
+            .ok()
+            .and_then(|d| d.format("%e %b").ok())
+            .map_or_else(String::new, |s| s.trim().to_string()),
     }
 }
 
@@ -875,16 +1138,19 @@ fn file_row(path: &Path, section: &str) -> Row {
         icon: Some(icon.clone()),
         section: Some(section.into()),
         actions: vec![
-            UiAction::new("Open", Op::Open(target.clone())).icon("document-open"),
-            UiAction::new("Show in Folder", Op::Reveal(path.to_path_buf())).icon("folder-open"),
-            UiAction::new("Copy Path", Op::Copy(target.clone())).icon("edit-copy").shortcut("<Ctrl><Shift>c"),
+            UiAction::new("Open", Op::Open(target.clone())).icon("bs-external"),
+            UiAction::new("Show in Folder", Op::Reveal(path.to_path_buf())).icon("bs-folder"),
+            UiAction::new("Copy Path", Op::Copy(target.clone())).icon("bs-copy").shortcut("<Ctrl><Shift>c"),
         ],
         preview: Some(Preview {
             icon: Some(icon),
             title: name,
             subtitle: None,
             facts,
+            picture: (content_type.starts_with("image/") && meta.as_ref().is_some_and(|m| m.len() < 20_000_000))
+                .then(|| path.to_path_buf()),
             body: text_excerpt(path, &content_type),
+            ..Default::default()
         }),
         ..Default::default()
     }
@@ -916,13 +1182,13 @@ pub fn script_lines(s: &mut State, query: &str) -> Vec<Row> {
         .map(|(i, line)| {
             let mut actions = Vec::new();
             if can_paste {
-                actions.push(UiAction::new("Paste", Op::Paste(line.to_string())).icon("edit-paste"));
+                actions.push(UiAction::new("Paste", Op::Paste(line.to_string())).icon("bs-paste"));
             }
-            actions.push(UiAction::new("Copy", Op::Copy(line.to_string())).icon("edit-copy"));
+            actions.push(UiAction::new("Copy", Op::Copy(line.to_string())).icon("bs-copy"));
             let row = Row {
                 key: format!("line:{i}"),
                 title: line.to_string(),
-                icon: Some(Icon::Spec("text-x-generic".into())),
+                icon: Some(Icon::Spec("bs-text".into())),
                 actions,
                 ..Default::default()
             };
@@ -943,12 +1209,12 @@ pub fn gnome_helper_row() -> Row {
         } else {
             "A tiny GNOME Shell extension that lets Backslash see your windows".into()
         }),
-        icon: Some(Icon::Spec("preferences-system-windows".into())),
+        icon: Some(Icon::Spec("bs-window".into())),
         tint: Some("teal"),
         actions: vec![UiAction::new(if installed { "Install Again" } else { "Install" }, Op::InstallGnomeHelper)
-            .icon("system-software-install")],
+            .icon("bs-package")],
         preview: Some(Preview {
-            icon: Some(Icon::Spec("preferences-system-windows".into())),
+            icon: Some(Icon::Spec("bs-window".into())),
             title: "Switch windows on GNOME".into(),
             subtitle: Some("GNOME does not let apps list windows".into()),
             body: Some(
@@ -957,5 +1223,22 @@ pub fn gnome_helper_row() -> Row {
             ..Default::default()
         }),
         ..Default::default()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{clip_kind, ClipKind};
+
+    #[test]
+    fn clipboard_kinds() {
+        assert!(clip_kind("https://github.com/backslash-app") == ClipKind::Link);
+        assert!(clip_kind("ada@example.com") == ClipKind::Email);
+        assert!(clip_kind("#8B93FF") == ClipKind::Color("#8B93FF".into()));
+        assert!(clip_kind("~/projects/backslash") == ClipKind::Path);
+        assert!(clip_kind("1 234,50") == ClipKind::Number);
+        assert!(clip_kind("pub fn main() {\n    let x = 1;\n}") == ClipKind::Code("Rust"));
+        assert!(clip_kind("sudo ss -ltnp 'sport = :3000'") == ClipKind::Code("Shell"));
+        assert!(clip_kind("Merci pour ton retour, je regarde demain.") == ClipKind::Text);
     }
 }

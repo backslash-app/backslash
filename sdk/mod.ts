@@ -34,6 +34,8 @@ export interface Context<Args = Record<string, unknown>, Prefs = Record<string, 
   query: string;
   /** Aborted when the user types again, goes back or closes the window. */
   signal: AbortSignal;
+  /** The chip picked in the list's `filter`, if it has one. */
+  filter?: string;
 }
 
 type Awaitable<T> = T | Promise<T>;
@@ -41,10 +43,15 @@ type Awaitable<T> = T | Promise<T>;
 // ---------------------------------------------------------------------------
 // Views
 
-/** Icon name from the user's icon theme (`folder`, `web-browser`), an absolute path, or one emoji. */
-export type Icon = string;
+/**
+ * An icon: one of Backslash's own (`bs-…`, see {@link Icons}), a name from the
+ * user's icon theme (`folder`), an absolute path, an image URL (its host
+ * must be in your `net` permission), or one emoji. `{ source, tint }` colors
+ * a symbolic icon.
+ */
+export type Icon = string | { source: string; tint?: Color };
 
-export type Color = "red" | "orange" | "yellow" | "green" | "blue" | "purple" | "gray";
+export type Color = "red" | "orange" | "yellow" | "green" | "blue" | "purple" | "teal" | "pink" | "gray";
 
 export interface Accessory {
   text?: string;
@@ -52,7 +59,187 @@ export interface Accessory {
   tag?: string;
   icon?: Icon;
   color?: Color;
+  /** A person: their name (shown as initials) or a picture URL. */
+  avatar?: string;
+  /** Shown on hover. */
+  tooltip?: string;
 }
+
+/** A big number in a small card of a detail panel. */
+export interface Stat {
+  label: string;
+  value: string | number;
+  color?: Color;
+}
+
+/** One line of a detail panel; build them with {@link meta}. */
+export interface Metadata {
+  label: string;
+  value?: string;
+  icon?: Icon;
+  color?: Color;
+  tags?: { text: string; color?: Color }[];
+  link?: string;
+  avatar?: string;
+  /** From 0 to 1. */
+  progress?: number;
+  separator?: boolean;
+}
+
+/** Builders for detail panel lines. */
+export const meta = {
+  text: (label: string, value: string | number, o: { icon?: Icon; color?: Color } = {}): Metadata => ({
+    label,
+    value: String(value),
+    ...o,
+  }),
+  tags: (label: string, tags: (string | { text: string; color?: Color })[]): Metadata => ({
+    label,
+    tags: tags.map((t) => typeof t === "string" ? { text: t } : t),
+  }),
+  link: (label: string, text: string, url: string): Metadata => ({ label, value: text, link: url }),
+  person: (label: string, name: string, avatar?: string): Metadata => ({ label, value: name, avatar: avatar ?? name }),
+  progress: (label: string, ratio: number, text?: string): Metadata => ({
+    label,
+    progress: Math.max(0, Math.min(1, ratio)),
+    value: text ?? `${Math.round(ratio * 100)} %`,
+  }),
+  separator: (): Metadata => ({ label: "", separator: true }),
+};
+
+/** What the side panel shows for a list item. */
+export interface ItemDetail {
+  /** A picture shown big (album cover, screenshot): a URL from your `net` hosts, or an absolute path. */
+  image?: string;
+  stats?: Stat[];
+  /** Below the stats; a `detail` view's markdown subset. */
+  markdown?: string;
+  metadata?: Metadata[];
+}
+
+/**
+ * Backslash's own icons: crisp, colored with `tint`, the same on every
+ * desktop. Use them as `icon: Icons.inProgress` or `{ source: Icons.inProgress, tint: "yellow" }`.
+ */
+export const Icons = {
+  // Statuses
+  backlog: "bs-circle-dashed",
+  todo: "bs-circle",
+  inProgress: "bs-circle-half",
+  inReview: "bs-circle-three-quarters",
+  done: "bs-circle-check",
+  canceled: "bs-circle-x",
+  // Priorities
+  urgent: "bs-priority-urgent",
+  high: "bs-priority-high",
+  medium: "bs-priority-medium",
+  low: "bs-priority-low",
+  noPriority: "bs-priority-none",
+  // Code
+  pullRequest: "bs-pr-open",
+  pullRequestDraft: "bs-pr-draft",
+  merged: "bs-pr-merged",
+  pullRequestClosed: "bs-pr-closed",
+  issue: "bs-issue-open",
+  issueClosed: "bs-issue-closed",
+  branch: "bs-branch",
+  commit: "bs-commit",
+  repository: "bs-repo",
+  code: "bs-code",
+  terminal: "bs-terminal",
+  // Things
+  check: "bs-check",
+  cross: "bs-x",
+  dot: "bs-dot",
+  star: "bs-star",
+  heart: "bs-heart",
+  pin: "bs-pin",
+  tag: "bs-tag",
+  link: "bs-link",
+  comment: "bs-comment",
+  person: "bs-user",
+  calendar: "bs-calendar",
+  clock: "bs-clock",
+  timer: "bs-timer",
+  bell: "bs-bell",
+  folder: "bs-folder",
+  file: "bs-file",
+  image: "bs-image",
+  text: "bs-text",
+  globe: "bs-globe",
+  lock: "bs-lock",
+  key: "bs-key",
+  shield: "bs-shield",
+  bolt: "bs-bolt",
+  sparkle: "bs-sparkle",
+  box: "bs-box",
+  server: "bs-server",
+  cpu: "bs-cpu",
+  plug: "bs-plug",
+  wifi: "bs-wifi",
+  wifiOff: "bs-wifi-off",
+  bluetooth: "bs-bluetooth",
+  speaker: "bs-speaker",
+  headphones: "bs-headphones",
+  music: "bs-music",
+  play: "bs-play",
+  pause: "bs-pause",
+  next: "bs-next",
+  previous: "bs-previous",
+  window: "bs-window",
+  inbox: "bs-inbox",
+  project: "bs-project",
+  cycle: "bs-cycle",
+  flag: "bs-flag",
+  alert: "bs-alert",
+  info: "bs-info",
+  search: "bs-search",
+  plus: "bs-plus",
+  refresh: "bs-refresh",
+  trash: "bs-trash",
+  copy: "bs-copy",
+  paste: "bs-paste",
+  external: "bs-external",
+  download: "bs-download",
+  settings: "bs-settings",
+  history: "bs-history",
+  package: "bs-package",
+  smile: "bs-smile",
+  palette: "bs-palette",
+  vpn: "bs-vpn",
+  shuffle: "bs-shuffle",
+  repeat: "bs-repeat",
+  stop: "bs-stop",
+  mic: "bs-mic",
+  speakerOff: "bs-speaker-off",
+  monitor: "bs-monitor",
+  mail: "bs-mail",
+  home: "bs-home",
+  archive: "bs-archive",
+  hash: "bs-hash",
+  filter: "bs-filter",
+  eye: "bs-eye",
+  eyeOff: "bs-eye-off",
+  cloud: "bs-cloud",
+  keyboard: "bs-keyboard",
+  apps: "bs-apps",
+  calculator: "bs-calculator",
+  sun: "bs-sun",
+  moon: "bs-moon",
+  power: "bs-power",
+  starFilled: "bs-star-filled",
+  heartFilled: "bs-heart-filled",
+  upload: "bs-upload",
+  minus: "bs-minus",
+  question: "bs-question",
+  arrowRight: "bs-arrow-right",
+  arrowUp: "bs-arrow-up",
+  arrowDown: "bs-arrow-down",
+  chevronRight: "bs-chevron-right",
+  square: "bs-square",
+  squareCheck: "bs-square-check",
+  dottedCircle: "bs-circle-dot",
+} as const;
 
 export interface Item {
   /** Stable id; defaults to the title. Keeps the selection when the list refreshes. */
@@ -69,6 +256,8 @@ export interface Item {
   accessories?: Accessory[];
   /** The first action runs on Enter, the second on Ctrl+Enter, all are in Ctrl+K. */
   actions?: Action[];
+  /** The side panel: stats, markdown and metadata lines. */
+  detail?: ItemDetail;
 }
 
 export type ItemSource =
@@ -97,6 +286,14 @@ export interface ListOptions {
   layout?: "list" | "grid";
   /** Tiles per line in a grid (default 6). */
   columns?: number;
+  /**
+   * Chips under the search bar ("Assigned", "Created", "Subscribed"). The
+   * picked value is `ctx.filter`; picking another one reloads the list. The
+   * choice is remembered.
+   */
+  filter?: { options: (string | { value: string; title: string })[]; default?: string };
+  /** A short line in the footer, or a function of the items shown. */
+  status?: string | ((items: Item[]) => string);
 }
 
 export interface DetailOptions {
@@ -106,8 +303,12 @@ export interface DetailOptions {
    * async generator yielding the whole text so far, to stream an answer.
    */
   markdown: string | ((ctx: Context) => Awaitable<string> | AsyncIterable<string>);
-  /** Key/value pairs shown in a side panel. */
-  metadata?: Record<string, string | number>;
+  /** The side panel: key/value pairs, or richer lines built with {@link meta}. */
+  metadata?: Record<string, string | number> | Metadata[];
+  /** Big numbers above the text. */
+  stats?: Stat[];
+  /** A short line in the footer. */
+  status?: string;
   actions?: Action[];
 }
 
@@ -172,13 +373,15 @@ export type Command = View | RunSpec | ((ctx: Context) => Awaitable<View>);
 // Actions
 
 interface ActionOptions {
-  icon?: Icon;
+  icon?: string;
   /** GTK accelerator, e.g. `<Ctrl>o`, `<Ctrl><Shift>c`. */
   shortcut?: string;
   /** Rendered in red. */
   destructive?: boolean;
   /** Ask "<confirm>" before running. */
   confirm?: string;
+  /** Groups actions under a header in the action panel (Ctrl+K). */
+  section?: string;
 }
 
 export type Action =
@@ -189,16 +392,17 @@ export type Action =
     | { readonly [KIND]: "copy"; text: string }
     | { readonly [KIND]: "paste"; text: string }
     | { readonly [KIND]: "callback"; run: (ctx: Context) => Awaitable<Outcome> }
+    | { readonly [KIND]: "submenu"; actions: Action[] | ((ctx: Context) => Awaitable<Action[]>) }
   );
 
 /** Opens a URL, file or folder with the default application. */
 export function open(target: string, title = "Open", options: ActionOptions = {}): Action {
-  return { icon: "web-browser", ...options, title, target, [KIND]: "open" };
+  return { icon: "bs-external", ...options, title, target, [KIND]: "open" };
 }
 
 /** Copies text to the clipboard and closes the launcher. */
 export function copy(text: string, title = "Copy to Clipboard", options: ActionOptions = {}): Action {
-  return { icon: "edit-copy", ...options, title, text, [KIND]: "copy" };
+  return { icon: "bs-copy", ...options, title, text, [KIND]: "copy" };
 }
 
 /**
@@ -206,7 +410,7 @@ export function copy(text: string, title = "Copy to Clipboard", options: ActionO
  * the desktop doesn't allow it, the text is copied instead.
  */
 export function paste(text: string, title = "Paste", options: ActionOptions = {}): Action {
-  return { icon: "edit-paste", ...options, title, text, [KIND]: "paste" };
+  return { icon: "bs-paste", ...options, title, text, [KIND]: "paste" };
 }
 
 /**
@@ -219,6 +423,18 @@ export function action(
   options: ActionOptions = {},
 ): Action {
   return { ...options, title, run, [KIND]: "callback" };
+}
+
+/**
+ * More actions behind one, opened in the action panel: "Change Status ›".
+ * Pass a function to load them only when the user opens the submenu.
+ */
+export function submenu(
+  title: string,
+  actions: Action[] | ((ctx: Context) => Awaitable<Action[]>),
+  options: ActionOptions = {},
+): Action {
+  return { ...options, title, actions, [KIND]: "submenu" };
 }
 
 // ---------------------------------------------------------------------------
@@ -296,6 +512,15 @@ export const clipboard = {
 /** Opens a URL, file or folder with the default application. */
 export async function openExternal(target: string): Promise<void> {
   await rpc().request("open", { target });
+}
+
+/**
+ * Updates what the root search shows next to this command, e.g. "3 in
+ * progress". Kept until the next update, so the user sees it before opening
+ * the command again.
+ */
+export async function updateCommandMetadata(metadata: { subtitle?: string | null }): Promise<void> {
+  await rpc().request("command/metadata", { subtitle: metadata.subtitle ?? null });
 }
 
 /** Shows a small message at the bottom of the launcher. */
