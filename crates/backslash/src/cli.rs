@@ -199,7 +199,42 @@ pub fn doctor() -> Result<()> {
     let session = std::env::var("XDG_SESSION_TYPE").unwrap_or_else(|_| "unknown".into());
     let desktop = std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_else(|_| "unknown".into());
     println!("[info] Session: {session}, desktop: {desktop}");
-    println!("[info] Bind a key to `backslash toggle` in your desktop or compositor settings (see README).");
+
+    let config = backslash_core::config::Config::load();
+    let portal = global_shortcuts_portal();
+    if config.hotkey.is_empty() {
+        println!("[info] Global shortcut: disabled in config.toml; bind `backslash` to a key yourself");
+    } else if portal {
+        println!("[ok  ] Global shortcut: {} through the desktop portal (confirm it once when asked)", config.hotkey);
+    } else {
+        println!("[info] Global shortcut: no portal support here; bind `backslash` to a key in your desktop settings");
+    }
+    let wayland = std::env::var_os("WAYLAND_DISPLAY").is_some();
+    if wayland {
+        let lib = crate::layer::library_path();
+        println!(
+            "[info] Overlay (layer-shell): {}",
+            match (config.layer_shell, lib) {
+                (false, _) => "disabled in config.toml".to_string(),
+                (true, Some(p)) => format!("available ({})", p.display()),
+                (true, None) => "install gtk4-layer-shell for a true overlay on Sway, Hyprland, KDE…".to_string(),
+            }
+        );
+    }
+    let watcher = if wayland && backslash_core::system::which(&["wl-paste"]).is_some() {
+        "wl-paste --watch (needs the data-control protocol: wlroots, KDE, Hyprland)"
+    } else if wayland {
+        "only while Backslash is open; install wl-clipboard for background history"
+    } else {
+        "X11 selection events"
+    };
+    println!("[info] Clipboard history: {watcher}");
+    match backslash_core::system::windows::Backend::detect() {
+        Some(b) => println!("[ok  ] Window switcher: {}", b.name()),
+        None => println!("[info] Window switcher: not available on this desktop yet"),
+    }
+    println!("[info] File search: {}", backslash_core::system::files::backend());
+    println!("[info] Launch at login: {}", if crate::autostart::enabled() { "on" } else { "off" });
 
     let registry = registry();
     println!(
@@ -215,4 +250,19 @@ pub fn doctor() -> Result<()> {
         println!("       {}: {err}", dir.display());
     }
     Ok(())
+}
+
+/// Whether the desktop portal implements GlobalShortcuts.
+fn global_shortcuts_portal() -> bool {
+    std::process::Command::new("gdbus")
+        .args([
+            "introspect",
+            "--session",
+            "--dest",
+            "org.freedesktop.portal.Desktop",
+            "--object-path",
+            "/org/freedesktop/portal/desktop",
+        ])
+        .output()
+        .is_ok_and(|o| String::from_utf8_lossy(&o.stdout).contains("org.freedesktop.portal.GlobalShortcuts"))
 }

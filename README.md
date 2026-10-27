@@ -30,6 +30,9 @@
 - **Extensions that are easy to write.** TypeScript, no build step, no
   `node_modules`. Describe a list, the launcher does the rest: fuzzy search,
   keyboard navigation, action panel, cancellation of slow requests.
+- **Useful out of the box.** Calculator and unit/currency conversions as you
+  type, clipboard history, file search with previews, window switcher,
+  quicklinks and snippets.
 - **Scriptable.** Every command also runs from a terminal:
   `backslash run npm/search react --json | jq`.
 - **Yours.** Open source (MIT), no account, no telemetry, no paywall. Config
@@ -89,24 +92,34 @@ backslash doctor                   # checks everything is in place
 
 ### Open it with a shortcut
 
-Bind a key (e.g. <kbd>Super</kbd>+<kbd>Space</kbd>) to the command `backslash`.
-Running it again while the window is open hides it.
+Backslash asks your desktop for <kbd>Super</kbd>+<kbd>Space</kbd> through the
+GlobalShortcuts portal (KDE Plasma, GNOME 48+, Hyprland…): confirm it once when
+asked. Change it with `hotkey = "Ctrl+Space"` in `config.toml`.
+
+Without the portal, bind a key to the command `backslash` (running it again
+toggles the window):
 
 | Desktop | Where |
 |---|---|
 | GNOME | Settings → Keyboard → Custom Shortcuts → command `backslash` |
 | KDE Plasma | System Settings → Shortcuts → Add New → Command `backslash` |
-| Hyprland | `bind = SUPER, SPACE, exec, backslash` and `windowrulev2 = float, class:^(app\.backslash\.Backslash)$` |
-| Sway / i3 | `bindsym $mod+space exec backslash` and `for_window [app_id="app.backslash.Backslash"] floating enable` |
+| Hyprland | `bind = SUPER, SPACE, exec, backslash` |
+| Sway / i3 | `bindsym $mod+space exec backslash` |
 
-For instant opening, start it with your session: copy
-`data/backslash-autostart.desktop` to `~/.config/autostart/`.
+On Sway, Hyprland, KDE and other wlroots-style compositors, install
+`gtk4-layer-shell` and Backslash opens as a true overlay, with no window rules
+needed. Without it, make the window float:
+`windowrulev2 = float, class:^(app\.backslash\.Backslash)$` (Hyprland) or
+`for_window [app_id="app.backslash.Backslash"] floating enable` (Sway).
+
+Run the **Enable Launch at Login** command so Backslash is always ready.
 
 ## Using it
 
 | Key | Action |
 |---|---|
-| type | search apps, commands; math is computed as you type |
+| type | search apps and commands; math and conversions are computed as you type |
+| <kbd>Tab</kbd> | filter: All, Apps, Commands |
 | <kbd>↑</kbd> <kbd>↓</kbd> / <kbd>Ctrl</kbd>+<kbd>N</kbd> <kbd>P</kbd> | move |
 | <kbd>Enter</kbd> / <kbd>Ctrl</kbd>+<kbd>Enter</kbd> | primary / secondary action |
 | <kbd>Ctrl</kbd>+<kbd>K</kbd> | all actions |
@@ -114,12 +127,46 @@ For instant opening, start it with your session: copy
 
 Results learn from you: what you pick for a given query comes first next time.
 
+Built in:
+
+- **Calculator and conversions**: `12*(3+4)`, `5 km in miles`, `72 f to c`,
+  `2 GiB en MB`, `20 € en $` (European Central Bank rates, cached).
+- **Clipboard History**: searchable, with pins. Recorded in the background on
+  wlroots compositors, KDE and Hyprland (install `wl-clipboard`) and on X11; on
+  GNOME, each time Backslash opens. Password managers' copies are skipped.
+- **Search Files**: in your home folder (`fd` if installed), recent files first,
+  with a preview.
+- **Switch Windows**: Hyprland, Sway, niri and X11.
+- **Change Theme**: light, dark, or following the system.
+
 ## Make it yours
 
-- `~/.config/backslash/style.css`: override the theme (see
-  [`style.css`](crates/backslash/src/style.css) for the classes and colors).
-- `~/.config/backslash/config.toml`: hidden apps, disabled extensions, preferences.
+`~/.config/backslash/config.toml`:
+
+```toml
+theme = "system"          # "light", "dark" or "system"
+hotkey = "Super+Space"
+hidden_apps = ["org.gnome.Tour.desktop"]
+
+[[quicklinks]]            # type "gh tokio" to search GitHub
+name = "Search GitHub"
+url = "https://github.com/search?q={query}"
+keyword = "gh"
+
+[[snippets]]              # {date}, {time} and {clipboard} are expanded
+name = "Email signature"
+text = "Best,\nSteven"
+keyword = "sig"
+
+[extensions.npm]
+enabled = true
+```
+
+- `~/.config/backslash/style.css`: override any style or color, e.g.
+  `@define-color bs_accent #c2410c;` (see [`style.css`](crates/backslash/src/style.css)
+  and the palettes in [`theme.rs`](crates/backslash/src/theme.rs)).
 - `~/.local/share/backslash/extensions/`: drop extension folders here.
+- `backslash doctor` shows what works on your desktop.
 
 ## Contributing
 

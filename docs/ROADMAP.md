@@ -4,19 +4,20 @@ What exists today is a solid base: the launcher window, the extension engine,
 the CLI and two bundled extensions. Next steps, roughly in order.
 
 ## Desktop integration
-- [ ] `gtk4-layer-shell` on wlroots compositors (Sway, Hyprland, river) and KDE,
-      as an optional build feature: true overlay, no window rules needed.
-- [ ] Global shortcut through the XDG `GlobalShortcuts` portal (KDE, GNOME 48+,
-      Hyprland), keeping `backslash toggle` as the universal fallback.
-- [ ] Autostart toggle from the launcher (writes the XDG autostart entry).
+- [x] `gtk4-layer-shell` overlay when the library is installed (loaded at runtime).
+      Needs testing on real Sway/Hyprland/KDE sessions.
+- [x] Global shortcut through the XDG `GlobalShortcuts` portal, with
+      `backslash` as the universal fallback.
+- [x] Launch at login toggle from the launcher.
 - [ ] Packages: Flatpak, AUR, `.deb`/`.rpm` via CI, Nix flake.
 
 ## Built-in features
-- [ ] Clipboard history (with pinning and an ignore list for password managers).
-- [ ] File search (`plocate`/`fd`, with recents from `recently-used.xbel`).
-- [ ] Window switcher (Hyprland, Sway, KDE via D-Bus, GNOME via extension).
-- [ ] Unit and currency conversions in the calculator.
-- [ ] Quicklinks and snippets defined in `config.toml`.
+- [x] Clipboard history with pins (images and paste-into-app still to do).
+- [x] File search with recents and previews.
+- [x] Window switcher for Hyprland, Sway, niri, X11. KDE and GNOME to do.
+- [x] Unit and currency conversions.
+- [x] Quicklinks and snippets in `config.toml` (an editor in the launcher to do).
+- [x] Light, dark and system themes with a preview panel.
 - [ ] Aliases and per-command hotkeys.
 
 ## Extensions

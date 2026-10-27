@@ -1,9 +1,14 @@
 //! `backslash`: the launcher window, plus a CLI to run any command from a terminal.
 
 mod apps;
+mod autostart;
 mod cli;
+mod clipboard;
+mod currency;
+mod hotkey;
 mod icons;
 mod launcher;
+mod layer;
 mod markdown;
 mod scaffold;
 mod theme;

@@ -15,8 +15,13 @@ pub struct App {
     pub id: String,
     pub name: String,
     pub description: Option<String>,
+    pub generic_name: Option<String>,
     pub keywords: Vec<String>,
     pub icon: Option<Icon>,
+    /// `StartupWMClass`, to match open windows to their application.
+    pub wm_class: Option<String>,
+    /// Where it was installed from: Flatpak, Snap, local or system.
+    pub source: &'static str,
     pub info: gio::AppInfo,
     /// Desktop actions such as "New Private Window": `(action id, label)`.
     pub actions: Vec<(String, String)>,
@@ -53,10 +58,23 @@ pub fn load(hidden: &[String]) -> Vec<App> {
             let actions = desktop
                 .map(|d| d.list_actions().iter().map(|a| (a.to_string(), d.action_name(a).to_string())).collect())
                 .unwrap_or_default();
+            let file = desktop.and_then(|d| d.filename()).map(|f| f.to_string_lossy().into_owned()).unwrap_or_default();
+            let source = if file.contains("/flatpak/") {
+                "Flatpak"
+            } else if file.contains("/snapd/") {
+                "Snap"
+            } else if file.starts_with(&*backslash_core::paths::home().to_string_lossy()) {
+                "Installed for you"
+            } else {
+                "System package"
+            };
             Some(App {
                 id,
                 name: info.display_name().to_string(),
                 description: info.description().map(|d| d.to_string()),
+                generic_name: desktop.and_then(|d| d.generic_name()).map(|g| g.to_string()),
+                wm_class: desktop.and_then(|d| d.startup_wm_class()).map(|c| c.to_string()),
+                source,
                 keywords,
                 icon: info.icon().map(Icon::Gio),
                 info,

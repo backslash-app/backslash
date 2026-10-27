@@ -16,3 +16,8 @@ clap = { version = "4.5.61", features = ["derive"] }
 async-channel = "2.5.0"
 gtk = { version = "0.10.3", package = "gtk4", features = ["v4_14"] }
 libc = "0.2.191"
+ureq = { version = "3.5.0", features = ["json"] }
+dirs = "7.0.0"
+
+[dev-dependencies]
+tempfile = "3.27.0"

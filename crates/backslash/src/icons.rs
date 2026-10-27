@@ -32,6 +32,43 @@ pub fn widget(icon: Option<&Icon>, size: i32) -> gtk::Widget {
     }
 }
 
+/// An icon in a rounded tile. App icons (full color) sit on a neutral tile;
+/// named icons use their symbolic variant, colored by the tile's tint.
+pub fn tile(icon: Option<&Icon>, tint: Option<&str>, size: i32) -> gtk::Widget {
+    let tile = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    tile.add_css_class("tile");
+    tile.set_size_request(size, size);
+    tile.set_valign(gtk::Align::Center);
+    tile.set_halign(gtk::Align::Center);
+    let inner = match icon {
+        Some(Icon::Gio(_)) => {
+            tile.add_css_class("app");
+            widget(icon, size - 4)
+        }
+        Some(Icon::Spec(spec)) if is_emoji(spec) || spec.starts_with('/') => {
+            tile.add_css_class("app");
+            widget(icon, size - 8)
+        }
+        Some(Icon::Spec(spec)) => {
+            tile.add_css_class(&format!("tint-{}", tint.unwrap_or("gray")));
+            let symbolic = if spec.ends_with("-symbolic") { spec.clone() } else { format!("{spec}-symbolic") };
+            let name = if has_icon(&symbolic) { symbolic } else { spec.clone() };
+            widget(Some(&Icon::Spec(name)), size * 10 / 17)
+        }
+        None => {
+            tile.add_css_class(&format!("tint-{}", tint.unwrap_or("gray")));
+            widget(Some(&Icon::Spec("application-x-executable-symbolic".into())), size * 10 / 17)
+        }
+    };
+    // Centered in a fixed-size tile; nothing may set hexpand here, or the tile
+    // would grow and push the row's text to the middle.
+    inner.set_halign(gtk::Align::Center);
+    inner.set_valign(gtk::Align::Center);
+    tile.set_homogeneous(true);
+    tile.append(&inner);
+    tile.upcast()
+}
+
 fn has_icon(name: &str) -> bool {
     gtk::gdk::Display::default().is_some_and(|d| gtk::IconTheme::for_display(&d).has_icon(name))
 }

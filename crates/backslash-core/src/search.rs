@@ -151,6 +151,11 @@ impl Usage {
         }
     }
 
+    /// `(times used, last use as Unix time)`.
+    pub fn stats(&self, id: &str) -> Option<(u32, u64)> {
+        self.entries.get(id).map(|e| (e.count, e.last))
+    }
+
     fn frecency(&self, id: &str) -> f64 {
         let Some(e) = self.entries.get(id) else { return 0.0 };
         let age = now().saturating_sub(e.last);

@@ -1,42 +1,61 @@
-//! The launcher window: a search bar, a navigation stack of views, a footer
-//! with the primary action, and an action panel (Ctrl+K).
+//! The launcher window: a search bar with filters, a navigation stack of
+//! views, a results list with a preview panel, a footer with the primary
+//! action, and an action panel (Ctrl+K).
 //!
-//! The root view searches applications and extension commands; every other
-//! view comes from an extension process (see `backslash_core::host`).
+//! The root view searches applications, extension commands and built-in
+//! commands; extension views come from extension processes (see
+//! `backslash_core::host`); built-in views (clipboard, files, windows, theme)
+//! are implemented here.
+
+mod model;
+mod rows;
+mod widgets;
 
 use std::cell::{Cell, RefCell};
 use std::path::PathBuf;
 use std::rc::{Rc, Weak};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 
 use backslash_core::config::Config;
 use backslash_core::host::{Incoming, RpcError, Session};
-use backslash_core::protocol::{self as proto, Accessory, ActionKind, Effect, FieldKind, Filtering, FormView, View};
+use backslash_core::protocol::{self as proto, Effect, FieldKind, Filtering, FormView, View};
 use backslash_core::registry::{CommandEntry, Registry};
-use backslash_core::search::{Ranker, Searchable, Usage};
-use backslash_core::{calc, paths, runner};
+use backslash_core::search::{Ranker, Usage};
+use backslash_core::system::clipboard::ClipboardHistory;
+use backslash_core::system::files;
+use backslash_core::system::windows::{Backend, WindowInfo};
+use backslash_core::{paths, runner};
 use gtk::prelude::*;
 use gtk::{gdk, gio, glib};
 use serde_json::{json, Map, Value};
 
+use self::model::{Builtin, Filter, FormInput, Frame, FrameKind, Op, Row, UiAction};
+use self::widgets::{key_hint, label, pretty_accel, row_widget};
 use crate::apps::{self, App};
+use crate::currency::Currency;
 use crate::icons::{self, Icon};
-use crate::{markdown, theme};
+use crate::theme::Styles;
+use crate::{autostart, clipboard, hotkey, layer, markdown, theme};
+
+pub use self::rows::now;
 
 pub struct Options {
     pub hidden: bool,
     pub dev_dir: Option<PathBuf>,
 }
 
-const WIDTH: i32 = 780;
-const HEIGHT: i32 = 500;
-const MAX_ROWS: usize = 60;
+const WIDTH: i32 = 860;
+const HEIGHT: i32 = 540;
+const LIST_WIDTH: i32 = 400;
 
 pub fn run(options: Options) -> anyhow::Result<()> {
+    layer::reexec_if_needed(Config::load().layer_shell);
+
     let dev = options.dev_dir.is_some();
-    let app = gtk::Application::builder()
-        .application_id(if dev { "app.backslash.Backslash.Devel" } else { "app.backslash.Backslash" })
-        .build();
+    let app_id = if dev { "app.backslash.Backslash.Devel" } else { "app.backslash.Backslash" };
+    let app = gtk::Application::builder().application_id(app_id).build();
 
     let launcher: Rc<RefCell<Option<Rc<Launcher>>>> = Rc::default();
     let first_activation = Cell::new(true);
@@ -46,18 +65,20 @@ pub fn run(options: Options) -> anyhow::Result<()> {
     app.connect_startup({
         let launcher = launcher.clone();
         move |app| {
-            if let Some(display) = gdk::Display::default() {
-                theme::install(&display);
-            }
-            launcher.replace(Some(Launcher::new(app, dev_dir.clone())));
+            let Some(display) = gdk::Display::default() else { return };
+            let styles = Styles::install(&display);
+            launcher.replace(Some(Launcher::new(app, styles, dev_dir.clone())));
         }
     });
     // Every later `backslash` invocation reaches the running instance over
     // D-Bus and lands here, which makes `backslash` itself the toggle.
     app.connect_activate(move |_| {
         let Some(l) = launcher.borrow().clone() else { return };
-        if first_activation.replace(false) && hidden {
-            return;
+        if first_activation.replace(false) {
+            l.start_services();
+            if hidden {
+                return;
+            }
         }
         l.toggle();
     });
@@ -69,120 +90,16 @@ pub fn run(options: Options) -> anyhow::Result<()> {
     Ok(())
 }
 
-// ---------------------------------------------------------------------------
-// Model
-
-#[derive(Clone)]
-enum Op {
-    LaunchApp(String, Option<String>),
-    HideApp(String),
-    StartCommand(String),
-    Copy(String),
-    Open(String),
-    Callback(String),
+/// Results of the file search, filled from a background thread.
+#[derive(Default)]
+struct FilesState {
+    results: Vec<PathBuf>,
+    recent: Vec<PathBuf>,
+    generation: u64,
+    cancel: Arc<AtomicBool>,
 }
 
-#[derive(Clone)]
-struct UiAction {
-    title: String,
-    icon: Option<String>,
-    shortcut: Option<String>,
-    destructive: bool,
-    confirm: Option<String>,
-    op: Op,
-}
-
-impl UiAction {
-    fn new(title: impl Into<String>, op: Op) -> Self {
-        Self { title: title.into(), icon: None, shortcut: None, destructive: false, confirm: None, op }
-    }
-
-    fn icon(mut self, icon: &str) -> Self {
-        self.icon = Some(icon.into());
-        self
-    }
-
-    fn from_proto(a: &proto::Action) -> Self {
-        let op = match &a.kind {
-            ActionKind::Open { target } => Op::Open(target.clone()),
-            ActionKind::Copy { text } => Op::Copy(text.clone()),
-            ActionKind::Callback => Op::Callback(a.id.clone()),
-        };
-        Self {
-            title: a.title.clone(),
-            icon: a.icon.clone(),
-            shortcut: a.shortcut.clone(),
-            destructive: a.destructive,
-            confirm: a.confirm.clone(),
-            op,
-        }
-    }
-}
-
-#[derive(Clone, Default, PartialEq)]
-enum RowStyle {
-    #[default]
-    Normal,
-    Calculator,
-}
-
-#[derive(Clone, Default)]
-struct Row {
-    key: String,
-    title: String,
-    subtitle: Option<String>,
-    icon: Option<Icon>,
-    accessories: Vec<Accessory>,
-    kind: Option<String>,
-    section: Option<String>,
-    actions: Vec<UiAction>,
-    style: RowStyle,
-}
-
-struct ItemRef<'a>(&'a proto::Item);
-impl Searchable for ItemRef<'_> {
-    fn title(&self) -> &str {
-        &self.0.title
-    }
-    fn keywords(&self) -> &[String] {
-        &self.0.keywords
-    }
-    fn subtitle(&self) -> Option<&str> {
-        self.0.subtitle.as_deref()
-    }
-}
-
-enum FrameKind {
-    Root,
-    /// A view served by an extension process.
-    Extension {
-        session: Rc<Session>,
-        view: View,
-        title: String,
-    },
-    /// Arguments of a command, asked before starting it.
-    Arguments {
-        command_id: String,
-        form: FormView,
-    },
-}
-
-struct Frame {
-    kind: FrameKind,
-    /// Search text and selected item to restore when navigating back.
-    query: String,
-    selected: Option<String>,
-}
-
-enum FormInput {
-    Entry(gtk::Entry),
-    Password(gtk::PasswordEntry),
-    Text(gtk::TextView),
-    Check(gtk::CheckButton),
-    Drop(gtk::DropDown, Vec<String>),
-}
-
-struct State {
+pub(super) struct State {
     registry: Registry,
     config: Config,
     apps: Vec<App>,
@@ -198,16 +115,28 @@ struct State {
     form: Vec<(proto::Field, FormInput)>,
     /// Keeps the selection on the same item when a view refreshes.
     selected_key: Option<String>,
+    filter: Filter,
+    clipboard: ClipboardHistory,
+    files: FilesState,
+    windows: Vec<WindowInfo>,
+    window_backend: Option<Backend>,
+    currency: Currency,
+    autostart: bool,
 }
 
 pub struct Launcher {
     window: gtk::ApplicationWindow,
+    styles: Styles,
+    layer_shell: bool,
     entry: gtk::Entry,
     back: gtk::Button,
+    search_icon: gtk::Image,
+    chips: gtk::Box,
     spinner: gtk::Spinner,
     pages: gtk::Stack,
     list: gtk::ListBox,
     scroller: gtk::ScrolledWindow,
+    preview: gtk::Box,
     sections: Rc<RefCell<Vec<Option<String>>>>,
     empty_title: gtk::Label,
     empty_subtitle: gtk::Label,
@@ -217,6 +146,7 @@ pub struct Launcher {
     context: gtk::Label,
     toast: gtk::Label,
     primary: gtk::Label,
+    primary_key: gtk::Box,
     actions_hint: gtk::Box,
     action_panel: gtk::Box,
     popover_list: gtk::ListBox,
@@ -228,25 +158,8 @@ pub struct Launcher {
     _hold: gio::ApplicationHoldGuard,
 }
 
-fn label(text: &str, class: &str) -> gtk::Label {
-    let l = gtk::Label::new(Some(text));
-    l.add_css_class(class);
-    l.set_xalign(0.0);
-    l
-}
-
-fn key_hint(text: &str, key: &str) -> gtk::Box {
-    let b = gtk::Box::new(gtk::Orientation::Horizontal, 2);
-    b.add_css_class("hint");
-    b.append(&gtk::Label::new(Some(text)));
-    for k in key.split(' ') {
-        b.append(&label(k, "key"));
-    }
-    b
-}
-
 impl Launcher {
-    fn new(app: &gtk::Application, dev_dir: Option<PathBuf>) -> Rc<Self> {
+    fn new(app: &gtk::Application, styles: Styles, dev_dir: Option<PathBuf>) -> Rc<Self> {
         let window = gtk::ApplicationWindow::builder()
             .application(app)
             .title("Backslash")
@@ -256,31 +169,42 @@ impl Launcher {
             .decorated(false)
             .build();
         window.add_css_class("launcher");
+        let layer_shell = layer::setup(&window);
 
         let panel = gtk::Box::new(gtk::Orientation::Vertical, 0);
         panel.add_css_class("panel");
         panel.set_overflow(gtk::Overflow::Hidden);
+        panel.set_size_request(WIDTH - 28, HEIGHT - 28);
 
-        // Header
-        let header = gtk::Box::new(gtk::Orientation::Horizontal, 10);
+        // Header: back or search icon, query, filters, spinner.
+        let header = gtk::Box::new(gtk::Orientation::Horizontal, 12);
         header.add_css_class("header");
         let back = gtk::Button::from_icon_name("go-previous-symbolic");
         back.add_css_class("back");
         back.set_valign(gtk::Align::Center);
         back.set_focusable(false);
         back.set_visible(false);
+        let search_icon = gtk::Image::from_icon_name("system-search-symbolic");
+        search_icon.add_css_class("search-icon");
+        search_icon.set_pixel_size(18);
         let entry = gtk::Entry::new();
         entry.add_css_class("search");
         entry.set_has_frame(false);
         entry.set_hexpand(true);
-        entry.set_placeholder_text(Some("Search apps and commands…"));
+        let chips = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+        chips.set_valign(gtk::Align::Center);
         let spinner = gtk::Spinner::new();
         header.append(&back);
+        header.append(&search_icon);
         header.append(&entry);
         header.append(&spinner);
+        header.append(&chips);
 
-        let separator = gtk::Box::new(gtk::Orientation::Horizontal, 0);
-        separator.add_css_class("separator");
+        let divider = || {
+            let d = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+            d.add_css_class("divider");
+            d
+        };
 
         // Pages
         let pages = gtk::Stack::new();
@@ -292,8 +216,19 @@ impl Launcher {
         list.add_css_class("results");
         list.set_selection_mode(gtk::SelectionMode::Browse);
         list.set_activate_on_single_click(true);
-        let scroller = gtk::ScrolledWindow::builder().hscrollbar_policy(gtk::PolicyType::Never).child(&list).build();
-        pages.add_named(&scroller, Some("list"));
+        let scroller = gtk::ScrolledWindow::builder()
+            .hscrollbar_policy(gtk::PolicyType::Never)
+            .child(&list)
+            .width_request(LIST_WIDTH)
+            .build();
+        let preview = gtk::Box::new(gtk::Orientation::Vertical, 16);
+        preview.add_css_class("preview");
+        preview.set_hexpand(true);
+        let list_page = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+        list_page.append(&scroller);
+        list_page.append(&divider());
+        list_page.append(&preview);
+        pages.add_named(&list_page, Some("list"));
 
         let empty = gtk::Box::new(gtk::Orientation::Vertical, 6);
         empty.add_css_class("empty");
@@ -329,14 +264,14 @@ impl Launcher {
         detail_row.append(&metadata);
         pages.add_named(&detail_row, Some("detail"));
 
-        let form_box = gtk::Box::new(gtk::Orientation::Vertical, 12);
+        let form_box = gtk::Box::new(gtk::Orientation::Vertical, 10);
         form_box.add_css_class("form");
         let form_scroll =
             gtk::ScrolledWindow::builder().hscrollbar_policy(gtk::PolicyType::Never).child(&form_box).build();
         pages.add_named(&form_scroll, Some("form"));
 
-        // Footer
-        let footer = gtk::Box::new(gtk::Orientation::Horizontal, 14);
+        // Footer: context, toast, primary action, action panel hint.
+        let footer = gtk::Box::new(gtk::Orientation::Horizontal, 10);
         footer.add_css_class("footer");
         let context = label("Backslash", "context");
         let toast = label("", "toast");
@@ -344,15 +279,19 @@ impl Launcher {
         toast.set_xalign(1.0);
         toast.set_ellipsize(gtk::pango::EllipsizeMode::End);
         let primary = label("", "primary");
+        let primary_key = key_hint("", "↵");
         let actions_hint = key_hint("Actions", "Ctrl K");
+        actions_hint.set_margin_start(6);
         footer.append(&context);
         footer.append(&toast);
         footer.append(&primary);
+        footer.append(&primary_key);
         footer.append(&actions_hint);
 
         panel.append(&header);
-        panel.append(&separator);
+        panel.append(&divider());
         panel.append(&pages);
+        panel.append(&divider());
         panel.append(&footer);
 
         // Action panel: an overlay inside the window rather than a popup
@@ -362,8 +301,9 @@ impl Launcher {
         action_panel.add_css_class("actions-panel");
         action_panel.set_halign(gtk::Align::End);
         action_panel.set_valign(gtk::Align::End);
-        action_panel.set_margin_end(20);
-        action_panel.set_margin_bottom(54);
+        action_panel.set_margin_end(24);
+        action_panel.set_margin_bottom(58);
+        action_panel.set_size_request(280, -1);
         action_panel.set_visible(false);
         let popover_list = gtk::ListBox::new();
         popover_list.set_selection_mode(gtk::SelectionMode::Browse);
@@ -374,6 +314,7 @@ impl Launcher {
         window.set_child(Some(&overlay));
 
         let config = Config::load();
+        styles.apply(config.theme, &window);
         let mut registry = Registry::scan(&paths::extension_dirs());
         if let Some(dir) = &dev_dir {
             registry.add_dir(dir);
@@ -383,15 +324,21 @@ impl Launcher {
         for (dir, err) in &registry.errors {
             eprintln!("backslash: skipping {}: {err}", dir.display());
         }
+        let clipboard = ClipboardHistory::load(paths::state_dir().join("clipboard.json"), config.clipboard.max_items);
 
         let launcher = Rc::new(Self {
             window,
+            styles,
+            layer_shell,
             entry,
             back,
+            search_icon,
+            chips,
             spinner,
             pages,
             list,
             scroller,
+            preview,
             sections: Rc::default(),
             empty_title,
             empty_subtitle,
@@ -401,6 +348,7 @@ impl Launcher {
             context,
             toast,
             primary,
+            primary_key,
             actions_hint,
             action_panel,
             popover_list,
@@ -420,14 +368,121 @@ impl Launcher {
                 toast_timer: None,
                 form: Vec::new(),
                 selected_key: None,
+                filter: Filter::All,
+                clipboard,
+                files: FilesState::default(),
+                windows: Vec::new(),
+                window_backend: Backend::detect(),
+                currency: Currency::new(),
+                autostart: autostart::enabled(),
             }),
             dev_dir,
             setting_query: Cell::new(false),
             _hold: app.hold(),
         });
+        launcher.build_chips();
         launcher.connect_signals();
         launcher.render();
         launcher
+    }
+
+    /// Background services, started once the application is registered.
+    fn start_services(self: &Rc<Self>) {
+        let (hotkey, clipboard_enabled) = {
+            let s = self.state.borrow();
+            (s.config.hotkey.clone(), s.config.clipboard.enabled)
+        };
+        if !hotkey.is_empty() && self.dev_dir.is_none() {
+            let weak = Rc::downgrade(self);
+            let app_id = self.window.application().and_then(|a| a.application_id()).unwrap_or_default();
+            hotkey::register(
+                &app_id,
+                &hotkey,
+                move || {
+                    if let Some(l) = weak.upgrade() {
+                        l.toggle();
+                    }
+                },
+                |status| eprintln!("backslash: {status}"),
+            );
+        }
+        if clipboard_enabled {
+            let weak = Rc::downgrade(self);
+            clipboard::watch(&WidgetExt::display(&self.window), move |text| {
+                if let Some(l) = weak.upgrade() {
+                    l.on_clipboard_text(text);
+                }
+            });
+        }
+        let weak = Rc::downgrade(self);
+        theme::watch_system(move || {
+            if let Some(l) = weak.upgrade() {
+                let theme = l.state.borrow().config.theme;
+                l.styles.apply(theme, &l.window);
+            }
+        });
+        let weak = Rc::downgrade(self);
+        self.state.borrow().currency.connect_update(move || {
+            if let Some(l) = weak.upgrade() {
+                if l.is_root() && l.window.is_visible() {
+                    l.render();
+                }
+            }
+        });
+    }
+
+    fn on_clipboard_text(self: &Rc<Self>, text: String) {
+        let added = self.state.borrow_mut().clipboard.add(&text);
+        let showing =
+            matches!(self.state.borrow().frames.last().map(|f| &f.kind), Some(FrameKind::Builtin(Builtin::Clipboard)));
+        if added && showing {
+            self.render();
+        }
+    }
+
+    fn build_chips(self: &Rc<Self>) {
+        for filter in Filter::ALL {
+            let chip = gtk::Button::with_label(filter.label());
+            chip.add_css_class("chip");
+            chip.set_focusable(false);
+            let weak = Rc::downgrade(self);
+            chip.connect_clicked(move |_| {
+                if let Some(l) = weak.upgrade() {
+                    l.set_filter(filter);
+                }
+            });
+            self.chips.append(&chip);
+        }
+    }
+
+    fn set_filter(self: &Rc<Self>, filter: Filter) {
+        self.state.borrow_mut().filter = filter;
+        self.state.borrow_mut().selected_key = None;
+        self.render();
+    }
+
+    fn cycle_filter(self: &Rc<Self>, delta: i32) {
+        let current = self.state.borrow().filter;
+        let i = Filter::ALL.iter().position(|f| *f == current).unwrap_or(0) as i32;
+        let next = (i + delta).rem_euclid(Filter::ALL.len() as i32) as usize;
+        self.set_filter(Filter::ALL[next]);
+    }
+
+    fn update_chips(&self) {
+        let root = self.is_root();
+        self.chips.set_visible(root);
+        let filter = self.state.borrow().filter;
+        let mut child = self.chips.first_child();
+        let mut i = 0;
+        while let Some(chip) = child {
+            if Filter::ALL[i] == filter {
+                chip.add_css_class("active");
+            } else {
+                chip.remove_css_class("active");
+            }
+            child = chip.next_sibling();
+            i += 1;
+        }
     }
 
     fn connect_signals(self: &Rc<Self>) {
@@ -457,6 +512,7 @@ impl Launcher {
         self.list.connect_row_selected(move |_, _| {
             if let Some(l) = weak.upgrade() {
                 l.update_footer();
+                l.update_preview();
             }
         });
 
@@ -466,7 +522,9 @@ impl Launcher {
             let current = sections.get(row.index() as usize).cloned().flatten();
             let previous = before.and_then(|b| sections.get(b.index() as usize).cloned().flatten());
             match current {
-                Some(s) if previous.as_ref() != Some(&s) => row.set_header(Some(&label(&s, "section-header"))),
+                Some(s) if previous.as_ref() != Some(&s) => {
+                    row.set_header(Some(&label(&s.to_uppercase(), "section-header")))
+                }
                 _ => row.set_header(gtk::Widget::NONE),
             }
         });
@@ -491,13 +549,22 @@ impl Launcher {
         });
         self.window.add_controller(keys);
 
-        // Hide when another window takes the focus, like any launcher.
+        // Hide when another window takes the focus, like any launcher. Wait a
+        // little first: compositors briefly take the keyboard away on layout or
+        // keymap changes, which must not close the window.
         let weak = Rc::downgrade(self);
         self.window.connect_is_active_notify(move |w| {
-            let Some(l) = weak.upgrade() else { return };
-            if !w.is_active() && w.is_visible() && !l.action_panel.is_visible() && l.dev_dir.is_none() {
-                l.hide();
+            if w.is_active() {
+                return;
             }
+            let weak = weak.clone();
+            glib::timeout_add_local_once(Duration::from_millis(200), move || {
+                let Some(l) = weak.upgrade() else { return };
+                let w = &l.window;
+                if !w.is_active() && w.is_visible() && !l.action_panel.is_visible() && l.dev_dir.is_none() {
+                    l.hide();
+                }
+            });
         });
         self.window.connect_close_request(move |w| {
             w.set_visible(false);
@@ -530,9 +597,29 @@ impl Launcher {
 
     fn show(self: &Rc<Self>) {
         self.reload();
-        theme::apply_scheme(&self.window);
+        let theme = self.state.borrow().config.theme;
+        self.styles.apply(theme, &self.window);
+        if self.layer_shell {
+            let height = WidgetExt::display(&self.window)
+                .monitors()
+                .item(0)
+                .and_downcast::<gdk::Monitor>()
+                .map_or(1080, |m| m.geometry().height());
+            layer::set_top_margin(&self.window, height / 6);
+        }
+        self.render();
         self.window.present();
         self.entry.grab_focus();
+        // Where the clipboard can't be watched in the background (GNOME),
+        // at least record what is in it now.
+        if self.state.borrow().config.clipboard.enabled {
+            let weak = Rc::downgrade(self);
+            clipboard::read_now(&WidgetExt::display(&self.window), move |text| {
+                if let Some(l) = weak.upgrade() {
+                    l.on_clipboard_text(text);
+                }
+            });
+        }
     }
 
     fn hide(self: &Rc<Self>) {
@@ -544,7 +631,10 @@ impl Launcher {
             s.frames.truncate(1);
             s.confirm = None;
             s.search = None;
+            s.filter = Filter::All;
+            s.selected_key = None;
             s.frames[0].query.clear();
+            s.files.cancel.store(true, Ordering::Relaxed);
         }
         self.set_query("");
         self.render();
@@ -564,6 +654,7 @@ impl Launcher {
         let config = s.config.clone();
         s.commands = registry.commands(|id| config.is_enabled(id));
         s.registry = registry;
+        s.autostart = autostart::enabled();
     }
 
     // -----------------------------------------------------------------------
@@ -579,6 +670,7 @@ impl Launcher {
             let frame = s.frames.last().unwrap();
             let (title, page) = match &frame.kind {
                 FrameKind::Root => ("Backslash".to_string(), "list"),
+                FrameKind::Builtin(b) => (b.title().to_string(), "list"),
                 FrameKind::Extension { view: View::List(_), title, .. } => (title.clone(), "list"),
                 FrameKind::Extension { view: View::Detail(_), title, .. } => (title.clone(), "detail"),
                 FrameKind::Extension { view: View::Form(_), title, .. } => (title.clone(), "form"),
@@ -587,7 +679,9 @@ impl Launcher {
             (s.frames.len(), title, page)
         };
         self.back.set_visible(depth > 1);
+        self.search_icon.set_visible(depth == 1);
         self.context.set_text(&title);
+        self.update_chips();
         match page {
             "list" => self.render_list(),
             "detail" => self.render_detail(),
@@ -602,15 +696,19 @@ impl Launcher {
             let mut guard = self.state.borrow_mut();
             let s = &mut *guard;
             match &s.frames.last().unwrap().kind {
-                FrameKind::Root => {
-                    let rows = root_rows(s, &query);
-                    (rows, "Search apps and commands…".to_string(), None)
+                FrameKind::Root => (rows::root_rows(s, &query), "Search apps, commands, math…".to_string(), None),
+                FrameKind::Builtin(b) => {
+                    let b = *b;
+                    let (title, description) = b.empty();
+                    let empty =
+                        proto::EmptyState { title: title.into(), description: Some(description.into()), icon: None };
+                    (rows::builtin_rows(s, b, &query), b.placeholder().to_string(), Some(empty))
                 }
-                FrameKind::Extension { view: View::List(list), .. } => {
+                FrameKind::Extension { view: View::List(list), session, .. } => {
                     if s.search.is_none() {
                         self.spinner.set_spinning(list.loading);
                     }
-                    let rows = list_rows(&mut s.ranker, list, &query);
+                    let rows = rows::list_rows(&mut s.ranker, list, &query, &session.extension_id);
                     (rows, list.placeholder.clone().unwrap_or_else(|| "Search…".into()), list.empty.clone())
                 }
                 _ => unreachable!("render_list on a non-list frame"),
@@ -651,6 +749,17 @@ impl Launcher {
                 self.scroller.vadjustment().set_value(0.0);
             }
         }
+        self.update_preview();
+    }
+
+    fn update_preview(&self) {
+        let Some(row) = self.selected_row() else {
+            while let Some(child) = self.preview.first_child() {
+                self.preview.remove(&child);
+            }
+            return;
+        };
+        widgets::fill_preview(&self.preview, &row.preview(), &self.current_actions());
     }
 
     fn render_detail(&self) {
@@ -768,7 +877,7 @@ impl Launcher {
                 FrameKind::Extension { view: View::Detail(d), .. } => return from(&d.actions),
                 FrameKind::Extension { view: View::Form(_), .. } | FrameKind::Arguments { .. } => return Vec::new(),
                 FrameKind::Extension { view: View::List(l), .. } => from(&l.actions),
-                FrameKind::Root => Vec::new(),
+                FrameKind::Root | FrameKind::Builtin(_) => Vec::new(),
             }
         };
         let mut actions = self.selected_row().map(|r| r.actions).unwrap_or_default();
@@ -790,17 +899,20 @@ impl Launcher {
                 "{}   Enter to confirm · Esc to cancel",
                 confirm.confirm.as_deref().unwrap_or("Are you sure?")
             ));
+            self.primary_key.set_visible(false);
             self.actions_hint.set_visible(false);
             return;
         }
         self.primary.remove_css_class("confirm");
         if self.is_form() {
-            self.primary.set_text("Submit  Ctrl ↵");
+            self.primary.set_text("Submit");
+            self.primary_key.set_visible(true);
             self.actions_hint.set_visible(false);
             return;
         }
         let actions = self.current_actions();
-        self.primary.set_text(&actions.first().map(|a| format!("{}  ↵", a.title)).unwrap_or_default());
+        self.primary.set_text(actions.first().map_or("", |a| a.title.as_str()));
+        self.primary_key.set_visible(!actions.is_empty());
         self.actions_hint.set_visible(actions.len() > 1);
     }
 
@@ -844,6 +956,10 @@ impl Launcher {
             return;
         }
         self.state.borrow_mut().selected_key = None;
+        let files = matches!(self.state.borrow().frames.last().unwrap().kind, FrameKind::Builtin(Builtin::Files));
+        if files {
+            return self.debounce(150, |l| l.search_files());
+        }
         let extension_search = {
             let s = self.state.borrow();
             match &s.frames.last().unwrap().kind {
@@ -857,17 +973,7 @@ impl Launcher {
             None => self.render(),
             Some((session, view_id)) => {
                 // Debounce, then cancel whatever is still running.
-                if let Some(timer) = self.state.borrow_mut().search_timer.take() {
-                    timer.remove();
-                }
-                let weak = Rc::downgrade(self);
-                let timer = glib::timeout_add_local_once(Duration::from_millis(120), move || {
-                    if let Some(l) = weak.upgrade() {
-                        l.state.borrow_mut().search_timer = None;
-                        l.extension_search(session, view_id);
-                    }
-                });
-                self.state.borrow_mut().search_timer = Some(timer);
+                self.debounce(120, move |l| l.extension_search(session, view_id));
             }
         }
     }
@@ -957,11 +1063,21 @@ impl Launcher {
         }
 
         match key {
+            gdk::Key::Tab if self.is_root() => {
+                self.cycle_filter(1);
+                return Stop;
+            }
+            gdk::Key::ISO_Left_Tab if self.is_root() => {
+                self.cycle_filter(-1);
+                return Stop;
+            }
             gdk::Key::Escape => {
                 if !self.is_root() {
                     self.pop();
                 } else if !self.entry.text().is_empty() {
                     self.entry.set_text("");
+                } else if self.state.borrow().filter != Filter::All {
+                    self.set_filter(Filter::All);
                 } else {
                     self.hide();
                 }
@@ -1154,6 +1270,71 @@ impl Launcher {
                 Err(e) => self.fail(e),
             },
             Op::Callback(id) => self.callback(&id, None),
+            Op::Snippet(text) => self.copy_snippet(text),
+            Op::FillQuery(text) => {
+                self.entry.set_text(&text);
+                self.entry.set_position(-1);
+            }
+            Op::OpenBuiltin(builtin) => self.open_builtin(builtin),
+            Op::ClipCopy(id) => {
+                let text = self.state.borrow().clipboard.get(id).map(|e| e.text.clone());
+                if let Some(text) = text {
+                    self.window.clipboard().set_text(&text);
+                    self.flash_and_hide("Copied to clipboard");
+                }
+            }
+            Op::ClipPin(id) => {
+                self.state.borrow_mut().clipboard.toggle_pin(id);
+                self.render();
+            }
+            Op::ClipDelete(id) => {
+                self.state.borrow_mut().clipboard.delete(id);
+                self.state.borrow_mut().selected_key = None;
+                self.render();
+            }
+            Op::ClipClear => {
+                self.state.borrow_mut().clipboard.clear();
+                self.render();
+            }
+            Op::Reveal(path) => {
+                reveal(&path);
+                self.hide();
+            }
+            Op::FocusWindow(id) => {
+                let backend = self.state.borrow().window_backend;
+                self.hide();
+                if let Some(backend) = backend {
+                    // Let the launcher give the focus back first.
+                    glib::timeout_add_local_once(Duration::from_millis(60), move || {
+                        if let Err(e) = backend.focus(&id) {
+                            eprintln!("backslash: {e:#}");
+                        }
+                    });
+                }
+            }
+            Op::SetTheme(theme) => {
+                {
+                    let mut s = self.state.borrow_mut();
+                    s.config.theme = theme;
+                    if let Err(e) = s.config.save() {
+                        drop(s);
+                        return self.fail(e);
+                    }
+                }
+                self.styles.apply(theme, &self.window);
+                self.pop();
+            }
+            Op::SetAutostart(enabled) => match autostart::set(enabled) {
+                Ok(()) => {
+                    self.state.borrow_mut().autostart = enabled;
+                    self.show_toast(
+                        if enabled { "Backslash will start with your session" } else { "Launch at login disabled" },
+                        proto::ToastStyle::Success,
+                    );
+                    self.render();
+                }
+                Err(e) => self.fail(e),
+            },
         }
     }
 
@@ -1474,10 +1655,148 @@ impl Launcher {
             }
         }
     }
+
+    // -----------------------------------------------------------------------
+    // Built-in views
+
+    /// Runs `f` after `ms` without new typing; a newer call replaces it.
+    fn debounce(self: &Rc<Self>, ms: u64, f: impl FnOnce(&Rc<Self>) + 'static) {
+        if let Some(timer) = self.state.borrow_mut().search_timer.take() {
+            timer.remove();
+        }
+        let weak = Rc::downgrade(self);
+        let timer = glib::timeout_add_local_once(Duration::from_millis(ms), move || {
+            if let Some(l) = weak.upgrade() {
+                l.state.borrow_mut().search_timer = None;
+                f(&l);
+            }
+        });
+        self.state.borrow_mut().search_timer = Some(timer);
+    }
+
+    fn open_builtin(self: &Rc<Self>, builtin: Builtin) {
+        match builtin {
+            Builtin::Windows => {
+                let backend = self.state.borrow().window_backend;
+                let Some(backend) = backend else { return };
+                match backend.list() {
+                    // The launcher itself is not a place to switch to.
+                    Ok(mut windows) => {
+                        windows.retain(|w| !w.app_id.starts_with("app.backslash.Backslash"));
+                        self.state.borrow_mut().windows = windows;
+                    }
+                    Err(e) => return self.fail(format!("{e:#}")),
+                }
+            }
+            Builtin::Files => {
+                let mut s = self.state.borrow_mut();
+                s.files.recent = files::recent(30);
+                s.files.results.clear();
+            }
+            Builtin::Clipboard | Builtin::Theme => {}
+        }
+        self.record(format!("builtin:{}", builtin_id(builtin)));
+        self.push(FrameKind::Builtin(builtin));
+    }
+
+    /// Searches files on a worker thread; only the newest search is shown.
+    fn search_files(self: &Rc<Self>) {
+        let query = self.entry.text().to_string();
+        let (generation, cancel) = {
+            let mut s = self.state.borrow_mut();
+            s.files.cancel.store(true, Ordering::Relaxed);
+            s.files.cancel = Arc::new(AtomicBool::new(false));
+            s.files.generation += 1;
+            (s.files.generation, s.files.cancel.clone())
+        };
+        if query.trim().chars().count() < 2 {
+            self.state.borrow_mut().files.results.clear();
+            return self.render();
+        }
+        self.spinner.set_spinning(true);
+        let (tx, rx) = async_channel::bounded(1);
+        std::thread::spawn(move || {
+            let _ = tx.send_blocking(files::search(&query, &cancel));
+        });
+        let weak = Rc::downgrade(self);
+        glib::spawn_future_local(async move {
+            let Ok(results) = rx.recv().await else { return };
+            let Some(l) = weak.upgrade() else { return };
+            if l.state.borrow().files.generation != generation {
+                return;
+            }
+            l.spinner.set_spinning(false);
+            l.state.borrow_mut().files.results = results;
+            let showing =
+                matches!(l.state.borrow().frames.last().map(|f| &f.kind), Some(FrameKind::Builtin(Builtin::Files)));
+            if showing {
+                l.render();
+            }
+        });
+    }
+
+    /// Copies a snippet, expanding `{date}`, `{time}` and `{clipboard}`.
+    fn copy_snippet(self: &Rc<Self>, text: String) {
+        let now = glib::DateTime::now_local().ok();
+        let fmt = |f: &str| now.as_ref().and_then(|d| d.format(f).ok()).map(|s| s.to_string()).unwrap_or_default();
+        let text = text.replace("{date}", &fmt("%x")).replace("{time}", &fmt("%H:%M"));
+        if !text.contains("{clipboard}") {
+            self.window.clipboard().set_text(&text);
+            return self.flash_and_hide("Snippet copied");
+        }
+        let clipboard = self.window.clipboard();
+        let weak = Rc::downgrade(self);
+        glib::spawn_future_local(async move {
+            let current = clipboard.read_text_future().await.ok().flatten().map(|t| t.to_string()).unwrap_or_default();
+            clipboard.set_text(&text.replace("{clipboard}", &current));
+            if let Some(l) = weak.upgrade() {
+                l.flash_and_hide("Snippet copied");
+            }
+        });
+    }
+}
+
+fn builtin_id(builtin: Builtin) -> &'static str {
+    match builtin {
+        Builtin::Clipboard => "clipboard",
+        Builtin::Files => "files",
+        Builtin::Windows => "windows",
+        Builtin::Theme => "theme",
+    }
+}
+
+/// Shows a file selected in the file manager (FileManager1 D-Bus interface,
+/// implemented by Nautilus, Dolphin, Nemo, Thunar…), else opens its folder.
+fn reveal(path: &std::path::Path) {
+    let uri = gio::File::for_path(path).uri().to_string();
+    let parent = path.parent().map(|p| p.display().to_string());
+    glib::spawn_future_local(async move {
+        let shown = match gio::bus_get_future(gio::BusType::Session).await {
+            Ok(bus) => bus
+                .call_future(
+                    Some("org.freedesktop.FileManager1"),
+                    "/org/freedesktop/FileManager1",
+                    "org.freedesktop.FileManager1",
+                    "ShowItems",
+                    Some(&(vec![uri], "").to_variant()),
+                    None,
+                    gio::DBusCallFlags::NONE,
+                    3000,
+                )
+                .await
+                .is_ok(),
+            Err(_) => false,
+        };
+        if !shown {
+            if let Some(parent) = parent {
+                let _ = apps::open(&parent);
+            }
+        }
+    });
 }
 
 // ---------------------------------------------------------------------------
-// Row builders
+// Helpers
 
 fn view_id(view: &View) -> Option<String> {
     view_id_ref(view).map(str::to_owned)
@@ -1489,163 +1808,6 @@ fn view_id_ref(view: &View) -> Option<&str> {
         View::Detail(v) => v.id.as_deref(),
         View::Form(v) => v.id.as_deref(),
     }
-}
-
-fn root_rows(s: &mut State, query: &str) -> Vec<Row> {
-    let mut rows = Vec::new();
-    if let Some(value) = calc::evaluate(query) {
-        let result = calc::format(value);
-        rows.push(Row {
-            key: "calc".into(),
-            title: result.clone(),
-            subtitle: Some(query.trim().to_string()),
-            icon: Some(Icon::Spec("accessories-calculator".into())),
-            kind: Some("Calculator".into()),
-            actions: vec![
-                UiAction::new("Copy Result", Op::Copy(result.clone())).icon("edit-copy"),
-                UiAction::new("Copy Expression", Op::Copy(format!("{} = {result}", query.trim()))).icon("edit-copy"),
-            ],
-            style: RowStyle::Calculator,
-            ..Default::default()
-        });
-    }
-
-    let usage = &s.usage;
-    let app_id = |a: &App| format!("app:{}", a.id);
-    let cmd_id = |c: &CommandEntry| format!("cmd:{}", c.id);
-    let apps = s.ranker.rank(query, &s.apps, Some((usage, &app_id)));
-    let commands = s.ranker.rank(query, &s.commands, Some((usage, &cmd_id)));
-
-    let mut scored: Vec<(u32, Row)> = Vec::new();
-    for (i, score) in commands {
-        let c = &s.commands[i];
-        scored.push((
-            score,
-            Row {
-                key: format!("cmd:{}", c.id),
-                title: c.title.clone(),
-                subtitle: Some(c.subtitle.clone()),
-                icon: Some(Icon::Spec(c.icon.clone().unwrap_or_else(|| "system-run".into()))),
-                kind: Some("Command".into()),
-                section: Some("Commands".into()),
-                actions: vec![UiAction::new("Open Command", Op::StartCommand(c.id.clone())).icon("system-run")],
-                ..Default::default()
-            },
-        ));
-    }
-    for (i, score) in apps {
-        let a = &s.apps[i];
-        let mut actions =
-            vec![UiAction::new("Open Application", Op::LaunchApp(a.id.clone(), None)).icon("document-open")];
-        actions.extend(
-            a.actions
-                .iter()
-                .map(|(id, name)| UiAction::new(name.clone(), Op::LaunchApp(a.id.clone(), Some(id.clone())))),
-        );
-        actions.push(UiAction::new("Hide from Results", Op::HideApp(a.id.clone())).icon("view-conceal"));
-        scored.push((
-            score,
-            Row {
-                key: format!("app:{}", a.id),
-                title: a.name.clone(),
-                subtitle: a.description.clone().filter(|_| !query.is_empty()),
-                icon: a.icon.clone(),
-                kind: Some("Application".into()),
-                section: Some("Applications".into()),
-                actions,
-                ..Default::default()
-            },
-        ));
-    }
-    scored.sort_by_key(|(score, _)| std::cmp::Reverse(*score));
-
-    if query.trim().is_empty() {
-        // Suggestions first (what you use), then everything grouped by kind.
-        let mut suggestions: Vec<Row> = Vec::new();
-        let mut rest: Vec<Row> = Vec::new();
-        for (score, mut row) in scored {
-            if score > 0 && suggestions.len() < 6 {
-                row.section = Some("Suggestions".into());
-                suggestions.push(row);
-            } else {
-                rest.push(row);
-            }
-        }
-        rest.sort_by_key(|r| (r.section.clone(), r.title.to_lowercase()));
-        rows.extend(suggestions);
-        rows.extend(rest);
-    } else {
-        rows.extend(scored.into_iter().map(|(_, mut r)| {
-            r.section = Some("Results".into());
-            r
-        }));
-    }
-    rows.truncate(MAX_ROWS);
-    rows
-}
-
-fn list_rows(ranker: &mut Ranker, list: &proto::ListView, query: &str) -> Vec<Row> {
-    let order: Vec<usize> = if list.filtering == Filtering::Host && !query.trim().is_empty() {
-        let refs: Vec<ItemRef> = list.items.iter().map(ItemRef).collect();
-        ranker.rank(query, &refs, None).into_iter().map(|(i, _)| i).collect()
-    } else {
-        (0..list.items.len()).collect()
-    };
-    let ranked = list.filtering == Filtering::Host && !query.trim().is_empty();
-    order
-        .into_iter()
-        .take(500)
-        .map(|i| {
-            let item = &list.items[i];
-            Row {
-                key: item.id.clone(),
-                title: item.title.clone(),
-                subtitle: item.subtitle.clone(),
-                icon: item.icon.clone().map(Icon::Spec),
-                accessories: item.accessories.clone(),
-                kind: None,
-                // Sections only make sense in the extension's own order.
-                section: if ranked { None } else { item.section.clone() },
-                actions: item.actions.iter().map(UiAction::from_proto).collect(),
-                style: RowStyle::Normal,
-            }
-        })
-        .collect()
-}
-
-fn row_widget(row: &Row) -> gtk::ListBoxRow {
-    let widget = gtk::ListBoxRow::new();
-    widget.set_focusable(false);
-    if row.style == RowStyle::Calculator {
-        let b = gtk::Box::new(gtk::Orientation::Vertical, 2);
-        b.add_css_class("calculator");
-        b.append(&label(&row.title, "result"));
-        b.append(&label(row.subtitle.as_deref().unwrap_or_default(), "expression"));
-        widget.set_child(Some(&b));
-        return widget;
-    }
-    let b = gtk::Box::new(gtk::Orientation::Horizontal, 12);
-    b.append(&icons::widget(row.icon.as_ref(), 28));
-    let title = label(&row.title, "title");
-    title.set_ellipsize(gtk::pango::EllipsizeMode::End);
-    title.set_max_width_chars(48);
-    b.append(&title);
-    if let Some(subtitle) = &row.subtitle {
-        let s = label(subtitle, "subtitle");
-        s.set_ellipsize(gtk::pango::EllipsizeMode::End);
-        s.set_hexpand(true);
-        b.append(&s);
-    } else {
-        title.set_hexpand(true);
-    }
-    for a in &row.accessories {
-        b.append(&icons::accessory(a));
-    }
-    if let Some(kind) = &row.kind {
-        b.append(&label(kind, "kind"));
-    }
-    widget.set_child(Some(&b));
-    widget
 }
 
 fn matching_shortcut(actions: &[UiAction], key: gdk::Key, mods: gdk::ModifierType) -> Option<UiAction> {
@@ -1666,12 +1828,6 @@ fn matching_shortcut(actions: &[UiAction], key: gdk::Key, mods: gdk::ModifierTyp
                 .is_some_and(|(k, m)| k.to_lower() == key.to_lower() && (m & relevant) == pressed)
         })
         .cloned()
-}
-
-fn pretty_accel(accel: &str) -> String {
-    gtk::accelerator_parse(accel)
-        .map(|(k, m)| gtk::accelerator_get_label(k, m).to_string())
-        .unwrap_or_else(|| accel.to_string())
 }
 
 fn arguments_form(command: &backslash_core::manifest::CommandDef) -> FormView {

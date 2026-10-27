@@ -1,9 +1,22 @@
 //! `~/.config/backslash/config.toml`, hand-editable and dotfiles friendly.
 //!
 //! ```toml
+//! theme = "system"            # "light", "dark" or "system"
+//! hotkey = "Super+Space"      # asked to the desktop through the GlobalShortcuts portal
+//!
 //! [extensions.github]
 //! enabled = true
 //! preferences = { username = "octocat" }
+//!
+//! [[quicklinks]]
+//! name = "Search GitHub"
+//! url = "https://github.com/search?q={query}"
+//! keyword = "gh"
+//!
+//! [[snippets]]
+//! name = "Email signature"
+//! text = "Best,\nSteven"
+//! keyword = "sig"
 //! ```
 //!
 //! Secret preferences go in `secrets.toml` next to it (created with mode 0600).
@@ -18,12 +31,104 @@ use serde_json::{Map, Value};
 use crate::manifest::{Manifest, PreferenceKind};
 use crate::paths;
 
-#[derive(Debug, Default, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(default)]
 pub struct Config {
+    pub theme: Theme,
+    /// Shortcut requested from the desktop, e.g. `Super+Space`. Empty disables it.
+    pub hotkey: String,
+    /// Show as an overlay on compositors supporting wlr-layer-shell (Sway, Hyprland, KDE…).
+    pub layer_shell: bool,
     /// Applications whose desktop id is listed here are hidden from results.
     pub hidden_apps: Vec<String>,
+    pub clipboard: ClipboardConfig,
     pub extensions: BTreeMap<String, ExtensionConfig>,
+    pub quicklinks: Vec<Quicklink>,
+    pub snippets: Vec<Snippet>,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            theme: Theme::System,
+            hotkey: "Super+Space".into(),
+            layer_shell: true,
+            hidden_apps: Vec::new(),
+            clipboard: ClipboardConfig::default(),
+            extensions: BTreeMap::new(),
+            quicklinks: Vec::new(),
+            snippets: Vec::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Theme {
+    /// Follow the desktop's light/dark preference.
+    #[default]
+    System,
+    Light,
+    Dark,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(default)]
+pub struct ClipboardConfig {
+    /// Record copied text in the clipboard history.
+    pub enabled: bool,
+    /// Unpinned entries kept.
+    pub max_items: usize,
+}
+
+impl Default for ClipboardConfig {
+    fn default() -> Self {
+        Self { enabled: true, max_items: 300 }
+    }
+}
+
+/// A URL opened from the launcher. `{query}` is replaced by what follows the
+/// keyword: with `keyword = "gh"`, typing `gh tokio` opens the search for "tokio".
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct Quicklink {
+    pub name: String,
+    pub url: String,
+    #[serde(default)]
+    pub keyword: Option<String>,
+    #[serde(default)]
+    pub icon: Option<String>,
+}
+
+/// Text copied by the launcher. `{date}`, `{time}` and `{clipboard}` are expanded.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct Snippet {
+    pub name: String,
+    pub text: String,
+    #[serde(default)]
+    pub keyword: Option<String>,
+}
+
+impl Quicklink {
+    pub fn takes_query(&self) -> bool {
+        self.url.contains("{query}")
+    }
+
+    /// The URL with `{query}` replaced (percent-encoded).
+    pub fn url_for(&self, query: &str) -> String {
+        self.url.replace("{query}", &percent_encode(query))
+    }
+}
+
+/// Percent-encodes everything but unreserved characters (RFC 3986).
+pub fn percent_encode(s: &str) -> String {
+    let mut out = String::new();
+    for b in s.bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => out.push(b as char),
+            _ => out.push_str(&format!("%{b:02X}")),
+        }
+    }
+    out
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -93,9 +198,46 @@ impl Config {
         (out, missing)
     }
 
+    /// Path of the config file, for "Open Config" style actions.
+    pub fn path() -> PathBuf {
+        config_path()
+    }
+
     pub fn save(&self) -> Result<()> {
         std::fs::create_dir_all(paths::config_dir())?;
         std::fs::write(config_path(), toml::to_string_pretty(self)?)?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn defaults_and_round_trip() {
+        let c: Config = toml::from_str("").unwrap();
+        assert_eq!(c.theme, Theme::System);
+        assert_eq!(c.hotkey, "Super+Space");
+        assert!(c.clipboard.enabled);
+
+        let text = r#"
+            theme = "dark"
+            [[quicklinks]]
+            name = "GitHub"
+            url = "https://github.com/search?q={query}"
+            keyword = "gh"
+            [[snippets]]
+            name = "Mail"
+            text = "me@example.com"
+        "#;
+        let c: Config = toml::from_str(text).unwrap();
+        assert_eq!(c.theme, Theme::Dark);
+        assert_eq!(c.quicklinks[0].url_for("tokio rs"), "https://github.com/search?q=tokio%20rs");
+        assert!(c.quicklinks[0].takes_query());
+        // Saving must produce valid TOML (values before tables).
+        let saved = toml::to_string_pretty(&c).unwrap();
+        let back: Config = toml::from_str(&saved).unwrap();
+        assert_eq!(back.snippets[0].text, "me@example.com");
     }
 }
