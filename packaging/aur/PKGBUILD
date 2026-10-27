@@ -1,0 +1,44 @@
+# Maintainer: Backslash developers <https://github.com/backslash-app/backslash/issues>
+# Builds the tagged release from source. Copy to the `backslash` AUR repository
+# and run `makepkg --printsrcinfo > .SRCINFO` after changing pkgver.
+pkgname=backslash
+pkgver=0.3.0
+pkgrel=1
+pkgdesc="A fast, extensible launcher for Linux"
+arch=('x86_64' 'aarch64')
+url="https://github.com/backslash-app/backslash"
+license=('MIT')
+depends=('gtk4' 'git' 'deno')
+makedepends=('cargo')
+optdepends=(
+  'wl-clipboard: clipboard history on Wayland'
+  'fd: faster file search'
+  'libsecret: keep extension secrets in the keyring'
+  'gtk4-layer-shell: overlay window on wlroots compositors'
+  'wmctrl: window switcher on X11'
+)
+source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
+sha256sums=('SKIP') # replace with the tarball's checksum when publishing
+
+prepare() {
+  cd "$pkgname-$pkgver"
+  export RUSTUP_TOOLCHAIN=stable
+  cargo fetch --locked --target "$(rustc -vV | sed -n 's/host: //p')"
+}
+
+build() {
+  cd "$pkgname-$pkgver"
+  export RUSTUP_TOOLCHAIN=stable CARGO_TARGET_DIR=target
+  cargo build --frozen --release
+}
+
+check() {
+  cd "$pkgname-$pkgver"
+  cargo test --frozen -p backslash-core --lib
+}
+
+package() {
+  cd "$pkgname-$pkgver"
+  make install DESTDIR="$pkgdir" PREFIX=/usr
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

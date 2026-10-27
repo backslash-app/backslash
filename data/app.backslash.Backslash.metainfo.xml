@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>app.backslash.Backslash</id>
+  <name>Backslash</name>
+  <summary>A fast, extensible launcher</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <description>
+    <p>
+      Press a shortcut, type a few letters, and open an app, compute, convert units and
+      currencies, find a file, switch windows or paste from your clipboard history.
+    </p>
+    <p>
+      Extensions are written in TypeScript and run in a sandbox with only the permissions
+      they declare. They are installed from a reviewed registry, pinned to the exact code
+      that was checked.
+    </p>
+  </description>
+  <launchable type="desktop-id">app.backslash.Backslash.desktop</launchable>
+  <url type="homepage">https://github.com/backslash-app/backslash</url>
+  <url type="bugtracker">https://github.com/backslash-app/backslash/issues</url>
+  <screenshots>
+    <screenshot type="default">
+      <image>https://raw.githubusercontent.com/backslash-app/backslash/main/docs/screenshot.png</image>
+    </screenshot>
+  </screenshots>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="0.3.0" date="2026-10-27"/>
+  </releases>
+</component>

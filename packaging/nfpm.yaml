@@ -1,0 +1,47 @@
+# .deb and .rpm packages, built by `make dist` (needs nfpm: https://nfpm.goreleaser.com).
+# The files come from `make install DESTDIR=dist/root PREFIX=/usr`.
+name: backslash
+arch: ${ARCH}
+platform: linux
+version: ${VERSION}
+section: utils
+priority: optional
+maintainer: Backslash developers <https://github.com/backslash-app/backslash/issues>
+description: |
+  A fast, extensible launcher for Linux
+  Apps, calculator, conversions, clipboard history, files, windows,
+  quicklinks and snippets, plus sandboxed TypeScript extensions.
+vendor: Backslash
+homepage: https://github.com/backslash-app/backslash
+license: MIT
+
+contents:
+  - src: ./dist/root/usr/
+    dst: /usr/
+    type: tree
+  - src: ./LICENSE
+    dst: /usr/share/licenses/backslash/LICENSE
+
+overrides:
+  deb:
+    depends:
+      - libgtk-4-1 (>= 4.14)
+      - git
+    recommends:
+      - wl-clipboard
+      - fd-find
+      - libsecret-tools
+    suggests:
+      - libgtk4-layer-shell0
+      - wmctrl
+  rpm:
+    depends:
+      - gtk4 >= 4.14
+      - git-core
+    recommends:
+      - wl-clipboard
+      - fd-find
+      - libsecret
+      - gtk4-layer-shell
+    suggests:
+      - wmctrl

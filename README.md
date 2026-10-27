@@ -92,15 +92,40 @@ extensions: GitHub, Packages (apt/dnf/pacman/zypper/Flathub), Services
 
 ## Install
 
-Requirements: GTK 4.14+, [Deno](https://deno.com) 2 (runs extensions), Rust to build.
+Backslash needs GTK 4.14 or newer: Ubuntu 24.04+, Debian 13+, Fedora 40+,
+Arch, openSUSE Tumbleweed and other recent distributions.
+
+| Distribution | How |
+|---|---|
+| Debian, Ubuntu | `sudo apt install ./backslash_<version>_amd64.deb` from the [latest release](https://github.com/backslash-app/backslash/releases/latest) |
+| Fedora, openSUSE | `sudo dnf install ./backslash-<version>-1.x86_64.rpm` from the same page |
+| Arch | the `backslash` package from the AUR (`packaging/aur/PKGBUILD`) |
+| Anything else | `tar -xzf backslash-<version>-x86_64.tar.gz -C ~/.local` |
+
+Extensions written in TypeScript run in [Deno](https://deno.com). If it isn't
+installed, Backslash offers to download it the first time you need it (or run
+`backslash install-runtime`); it comes from Deno's official npm package and is
+checked before use. `backslash doctor` checks that everything is in place.
+
+<details>
+<summary>Build from source</summary>
 
 ```sh
-# Debian/Ubuntu: sudo apt install libgtk-4-dev    Fedora: sudo dnf install gtk4-devel
-# Arch: sudo pacman -S gtk4                        Deno: see https://docs.deno.com/runtime/getting_started/installation/
+# Debian/Ubuntu: sudo apt install libgtk-4-dev    Fedora: sudo dnf install gtk4-devel    Arch: sudo pacman -S gtk4
 git clone https://github.com/backslash-app/backslash && cd backslash
 make && sudo make install          # or: make install PREFIX=~/.local
-backslash doctor                   # checks everything is in place
 ```
+
+`make dist` builds the release files in `dist/` (it needs
+[nfpm](https://nfpm.goreleaser.com) for the `.deb` and `.rpm`). Pushing a tag
+such as `v0.3.0` builds them for x86_64 and aarch64 and publishes a release.
+</details>
+
+Why no Flatpak? A launcher has to start other apps, read the list of
+installed ones, watch the clipboard and run the tools extensions ask for.
+Inside the Flatpak sandbox all of this goes through `flatpak-spawn --host`,
+which gives the whole system away anyway while making everything slower and
+harder to debug. Extensions get their own, finer sandbox from Deno instead.
 
 ### Open it with a shortcut
 

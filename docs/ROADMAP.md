@@ -9,7 +9,8 @@ the CLI and two bundled extensions. Next steps, roughly in order.
 - [x] Global shortcut through the XDG `GlobalShortcuts` portal, with
       `backslash` as the universal fallback.
 - [x] Launch at login toggle from the launcher.
-- [ ] Packages: Flatpak, AUR, `.deb`/`.rpm` via CI, Nix flake.
+- [x] Packages: `.deb`, `.rpm` and tarball built on tags, AUR `PKGBUILD`, Deno downloaded on demand.
+- [ ] Submit to the AUR, Nix flake, apt/dnf repositories so updates come with the system.
 
 ## Built-in features
 - [x] Clipboard history with pins (images and paste-into-app still to do).
