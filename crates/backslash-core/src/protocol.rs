@@ -40,6 +40,20 @@ pub struct ListView {
     pub empty: Option<EmptyState>,
     /// Actions available even when no item is selected.
     pub actions: Vec<Action>,
+    pub layout: Layout,
+    /// Tiles per line in a grid.
+    pub columns: Option<u32>,
+}
+
+/// How list items are shown.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Layout {
+    /// Rows with a preview panel.
+    #[default]
+    List,
+    /// Tiles with a big icon and the title below: emoji, images, colors.
+    Grid,
 }
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
@@ -231,6 +245,7 @@ mod tests {
 
         let View::List(list) = &view else { panic!("expected a list") };
         assert_eq!(list.filtering, Filtering::Host);
+        assert_eq!(list.layout, Layout::List);
         assert_eq!(list.items[0].accessories[0].tag.as_deref(), Some("v19.0.0"));
         assert_eq!(
             list.items[0].actions[0].kind,
@@ -240,6 +255,14 @@ mod tests {
 
         let back: View = serde_json::from_value(serde_json::to_value(&view).unwrap()).unwrap();
         assert_eq!(back, view);
+    }
+
+    #[test]
+    fn grid_layout() {
+        let view: View =
+            serde_json::from_value(json!({ "type": "list", "layout": "grid", "columns": 8, "items": [] })).unwrap();
+        let View::List(list) = view else { panic!("expected a list") };
+        assert_eq!((list.layout, list.columns), (Layout::Grid, Some(8)));
     }
 
     #[test]

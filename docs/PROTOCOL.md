@@ -58,6 +58,8 @@ and used to target `view/update`.
   "placeholder": "Search…",
   "filtering": "host",        // "host": the launcher filters `items`; "extension": `search` requests
   "loading": false,
+  "layout": "list",           // or "grid": tiles with a big icon and the title below
+  "columns": null,            // tiles per line in a grid (default 6)
   "items": [{
     "id": "react",
     "title": "react",

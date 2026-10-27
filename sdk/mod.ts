@@ -92,6 +92,10 @@ export interface ListOptions {
   empty?: { title: string; description?: string; icon?: Icon };
   /** Actions available even with no item selected. */
   actions?: Action[];
+  /** `"grid"` shows tiles with a big icon and the title below (emoji, images). */
+  layout?: "list" | "grid";
+  /** Tiles per line in a grid (default 6). */
+  columns?: number;
 }
 
 export interface DetailOptions {

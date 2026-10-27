@@ -30,7 +30,8 @@ the CLI and two bundled extensions. Next steps, roughly in order.
       `backslash install/update/uninstall/search/publish`, store view.
 - [x] Update badge on Browse Extensions (registry checked every 6 hours), Update All.
 - [ ] Signed registry commits, so a compromised mirror cannot serve entries.
-- [ ] `Grid` view (emoji, images), list item detail pane, menu-bar/tray items.
+- [x] Grid layout for lists (emoji, images).
+- [ ] List item detail pane, menu-bar/tray items.
 - [ ] Background commands on an interval.
 - [ ] OAuth helper (PKCE, loopback redirect).
 - [x] Hot reload in `backslash dev` (watch files, re-run the open command).

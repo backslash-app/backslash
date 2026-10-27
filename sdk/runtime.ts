@@ -116,6 +116,8 @@ function listJson(spec: ListSpec, id: string, items: Item[], loading: boolean): 
     items: serializeItems(items, id),
     empty: spec.empty ? { ...spec.empty } as Json : null,
     actions: serializeActions(spec.actions, id),
+    layout: spec.layout ?? "list",
+    columns: spec.columns ?? null,
   };
 }
 

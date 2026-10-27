@@ -351,3 +351,34 @@ window.launcher {
   color: @bs_faint;
   font-size: 11.5px;
 }
+
+/* --- Grid ---------------------------------------------------------------- */
+
+.grid {
+  padding: 4px 12px 12px;
+}
+
+.grid-cell {
+  border-radius: 14px;
+  padding: 12px 6px 8px;
+  min-height: 92px;
+  background-color: alpha(@bs_fg, 0.035);
+  transition: background-color 110ms ease-out;
+}
+
+.grid-cell.selected {
+  background-color: @bs_selected;
+}
+
+.grid-cell .emoji-icon {
+  font-size: 38px;
+}
+
+.grid-title {
+  font-size: 11.5px;
+  color: @bs_dim;
+}
+
+.grid-cell.selected .grid-title {
+  color: @bs_fg;
+}

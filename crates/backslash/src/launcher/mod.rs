@@ -192,6 +192,11 @@ pub struct Launcher {
     list: gtk::ListBox,
     scroller: gtk::ScrolledWindow,
     preview: gtk::Box,
+    /// Grid layout of extension lists: cells in row order, and the selected one.
+    grid_scroller: gtk::ScrolledWindow,
+    grid_box: gtk::Box,
+    grid_cells: RefCell<Vec<gtk::Widget>>,
+    grid_selected: Cell<usize>,
     sections: Rc<RefCell<Vec<Option<String>>>>,
     empty_title: gtk::Label,
     empty_subtitle: gtk::Label,
@@ -288,6 +293,12 @@ impl Launcher {
         list_page.append(&divider());
         list_page.append(&preview);
         pages.add_named(&list_page, Some("list"));
+
+        let grid_box = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        grid_box.add_css_class("grid");
+        let grid_scroller =
+            gtk::ScrolledWindow::builder().hscrollbar_policy(gtk::PolicyType::Never).child(&grid_box).build();
+        pages.add_named(&grid_scroller, Some("grid"));
 
         let empty = gtk::Box::new(gtk::Orientation::Vertical, 6);
         empty.add_css_class("empty");
@@ -398,6 +409,10 @@ impl Launcher {
             list,
             scroller,
             preview,
+            grid_scroller,
+            grid_box,
+            grid_cells: RefCell::default(),
+            grid_selected: Cell::new(0),
             sections: Rc::default(),
             empty_title,
             empty_subtitle,
@@ -892,6 +907,12 @@ impl Launcher {
 
     fn render_list(self: &Rc<Self>) {
         let query = self.entry.text().to_string();
+        let grid_columns = match &self.state.borrow().frames.last().unwrap().kind {
+            FrameKind::Extension { view: View::List(l), .. } if l.layout == proto::Layout::Grid => {
+                Some(l.columns.unwrap_or(6).clamp(2, 12))
+            }
+            _ => None,
+        };
         let (rows, placeholder, empty) = {
             let mut guard = self.state.borrow_mut();
             let s = &mut *guard;
@@ -918,6 +939,14 @@ impl Launcher {
         self.entry.set_placeholder_text(Some(&placeholder));
 
         let previous_key = self.state.borrow().selected_key.clone();
+        if let (Some(columns), false) = (grid_columns, rows.is_empty()) {
+            let selected = previous_key.and_then(|k| rows.iter().position(|r| r.key == k)).unwrap_or(0);
+            self.fill_grid(&rows, columns, selected);
+            self.state.borrow_mut().rows = rows;
+            self.pages.set_visible_child_name("grid");
+            self.update_footer();
+            return;
+        }
         while let Some(child) = self.list.first_child() {
             self.list.remove(&child);
         }
@@ -950,6 +979,111 @@ impl Launcher {
             }
         }
         self.update_preview();
+    }
+
+    fn is_grid(&self) -> bool {
+        self.pages.visible_child_name().as_deref() == Some("grid")
+    }
+
+    fn fill_grid(self: &Rc<Self>, rows: &[Row], columns: u32, selected: usize) {
+        while let Some(child) = self.grid_box.first_child() {
+            self.grid_box.remove(&child);
+        }
+        let mut cells = Vec::with_capacity(rows.len());
+        let mut flow: Option<gtk::FlowBox> = None;
+        let mut section: Option<&str> = None;
+        for (i, row) in rows.iter().enumerate() {
+            if flow.is_none() || row.section.as_deref() != section {
+                section = row.section.as_deref();
+                if let Some(title) = section {
+                    self.grid_box.append(&label(&title.to_uppercase(), "section-header"));
+                }
+                let f = gtk::FlowBox::builder()
+                    .selection_mode(gtk::SelectionMode::None)
+                    .homogeneous(true)
+                    .min_children_per_line(columns)
+                    .max_children_per_line(columns)
+                    .column_spacing(6)
+                    .row_spacing(6)
+                    .build();
+                self.grid_box.append(&f);
+                flow = Some(f);
+            }
+            let cell = widgets::grid_cell(row);
+            let click = gtk::GestureClick::new();
+            let weak = Rc::downgrade(self);
+            click.connect_released(move |_, _, _, _| {
+                if let Some(l) = weak.upgrade() {
+                    l.select_cell(i);
+                    l.run_row(i as i32, 0);
+                }
+            });
+            cell.add_controller(click);
+            let f = flow.as_ref().expect("created above");
+            f.append(&cell);
+            if let Some(child) = f.last_child() {
+                child.set_focusable(false);
+            }
+            cells.push(cell.upcast::<gtk::Widget>());
+        }
+        self.grid_cells.replace(cells);
+        self.grid_scroller.vadjustment().set_value(0.0);
+        self.select_cell(selected.min(rows.len().saturating_sub(1)));
+    }
+
+    fn select_cell(&self, index: usize) {
+        let cells = self.grid_cells.borrow();
+        if let Some(old) = cells.get(self.grid_selected.get()) {
+            old.remove_css_class("selected");
+        }
+        let Some(cell) = cells.get(index) else { return };
+        cell.add_css_class("selected");
+        self.grid_selected.set(index);
+        let key = self.state.borrow().rows.get(index).map(|r| r.key.clone());
+        self.state.borrow_mut().selected_key = key;
+        // Keep it visible (after layout, for freshly built grids).
+        let (cell, scroller, grid) = (cell.clone(), self.grid_scroller.clone(), self.grid_box.clone());
+        glib::idle_add_local_once(move || {
+            let Some(b) = cell.compute_bounds(&grid) else { return };
+            let adj = scroller.vadjustment();
+            let (top, bottom) = (b.y() as f64, (b.y() + b.height()) as f64);
+            if top < adj.value() {
+                adj.set_value(top - 28.0);
+            } else if bottom > adj.value() + adj.page_size() {
+                adj.set_value(bottom - adj.page_size() + 6.0);
+            }
+        });
+        drop(cells);
+        self.update_footer();
+    }
+
+    /// Moves in the grid: `dx` along the line, `dy` lines up or down (to the
+    /// tile closest horizontally, across section boundaries).
+    fn grid_move(&self, dx: i32, dy: i32) {
+        let cells = self.grid_cells.borrow();
+        let current = self.grid_selected.get();
+        let mut target = (current as i32 + dx).clamp(0, cells.len() as i32 - 1) as usize;
+        for _ in 0..dy.abs() {
+            let Some(from) = cells.get(target).and_then(|c| c.compute_bounds(&self.grid_box)) else { break };
+            let (cx, cy) = (from.x() + from.width() / 2.0, from.y() + from.height() / 2.0);
+            let candidates = cells.iter().enumerate().filter_map(|(i, c)| {
+                let b = c.compute_bounds(&self.grid_box)?;
+                let y = b.y() + b.height() / 2.0;
+                let ahead = if dy > 0 { y > cy + 1.0 } else { y < cy - 1.0 };
+                ahead.then(|| (i, (y - cy).abs(), (b.x() + b.width() / 2.0 - cx).abs()))
+            });
+            // Nearest line first, then nearest column.
+            let best =
+                candidates.min_by(|a, b| (a.1.round() as i64, a.2 as i64).cmp(&(b.1.round() as i64, b.2 as i64)));
+            match best {
+                Some((i, _, _)) => target = i,
+                None => break,
+            }
+        }
+        drop(cells);
+        if target != current {
+            self.select_cell(target);
+        }
     }
 
     fn update_preview(&self) {
@@ -1093,7 +1227,7 @@ impl Launcher {
     }
 
     fn selected_row(&self) -> Option<Row> {
-        let index = self.list.selected_row()?.index();
+        let index = if self.is_grid() { self.grid_selected.get() as i32 } else { self.list.selected_row()?.index() };
         self.state.borrow().rows.get(index as usize).cloned()
     }
 
@@ -1364,6 +1498,23 @@ impl Launcher {
             return Proceed;
         }
 
+        if self.is_grid() {
+            let step = match key {
+                gdk::Key::Left => Some((-1, 0)),
+                gdk::Key::Right => Some((1, 0)),
+                gdk::Key::Down => Some((0, 1)),
+                gdk::Key::Up => Some((0, -1)),
+                gdk::Key::n | gdk::Key::j if ctrl => Some((0, 1)),
+                gdk::Key::p if ctrl => Some((0, -1)),
+                gdk::Key::Page_Down => Some((0, 3)),
+                gdk::Key::Page_Up => Some((0, -3)),
+                _ => None,
+            };
+            if let Some((dx, dy)) = step {
+                self.grid_move(dx, dy);
+                return Stop;
+            }
+        }
         match key {
             gdk::Key::Down => self.move_selection(1),
             gdk::Key::Up => self.move_selection(-1),
