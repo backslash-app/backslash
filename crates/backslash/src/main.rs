@@ -11,6 +11,8 @@ mod icons;
 mod launcher;
 mod layer;
 mod markdown;
+mod paste;
+mod portal;
 mod scaffold;
 mod theme;
 

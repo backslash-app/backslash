@@ -266,6 +266,13 @@ pub fn doctor() -> Result<()> {
         "X11 selection events"
     };
     println!("[info] Clipboard history: {watcher}");
+    match crate::paste::detect() {
+        Some(method) => println!("[ok  ] Paste into apps: with {}", method.name()),
+        None if wayland => println!(
+            "[info] Paste into apps: unavailable, items are copied instead (install wtype or ydotool, or use a desktop with the RemoteDesktop portal)"
+        ),
+        None => println!("[info] Paste into apps: unavailable, items are copied instead (install xdotool)"),
+    }
     match backslash_core::system::windows::Backend::detect() {
         Some(b) => println!("[ok  ] Window switcher: {}", b.name()),
         None => println!("[info] Window switcher: not available on this desktop yet"),

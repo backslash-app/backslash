@@ -214,9 +214,10 @@ Throwing shows the error in the launcher. That applies everywhere.
 |---|---|---|
 | `open(url, title?)` | in the launcher | URL, file or folder with the default app |
 | `copy(text, title?)` | in the launcher | copies and closes |
+| `paste(text, title?)` | in the launcher | pastes into the app the user was in (copies where the desktop doesn't allow it) |
 | `action(title, fn)` | your code | return a view to navigate to it, or an effect |
 
-Options for all three: `{ icon, shortcut: "<Ctrl><Shift>c", destructive: true, confirm: "Really?" }`.
+Options for all of them: `{ icon, shortcut: "<Ctrl><Shift>c", destructive: true, confirm: "Really?" }`.
 `confirm` asks in the footer before running, keyboard only.
 
 **Effects** an action can return: `close(message?)`, `pop()`, `refresh()`
@@ -231,6 +232,7 @@ import { clipboard, exec, openExternal, storage, toast } from "@backslash/api";
 await storage.set("recent", ["react"]);       // private JSON key/value store, no permission needed
 const recent = await storage.get<string[]>("recent");
 await clipboard.write("text");
+await clipboard.paste("text");                // into the app the user was in; closes the launcher
 await toast("Saved", { style: "success" });   // "info" | "success" | "failure"
 await openExternal("https://deno.com");
 const out = await exec("git", ["status"]);    // program must be in permissions.run

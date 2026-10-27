@@ -220,6 +220,27 @@ pub fn rows(s: &State, desktop: &Desktop) -> Vec<Row> {
             .into(),
     ));
 
+    // Paste into the app you were in (clipboard history, snippets, emoji…).
+    let paste_hint = match s.paste {
+        Some(crate::paste::Method::Portal) => "Your desktop asks once for permission, then Enter pastes",
+        Some(_) => "Enter pastes into the app you were in",
+        None if wayland() => "Install wtype (Sway, Hyprland) or ydotool; until then items are copied",
+        None => "Install xdotool; until then items are copied",
+    };
+    let mut paste_row = row("paste", "Paste into apps", paste_hint, "edit-paste", "orange", "Set up");
+    paste_row.accessories = vec![match s.paste {
+        Some(_) => status("Ready", "green"),
+        None => status("Optional", "gray"),
+    }];
+    if s.paste.is_none() {
+        let package = if wayland() { "wtype" } else { "xdotool" };
+        paste_row.actions = vec![UiAction::new("Copy Package Name", Op::Copy(package.into())).icon("edit-copy")];
+    }
+    rows.push(with_body(
+        paste_row,
+        "Clipboard history, snippets and extensions like Emoji paste straight into the app you were in, so you don't have to press Ctrl+V. Terminals get Ctrl+Shift+V.".into(),
+    ));
+
     // 5. Overlay window on wlroots-style compositors.
     if wayland() && kind != Kind::Gnome && !desktop.layer_shell {
         let mut overlay = row(

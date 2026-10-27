@@ -38,6 +38,7 @@ A cancelled request should answer with error code `-32800`.
 | `view/update` (notification) | `{ view }` | — replace the view with the same `id` |
 | `toast` | `{ title, message?, style: "info" \| "success" \| "failure" }` | `null` |
 | `clipboard/write` | `{ text }` | `null` |
+| `clipboard/paste` | `{ text }` | `null`; the launcher hides and pastes into the focused app (or copies) |
 | `clipboard/read` | `{}` | string (needs `clipboard-read`) |
 | `open` | `{ target }` | `null` |
 | `close` | `{}` | `null` |
@@ -70,7 +71,7 @@ and used to target `view/update`.
     "accessories": [{ "text": "75%", "tag": null, "icon": null, "color": "red" }],
     "actions": [
       { "id": "a1", "title": "Open", "kind": "open", "target": "https://…" },
-      { "id": "a2", "title": "Copy", "kind": "copy", "text": "…" },
+      { "id": "a2", "title": "Copy", "kind": "copy", "text": "…" },   // or "paste"
       { "id": "a3", "title": "Details", "kind": "callback", "shortcut": "<Ctrl>d", "destructive": false, "confirm": null }
     ]
   }],

@@ -66,8 +66,10 @@ pub enum Op {
     HideApp(String),
     StartCommand(String),
     Copy(String),
-    /// Copies a snippet after expanding its placeholders.
-    Snippet(String),
+    /// Pastes into the app that had the focus, or copies when that is not possible.
+    Paste(String),
+    /// Pastes (`true`) or copies a snippet after expanding its placeholders.
+    Snippet(String, bool),
     Open(String),
     Callback(String),
     /// Replaces the search text (quicklink keywords).
@@ -149,6 +151,7 @@ impl UiAction {
         let op = match &a.kind {
             ActionKind::Open { target } => Op::Open(target.clone()),
             ActionKind::Copy { text } => Op::Copy(text.clone()),
+            ActionKind::Paste { text } => Op::Paste(text.clone()),
             ActionKind::Callback => Op::Callback(a.id.clone()),
         };
         Self {
