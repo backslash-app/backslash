@@ -6,6 +6,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use backslash_core::config::{Quicklink, Snippet, Theme};
 use backslash_core::protocol::{self as proto, Accessory, Filtering};
 use backslash_core::registry::CommandEntry;
+use backslash_core::scripts::{Mode as ScriptMode, Script};
 use backslash_core::search::{Ranker, Searchable};
 use backslash_core::system::{clipboard, files};
 use backslash_core::{calc, units};
@@ -250,6 +251,24 @@ fn builtin_commands(s: &State) -> Vec<(Entry, Row)> {
         "Find, install and update extensions. You see what each one is allowed to do before installing.",
     );
     add(
+        "new-script",
+        "Create Script Command",
+        &["script", "shell", "bash", "python", "new", "automation", "créer"],
+        "text-x-script",
+        "green",
+        Op::NewScript,
+        "Turn any shell, Python or other script into a command: a few comment lines at the top describe it.",
+    );
+    add(
+        "scripts",
+        "Open Scripts Folder",
+        &["script", "scripts", "folder", "dossier"],
+        "folder",
+        "green",
+        Op::OpenScriptsFolder,
+        "Script commands live in ~/.config/backslash/scripts. Edit them with any editor; changes show up the next time Backslash opens.",
+    );
+    add(
         "welcome",
         "Welcome to Backslash",
         &["setup", "onboarding", "getting started", "tour", "bienvenue", "configurer", "help"],
@@ -289,6 +308,52 @@ fn builtin_commands(s: &State) -> Vec<(Entry, Row)> {
     out
 }
 
+fn script_row(script: &Script) -> Row {
+    let icon = script.icon.clone().unwrap_or_else(|| "utilities-terminal".into());
+    let mut run = UiAction::new("Run Script", Op::RunScript(script.id.clone(), None)).icon("system-run");
+    if let Some(question) = &script.confirm {
+        run = run.confirm(question).destructive();
+    }
+    let mode = match script.mode {
+        ScriptMode::Silent => "Runs in the background",
+        ScriptMode::Output => "Shows its output",
+        ScriptMode::List => "Lists what it prints",
+        ScriptMode::Paste => "Pastes what it prints",
+    };
+    Row {
+        key: format!("script:{}", script.id),
+        title: script.title.clone(),
+        subtitle: Some(format!("Script · {}", script.description.as_deref().unwrap_or(&script.id))),
+        icon: Some(Icon::Spec(icon.clone())),
+        tint: Some(tint_for(&script.id)),
+        section: Some("Commands".into()),
+        actions: vec![
+            run,
+            UiAction::new("Edit Script", Op::Open(script.path.display().to_string())).icon("document-edit"),
+            UiAction::new("Show in Folder", Op::Reveal(script.path.clone())).icon("folder-open"),
+        ],
+        preview: Some(Preview {
+            icon: Some(Icon::Spec(icon)),
+            title: script.title.clone(),
+            subtitle: script.description.clone(),
+            facts: vec![
+                ("File".into(), files::tilde(&script.path)),
+                ("Mode".into(), mode.into()),
+                (
+                    "Arguments".into(),
+                    if script.arguments.is_empty() {
+                        "None".into()
+                    } else {
+                        script.arguments.iter().map(|a| a.name.clone()).collect::<Vec<_>>().join(", ")
+                    },
+                ),
+            ],
+            body: None,
+        }),
+        ..Default::default()
+    }
+}
+
 fn snippet_row(snippet: &Snippet, can_paste: bool) -> Row {
     let mut actions = Vec::new();
     if can_paste {
@@ -325,6 +390,7 @@ pub fn row_for_key(s: &State, key: &str) -> Option<Row> {
         "cmd" => s.commands.iter().find(|c| c.id == id).map(|c| command_row(s, c)),
         "builtin" => builtin_commands(s).into_iter().map(|(_, r)| r).find(|r| r.key == key),
         "quicklink" => s.config.quicklinks.iter().find(|l| l.name == id).map(quicklink_row),
+        "script" => s.scripts.iter().find(|x| x.id == id).map(script_row),
         "snippet" => s.config.snippets.iter().find(|n| n.name == id).map(|n| snippet_row(n, s.paste.is_some())),
         _ => None,
     }
@@ -332,7 +398,7 @@ pub fn row_for_key(s: &State, key: &str) -> Option<Row> {
 
 /// Whether a row can get an alias and a hotkey.
 pub fn is_assignable(key: &str) -> bool {
-    ["app:", "cmd:", "builtin:", "quicklink:", "snippet:"].iter().any(|p| key.starts_with(p))
+    ["app:", "cmd:", "builtin:", "quicklink:", "snippet:", "script:"].iter().any(|p| key.starts_with(p))
 }
 
 /// Shows the alias and hotkey of a root row, and actions to change them.
@@ -484,6 +550,12 @@ pub fn root_rows(s: &mut State, query: &str) -> Vec<Row> {
             kw.extend(link.keyword.clone());
             let row = quicklink_row(link);
             extra.push((Entry { key: row.key.clone(), title: link.name.clone(), keywords: kw, subtitle: None }, row));
+        }
+        for script in &s.scripts {
+            let row = script_row(script);
+            let mut keywords = script.keywords.clone();
+            keywords.push(script.id.clone());
+            extra.push((Entry { key: row.key.clone(), title: script.title.clone(), keywords, subtitle: None }, row));
         }
         for snippet in &s.config.snippets {
             let row = snippet_row(snippet, s.paste.is_some());
@@ -826,4 +898,33 @@ fn text_excerpt(path: &Path, content_type: &str) -> Option<String> {
     buf.truncate(n);
     let text = String::from_utf8_lossy(&buf).into_owned();
     (!text.trim().is_empty()).then_some(text)
+}
+
+/// Lines printed by a `list` script, one item each.
+pub fn script_lines(s: &mut State, query: &str) -> Vec<Row> {
+    let Some(super::model::FrameKind::Script { result: Some(Ok(out)), .. }) = s.frames.last().map(|f| &f.kind) else {
+        return Vec::new();
+    };
+    let can_paste = s.paste.is_some();
+    let entries: Vec<(Entry, Row)> = out
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .enumerate()
+        .map(|(i, line)| {
+            let mut actions = Vec::new();
+            if can_paste {
+                actions.push(UiAction::new("Paste", Op::Paste(line.to_string())).icon("edit-paste"));
+            }
+            actions.push(UiAction::new("Copy", Op::Copy(line.to_string())).icon("edit-copy"));
+            let row = Row {
+                key: format!("line:{i}"),
+                title: line.to_string(),
+                icon: Some(Icon::Spec("text-x-generic".into())),
+                actions,
+                ..Default::default()
+            };
+            (Entry { key: row.key.clone(), title: line.to_string(), keywords: Vec::new(), subtitle: None }, row)
+        })
+        .collect();
+    ranked_rows(&mut s.ranker, query, entries)
 }

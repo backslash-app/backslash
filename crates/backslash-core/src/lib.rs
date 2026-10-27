@@ -14,6 +14,7 @@ pub mod protocol;
 pub mod registry;
 pub mod runner;
 pub mod runtime;
+pub mod scripts;
 pub mod search;
 pub mod secrets;
 pub mod store;
