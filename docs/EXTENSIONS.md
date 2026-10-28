@@ -211,7 +211,7 @@ interval = "15m"
 export default run(async ({ launchType }) => {
   const unread = await countUnread();
   await updateCommandMetadata({ subtitle: `${unread} unread` });
-  if (launchType === "userInitiated") return `${unread} unread`;
+  if (launchType !== "background") return `${unread} unread`;
 });
 ```
 

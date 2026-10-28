@@ -38,9 +38,11 @@ export interface Context<Args = Record<string, unknown>, Prefs = Record<string, 
   filter?: string;
   /**
    * `"background"` when the command runs on its `interval` or refreshes its
-   * tray menu by itself, `"userInitiated"` otherwise.
+   * tray menu by itself, `"userInitiated"` otherwise. Always set by the
+   * launcher; optional so that code building a context itself (tests) needs
+   * no change. Missing means `"userInitiated"`.
    */
-  launchType: "userInitiated" | "background";
+  launchType?: "userInitiated" | "background";
 }
 
 type Awaitable<T> = T | Promise<T>;
