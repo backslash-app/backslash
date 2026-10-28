@@ -2,7 +2,7 @@ name: Release
 
 # One click: Actions → Release → Run workflow, type the version (e.g. 0.4.0).
 # It builds the packages, creates the tag and the GitHub release, publishes the
-# AUR package, and opens a pull request bumping the version in the repository.
+# AUR package, and brings the version back to main (a pull request it merges).
 # Pushing a tag such as v0.4.0 does the same.
 on:
   push:
@@ -160,7 +160,10 @@ jobs:
       - uses: actions/deploy-pages@v4
         if: steps.build.outputs.publish == 'true'
 
-  # main only takes reviewed pull requests, so the new version comes back as one.
+  # main only takes pull requests, so the new version comes back as one, which
+  # the workflow merges itself: GitHub Actions may bypass the review rule for
+  # pull requests (Settings → Rules, CONTRIBUTING.md). When it can't, the job
+  # fails, so a release never leaves main behind silently.
   bump:
     needs: [version, release]
     runs-on: ubuntu-24.04
@@ -168,7 +171,7 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           ref: main
-      - name: Open a pull request with the new version
+      - name: Bring the new version to main
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.version.outputs.version }}
@@ -179,11 +182,17 @@ jobs:
             exit 0
           fi
           branch="release/v$VERSION"
+          title="chore(release): $VERSION"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git checkout -b "$branch"
-          git commit -qam "Version $VERSION"
+          git commit -qam "$title"
           git push -f origin "$branch"
-          gh pr create --base main --head "$branch" --title "Version $VERSION" \
-            --body "Released as [v$VERSION](https://github.com/$GITHUB_REPOSITORY/releases/tag/v$VERSION): this brings the version, the AppStream release list and the AUR checksum up to date." \
-            || echo "::warning::Could not open the pull request (allow GitHub Actions to create pull requests in Settings → Actions → General). The branch $branch is pushed: open it by hand."
+          if ! gh pr view "$branch" --json state --jq .state 2>/dev/null | grep -q OPEN; then
+            gh pr create --base main --head "$branch" --title "$title" \
+              --body "Released as [v$VERSION](https://github.com/$GITHUB_REPOSITORY/releases/tag/v$VERSION): the version, the AppStream release list and the AUR checksum on main. Merged by the release workflow." \
+              || { echo "::error::Could not open the pull request: allow GitHub Actions to create pull requests (Settings → Actions → General). The branch $branch is pushed."; exit 1; }
+          fi
+          gh pr merge "$branch" --squash --admin --delete-branch --subject "$title" \
+            || { echo "::error::Could not merge the version pull request: add GitHub Actions to the bypass list of main's ruleset, for pull requests only (CONTRIBUTING.md). Merge it by hand meanwhile."; exit 1; }
+          echo "main now says $VERSION"

@@ -47,7 +47,7 @@ One click: **Actions → Release → Run workflow**, type the version (`0.4.0`),
 2. builds the `.deb`, `.rpm` and tarball for x86_64 and aarch64;
 3. publishes the GitHub release with notes generated from the merged pull requests;
 4. publishes the `backslash` package on the AUR;
-5. opens a pull request bringing the new version to `main` (merge it).
+5. opens a pull request bringing the new version to `main` and merges it.
 
 Pushing a `v0.4.0` tag, or creating the release on GitHub, does the same.
 `packaging/set-version.sh 0.4.0` changes the version locally.
@@ -62,8 +62,13 @@ Pushing a `v0.4.0` tag, or creating the release on GitHub, does the same.
 4. Paste the content of `aur` (the private key) in the repository's
    *Settings → Secrets and variables → Actions → New repository secret*,
    named `AUR_SSH_PRIVATE_KEY`. Then delete both files.
-5. Allow *Settings → Actions → General → Allow GitHub Actions to create and
-   approve pull requests*, for the version pull request.
+5. Let the release workflow bring the version back to `main` on its own:
+   - *Settings → Actions → General → Workflow permissions*: check **Allow
+     GitHub Actions to create and approve pull requests**;
+   - *Settings → Rules → Rulesets →* the ruleset of `main` *→ Bypass list →
+     Add bypass*: **GitHub Actions**, then set it to **For pull requests only**
+     (it may merge its version pull request without a review, never push to
+     `main` directly).
 
 The first release after this creates the `backslash` package on the AUR.
 Without the secret, the AUR step only checks the package and says so.
