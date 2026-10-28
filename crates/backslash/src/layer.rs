@@ -21,8 +21,13 @@ const LAYER_OVERLAY: c_int = 3;
 const EDGE_TOP: c_int = 2;
 const KEYBOARD_EXCLUSIVE: c_int = 1;
 
-/// Where gtk4-layer-shell is installed, if it is.
+/// Where gtk4-layer-shell is installed, if it is. `$BACKSLASH_LAYER_SHELL_LIB`
+/// names it where it is in no usual place (Nix), without `LD_LIBRARY_PATH`,
+/// which would reach the extensions too.
 pub fn library_path() -> Option<PathBuf> {
+    if let Some(path) = std::env::var_os("BACKSLASH_LAYER_SHELL_LIB").map(PathBuf::from).filter(|p| p.is_file()) {
+        return Some(path);
+    }
     let dirs = [
         "/usr/lib",
         "/usr/lib64",

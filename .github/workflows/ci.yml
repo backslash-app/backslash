@@ -37,6 +37,15 @@ jobs:
       - name: UI tests
         run: make ui-test
 
+  # The Nix flake still builds (and runs the core's tests).
+  nix:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: cachix/install-nix-action@v31
+      - name: Build the flake
+        run: nix build .#backslash -L
+
   # The AUR package of the last release, prepared but not published.
   aur:
     runs-on: ubuntu-24.04

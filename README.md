@@ -85,6 +85,7 @@ openSUSE Tumbleweed…). Get the package for your system from the
 | Debian, Ubuntu | `sudo apt install ./backslash_<version>_amd64.deb` |
 | Fedora, openSUSE | `sudo dnf install ./backslash-<version>-1.x86_64.rpm` |
 | Arch | `makepkg -si` with [`packaging/aur/PKGBUILD`](packaging/aur/PKGBUILD) |
+| Nix, NixOS | `nix run github:backslash-app/backslash`, or the flake's `packages` / `overlays.default` |
 | Anything else | `tar -xzf backslash-<version>-x86_64-linux.tar.gz -C ~/.local` |
 
 Then open it with <kbd>Super</kbd>+<kbd>Space</kbd>: a short welcome checklist

@@ -10,7 +10,8 @@ the CLI and two bundled extensions. Next steps, roughly in order.
       `backslash` as the universal fallback.
 - [x] Launch at login toggle from the launcher.
 - [x] Packages: `.deb`, `.rpm` and tarball built on tags, AUR `PKGBUILD`, Deno downloaded on demand.
-- [ ] Submit to the AUR, Nix flake, apt/dnf repositories so updates come with the system.
+- [x] Nix flake, and signed apt/dnf repositories built with each release.
+- [ ] Publish them: the AUR account, the repository key and GitHub Pages (see CONTRIBUTING).
 
 ## Built-in features
 - [x] Clipboard history with pins and images, pasted straight into the app you were in.

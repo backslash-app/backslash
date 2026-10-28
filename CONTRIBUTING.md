@@ -68,6 +68,21 @@ Pushing a `v0.4.0` tag, or creating the release on GitHub, does the same.
 The first release after this creates the `backslash` package on the AUR.
 Without the secret, the AUR step only checks the package and says so.
 
+### apt and dnf repositories (once)
+
+Each release also publishes signed apt and dnf repositories on GitHub Pages
+(`packaging/repo/build.sh`), so updates come with the system's.
+
+1. Make a signing key without a passphrase:
+   `GNUPGHOME=$(mktemp -d) sh -c 'gpg --batch --passphrase "" --quick-gen-key "Backslash Packages <contact@getbackslash.com>" ed25519 sign never && gpg --armor --export-secret-keys' > repo-key.asc`
+2. Add the content of `repo-key.asc` as the Actions secret `REPO_SIGNING_KEY`,
+   keep a copy offline, and delete the file.
+3. *Settings → Pages → Build and deployment → Source*: **GitHub Actions**.
+
+The next release publishes `https://backslash-app.github.io/backslash/`,
+whose page shows the commands for apt and dnf (then add them to the README).
+Without the secret, the step says so and publishes nothing.
+
 ### Registry signing key (once)
 
 Backslash reads the extension registry only from commits signed by the
