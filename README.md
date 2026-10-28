@@ -1,283 +1,103 @@
-<p align="center"><img src="data/icons/backslash.png" width="96" alt=""/></p>
+<p align="center"><img src="docs/media/logo.svg" width="112" alt="Backslash logo"/></p>
 
 <h1 align="center">Backslash</h1>
 
-<p align="center"><b>A fast, keyboard-first launcher for Linux, with extensions you can write in five minutes.</b></p>
+<p align="center"><b>The launcher your Linux desktop deserves.</b><br/>
+Apps, files, clipboard, math, and your whole dev stack, one keystroke away.</p>
 
 <p align="center">
-  <a href="docs/EXTENSIONS.md">Write an extension</a> ·
-  <a href="docs/ARCHITECTURE.md">Architecture</a> ·
-  <a href="docs/ROADMAP.md">Roadmap</a> ·
-  <a href="https://discord.gg/sTzwBzDkK9">Discord</a>
+  <a href="https://github.com/backslash-app/backslash/releases/latest"><img src="https://img.shields.io/github/v/release/backslash-app/backslash?style=flat-square&color=e81cff&label=release" alt="Latest release"/></a>
+  <a href="https://github.com/backslash-app/plugins"><img src="https://img.shields.io/badge/extensions-growing_every_week-7a22d6?style=flat-square" alt="Extensions"/></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-3b1d8f?style=flat-square" alt="MIT"/></a>
+  <a href="https://discord.gg/sTzwBzDkK9"><img src="https://img.shields.io/badge/chat-Discord-5865f2?style=flat-square" alt="Discord"/></a>
 </p>
 
-![Backslash](docs/screenshot.png)
+<p align="center">
+  <a href="docs/media/demo.mp4"><img src="docs/media/demo.gif" alt="Backslash in action: Linear, GitHub, Kubernetes, Git and Dev Utils from the keyboard" width="100%"/></a>
+  <br/><sub><a href="docs/media/demo.mp4">▶ Watch it in HD</a></sub>
+</p>
 
-> [!IMPORTANT]
-> Backslash 0.3 is a ground-up rewrite (Rust + GTK4, Deno extensions). It is
-> young: expect rough edges, and see the [roadmap](docs/ROADMAP.md).
+<p align="center">
+  <a href="#install"><b>Install</b></a> ·
+  <a href="https://github.com/backslash-app/plugins"><b>Extensions</b></a> ·
+  <a href="docs/USAGE.md">Guide</a> ·
+  <a href="docs/EXTENSIONS.md">Write an extension</a>
+</p>
 
-## Why Backslash
+---
 
-- **Native and instant.** One small Rust binary, GTK4, GPU-rendered. It stays
-  in the background and opens with no delay, on Wayland and X11.
-- **Made for Linux.** Applications come straight from your system (Flatpak and
-  Snap included), icons from your icon theme, light/dark from your desktop.
-- **Extensions that cannot hurt you.** Each extension declares what it needs
-  (`net = ["api.github.com"]`, `run = ["git"]`), you approve it once, and the
-  runtime enforces it. Tokens go to your system keyring.
-  Each command runs in its own process: a buggy extension can't freeze or
-  crash the launcher.
-- **Extensions that are easy to write.** TypeScript, no build step, no
-  `node_modules`. Describe a list, the launcher does the rest: fuzzy search,
-  keyboard navigation, action panel, cancellation of slow requests.
-- **Information, not just lists.** A preview panel with key numbers, tags,
-  people, links and progress; filters (<kbd>Tab</kbd>), sections, submenus in
-  the action panel, and live subtitles in the root search ("2 in progress").
-- **Useful out of the box.** Calculator and unit/currency conversions as you
-  type, clipboard history, file search with previews, window switcher,
-  quicklinks and snippets.
-- **Scriptable.** Every command also runs from a terminal:
-  `backslash run npm/search react --json | jq`.
-- **Yours.** Open source (MIT), no account, no telemetry, no paywall. Config
-  and theme are plain files you can keep in your dotfiles.
+## What is it?
 
-## A complete extension
+Press <kbd>Super</kbd>+<kbd>Space</kbd>, type a few letters, hit <kbd>Enter</kbd>.
+Backslash is a native, keyboard-first launcher for Linux (in the spirit of
+Raycast and Alfred) that opens instantly and goes much further than starting
+apps: review pull requests, triage issues, find the crashing pod or decode a
+JWT without leaving the keyboard.
 
-`backslash.toml`:
+<table>
+  <tr>
+    <td width="50%"><img src="docs/media/github.png" alt="GitHub pull requests"/><p align="center"><b>GitHub</b>: pull requests with checks and reviews</p></td>
+    <td width="50%"><img src="docs/media/kubernetes.png" alt="Kubernetes pods"/><p align="center"><b>Kubernetes</b>: problems first, logs one key away</p></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/media/linear.png" alt="Linear issues"/><p align="center"><b>Linear</b>: triage, assign, change status</p></td>
+    <td width="50%"><img src="docs/media/git.png" alt="Git repositories"/><p align="center"><b>Git Repos</b>: every repo, branch and pending change</p></td>
+  </tr>
+</table>
 
-```toml
-[extension]
-id = "npm"
-title = "npm"
+## Why you'll like it
 
-[permissions]
-net = ["registry.npmjs.org"]
+|  |  |
+|---|---|
+| ⚡ **Instant** | One small Rust + GTK4 binary that stays in the background. Wayland and X11. |
+| 🐧 **Made for Linux** | Your apps (Flatpak and Snap too), your icon theme, your light or dark mode. GNOME, KDE, Hyprland, Sway, niri… |
+| 🧩 **Extensions for everything** | A large and growing library, installed from the built-in store. Each one says what it may access, you approve it once, and the sandbox enforces it. |
+| 🛠️ **Built for developers** | Extensions in TypeScript, no build step. Scripts in any language become commands. Everything runs from the terminal too: `backslash run github/pull-requests --json`. |
+| 📋 **Useful from day one** | Calculator and conversions as you type, clipboard history, file search, window switcher, snippets and quicklinks. |
+| 🔓 **Yours** | Open source (MIT). No account, no telemetry, no paywall. Plain config files for your dotfiles. |
 
-[[commands]]
-name = "search"
-title = "Search npm Packages"
-```
+## Extensions for developers
 
-`commands/search.ts`:
+A few of the [many extensions](https://github.com/backslash-app/plugins#first-party-extensions), with more added all the time:
 
-```ts
-import { copy, Icons, list, meta, open } from "@backslash/api";
+| | |
+|---|---|
+| **Code and reviews** | [GitHub](https://github.com/backslash-app/plugins/tree/main/extensions/github) · [GitLab](https://github.com/backslash-app/plugins/tree/main/extensions/gitlab) · [Codeberg](https://github.com/backslash-app/plugins/tree/main/extensions/codeberg) · [Git Repos](https://github.com/backslash-app/plugins/tree/main/extensions/git-repos) · [Code Projects](https://github.com/backslash-app/plugins/tree/main/extensions/projects) |
+| **Issues and errors** | [Linear](https://github.com/backslash-app/plugins/tree/main/extensions/linear) · [Jira](https://github.com/backslash-app/plugins/tree/main/extensions/jira) · [Sentry](https://github.com/backslash-app/plugins/tree/main/extensions/sentry) · [Trello](https://github.com/backslash-app/plugins/tree/main/extensions/trello) · [ClickUp](https://github.com/backslash-app/plugins/tree/main/extensions/clickup) |
+| **Cloud and deploys** | [Kubernetes](https://github.com/backslash-app/plugins/tree/main/extensions/kubernetes) · [AWS](https://github.com/backslash-app/plugins/tree/main/extensions/aws) · [Google Cloud](https://github.com/backslash-app/plugins/tree/main/extensions/google-cloud) · [Cloudflare](https://github.com/backslash-app/plugins/tree/main/extensions/cloudflare) · [Vercel & Netlify](https://github.com/backslash-app/plugins/tree/main/extensions/deployments) |
+| **Local stack** | [Containers](https://github.com/backslash-app/plugins/tree/main/extensions/docker) · [Ports](https://github.com/backslash-app/plugins/tree/main/extensions/ports) · [Databases](https://github.com/backslash-app/plugins/tree/main/extensions/databases) · [Services](https://github.com/backslash-app/plugins/tree/main/extensions/systemd) · [System Logs](https://github.com/backslash-app/plugins/tree/main/extensions/system-logs) · [SSH Hosts](https://github.com/backslash-app/plugins/tree/main/extensions/ssh) · [Terminal Sessions](https://github.com/backslash-app/plugins/tree/main/extensions/terminal-sessions) · [Distrobox & VMs](https://github.com/backslash-app/plugins/tree/main/extensions/distrobox) |
+| **Everyday tools** | [Dev Utils](https://github.com/backslash-app/plugins/tree/main/extensions/dev-utils) · [HTTP Client](https://github.com/backslash-app/plugins/tree/main/extensions/http-client) · [Regex Tester](https://github.com/backslash-app/plugins/tree/main/extensions/regex) · [Cron Helper](https://github.com/backslash-app/plugins/tree/main/extensions/cron) · [Dev Reference](https://github.com/backslash-app/plugins/tree/main/extensions/dev-reference) · [Docs & tldr](https://github.com/backslash-app/plugins/tree/main/extensions/docs) · [Package Registries](https://github.com/backslash-app/plugins/tree/main/extensions/package-registries) · [Nerd Font Icons](https://github.com/backslash-app/plugins/tree/main/extensions/nerd-fonts) |
+| **AI** | [AI](https://github.com/backslash-app/plugins/tree/main/extensions/ai) (Claude, OpenAI, Mistral, Ollama…) · [Ollama Models](https://github.com/backslash-app/plugins/tree/main/extensions/ollama) |
 
-export default list({
-  placeholder: "Search npm packages…",
-  async search(query, { signal }) {
-    const res = await fetch(`https://registry.npmjs.org/-/v1/search?text=${query}`, { signal });
-    const { objects } = await res.json();
-    return objects.map(({ package: pkg, downloads }) => ({
-      title: pkg.name,
-      subtitle: pkg.description,
-      icon: { source: Icons.package, tint: "red" },
-      tags: [`v${pkg.version}`],
-      detail: {
-        stats: [{ label: "Weekly downloads", value: downloads.weekly.toLocaleString() }],
-        metadata: [meta.text("License", pkg.license), meta.person("Publisher", pkg.publisher.username)],
-      },
-      actions: [open(pkg.links.npm), copy(`npm install ${pkg.name}`, "Copy Install Command")],
-    }));
-  },
-});
-```
+<p align="center"><img src="docs/media/dev-utils.png" width="80%" alt="Dev Utils decoding a JWT"/><br/><sub>Paste a JWT, a timestamp or some Base64: Dev Utils already knows what it is.</sub></p>
 
-That's it. `backslash new <name>` scaffolds one, `backslash dev` loads it with
-logs in your terminal and reloads it when you save. `backslash publish` prepares
-its registry entry. Read the [extension guide](docs/EXTENSIONS.md).
-
-## Extensions
-
-Open **Browse Extensions** (or `backslash search`, `backslash install github`).
-The [registry](https://github.com/backslash-app/plugins) lists extensions that
-live in their authors' repositories, each pinned to a reviewed commit with a
-checksum: you see exactly what an extension may do before installing, and
-Backslash refuses any file that differs from what was reviewed. There are 100
-first-party extensions: GitHub, GitLab, Linear, Jira, Sentry, Todoist, Notion,
-Slack, Trello, Calendar, Obsidian, Logseq, Spotify, Home Assistant, AI, Ollama,
-Weather, Screenshot and text from screen, Color Picker, Window Manager, System
-Monitor, Passwords, Dev Utils, SSH, Git, Kubernetes, AWS, Cloudflare, Wikipedia,
-Internet Radio and more ([the full list](https://github.com/backslash-app/plugins#first-party-extensions)).
+Missing one? An extension is a TOML file and a TypeScript file, and
+`backslash new` writes them for you. See the [extension guide](docs/EXTENSIONS.md).
 
 ## Install
 
-Backslash needs GTK 4.14 or newer: Ubuntu 24.04+, Debian 13+, Fedora 40+,
-Arch, openSUSE Tumbleweed and other recent distributions.
+Backslash needs GTK 4.14 or newer (Ubuntu 24.04+, Debian 13+, Fedora 40+, Arch,
+openSUSE Tumbleweed…). Get the package for your system from the
+[latest release](https://github.com/backslash-app/backslash/releases/latest):
 
-| Distribution | How |
+| Distribution | Command |
 |---|---|
-| Debian, Ubuntu | `sudo apt install ./backslash_<version>_amd64.deb` from the [latest release](https://github.com/backslash-app/backslash/releases/latest) |
-| Fedora, openSUSE | `sudo dnf install ./backslash-<version>-1.x86_64.rpm` from the same page |
-| Arch | `makepkg -si` with [`packaging/aur/PKGBUILD`](packaging/aur/PKGBUILD) (an AUR package is coming), or the tarball below |
+| Debian, Ubuntu | `sudo apt install ./backslash_<version>_amd64.deb` |
+| Fedora, openSUSE | `sudo dnf install ./backslash-<version>-1.x86_64.rpm` |
+| Arch | `makepkg -si` with [`packaging/aur/PKGBUILD`](packaging/aur/PKGBUILD) |
 | Anything else | `tar -xzf backslash-<version>-x86_64.tar.gz -C ~/.local` |
 
-Extensions written in TypeScript run in [Deno](https://deno.com). If it isn't
-installed, Backslash offers to download it the first time you need it (or run
-`backslash install-runtime`); it comes from Deno's official npm package and is
-checked before use. `backslash doctor` checks that everything is in place.
-
-<details>
-<summary>Build from source</summary>
-
-```sh
-# Debian/Ubuntu: sudo apt install libgtk-4-dev    Fedora: sudo dnf install gtk4-devel    Arch: sudo pacman -S gtk4
-git clone https://github.com/backslash-app/backslash && cd backslash
-make && sudo make install          # or: make install PREFIX=~/.local
-```
-
-`make dist` builds the release files in `dist/` (it needs
-[nfpm](https://nfpm.goreleaser.com) for the `.deb` and `.rpm`). Releases are
-made by CI, see [Releasing](CONTRIBUTING.md#releasing).
-</details>
-
-Why no Flatpak? A launcher has to start other apps, read the list of
-installed ones, watch the clipboard and run the tools extensions ask for.
-Inside the Flatpak sandbox all of this goes through `flatpak-spawn --host`,
-which gives the whole system away anyway while making everything slower and
-harder to debug. Extensions get their own, finer sandbox from Deno instead.
-
-The first time it opens, Backslash shows a short **welcome** checklist: the
-shortcut (with the steps for your desktop when it can't register one itself),
-theme, launch at login, clipboard history, the overlay on Wayland, and the
-extension runtime. Open it again any time with **Welcome to Backslash**.
-
-### Open it with a shortcut
-
-Backslash asks your desktop for <kbd>Super</kbd>+<kbd>Space</kbd> through the
-GlobalShortcuts portal (KDE Plasma, GNOME 48+, Hyprland…): confirm it once when
-asked. Change it with `hotkey = "Ctrl+Space"` in `config.toml`.
-
-Without the portal, bind a key to the command `backslash` (running it again
-toggles the window):
-
-| Desktop | Where |
-|---|---|
-| GNOME | Settings → Keyboard → Custom Shortcuts → command `backslash` |
-| KDE Plasma | System Settings → Shortcuts → Add New → Command `backslash` |
-| Hyprland | `bind = SUPER, SPACE, exec, backslash` |
-| Sway / i3 | `bindsym $mod+space exec backslash` |
-
-On Sway, Hyprland, KDE and other wlroots-style compositors, install
-`gtk4-layer-shell` and Backslash opens as a true overlay, with no window rules
-needed. Without it, make the window float:
-`windowrulev2 = float, class:^(app\.backslash\.Backslash)$` (Hyprland) or
-`for_window [app_id="app.backslash.Backslash"] floating enable` (Sway).
-
-Run the **Enable Launch at Login** command so Backslash is always ready.
-
-## Using it
-
-| Key | Action |
-|---|---|
-| type | search apps and commands; math and conversions are computed as you type |
-| <kbd>Tab</kbd> | filter: All, Apps, Commands (and an extension's own filters) |
-| <kbd>↑</kbd> <kbd>↓</kbd> / <kbd>Ctrl</kbd>+<kbd>N</kbd> <kbd>P</kbd> | move |
-| <kbd>Enter</kbd> / <kbd>Ctrl</kbd>+<kbd>Enter</kbd> | primary / secondary action |
-| <kbd>Ctrl</kbd>+<kbd>K</kbd> | all actions; <kbd>→</kbd> opens a submenu, <kbd>←</kbd> goes back |
-| <kbd>Esc</kbd> / <kbd>Backspace</kbd> on empty search | back, then close |
-
-Results learn from you: what you pick for a given query comes first next time.
-
-Any app or command can get an **alias** and its own **global shortcut**:
-<kbd>Ctrl</kbd>+<kbd>K</kbd> on it, then **Set Alias…** (type `ff`, Firefox comes
-first) or **Set Hotkey…** (e.g. <kbd>Super</kbd>+<kbd>V</kbd> for the clipboard
-history). Without the shortcuts portal, bind `backslash open builtin:clipboard`
-(or `app:…`, `cmd:extension/command`) to a key in your desktop settings.
-
-Built in:
-
-- **Calculator and conversions**: `12*(3+4)`, `5 km in miles`, `72 f to c`,
-  `2 GiB en MB`, `20 € en $` (European Central Bank rates, cached).
-- **Clipboard History**: searchable, with pins; Enter pastes into the app you
-  were in (xdotool on X11, the desktop's permission once on GNOME and KDE,
-  `wtype` on Sway/Hyprland/niri). Recorded in the background on
-  wlroots compositors, KDE and Hyprland (install `wl-clipboard`) and on X11; on
-  GNOME, each time Backslash opens. Password managers' copies are skipped.
-- **Search Files**: in your home folder (`fd` if installed), recent files first,
-  with a preview.
-- **Switch Windows**: Hyprland, Sway, niri, KDE Plasma (through a KWin
-  script, nothing to install), GNOME (through a tiny Shell extension the
-  launcher installs for you, or "Window Calls") and X11.
-- **Settings**: a window for the shortcut, theme, accent color, density,
-  extensions, clipboard history, quicklinks and snippets.
-
-## Script commands
-
-Any script can be a command, in any language, without the SDK. Put it in
-`~/.config/backslash/scripts/` (or run **Create Script Command**), make it
-executable, and describe it in its first comment lines:
-
-```sh
-#!/bin/bash
-# title: Restart Wi-Fi
-# description: Turns Wi-Fi off and on again
-# icon: 📶
-# mode: silent
-nmcli radio wifi off && nmcli radio wifi on
-```
-
-| Key | Meaning |
-|---|---|
-| `title` | Required: what you search for |
-| `mode` | `silent` (runs in the background, tells you only if it fails), `output` (shows what it prints), `list` (one item per printed line, to paste or copy), `paste` (pastes what it prints) |
-| `argument` | Asked before running, passed as `$1`, `$2`…: `# argument: name Placeholder`, or `name?` when optional; repeatable |
-| `description`, `icon`, `keywords` | Shown and searched |
-| `confirm` | A question asked before running |
-
-`//` and `--` comments work too (Node, Lua…). Script commands get aliases and
-hotkeys like everything else. They run as you, unsandboxed: they are your own
-files.
-
-## Make it yours
-
-Everything is in the **Settings** window (<kbd>Ctrl</kbd>+<kbd>,</kbd>, or the
-Settings command): shortcut, launch at login, theme, accent color and density,
-clipboard history, extensions (enable, aliases and hotkeys of each command,
-permissions, preferences), quicklinks, snippets and hidden apps. It all lives in plain files, so you can
-also edit them by hand or keep them in your dotfiles.
-
-`~/.config/backslash/config.toml`:
-
-```toml
-theme = "system"          # "light", "dark" or "system"
-accent = "indigo"         # "blue", "green", "orange", "pink" or "graphite"
-density = "comfortable"   # or "compact"
-hotkey = "Super+Space"
-hidden_apps = ["org.gnome.Tour.desktop"]
-
-[[quicklinks]]            # type "gh tokio" to search GitHub
-name = "Search GitHub"
-url = "https://github.com/search?q={query}"
-keyword = "gh"
-
-[[snippets]]              # {date}, {time} and {clipboard} are expanded
-name = "Email signature"
-text = "Best,\nSteven"
-keyword = "sig"
-
-[extensions.npm]
-enabled = true
-
-[aliases]                 # type "ff" to get Firefox first
-"app:org.mozilla.firefox.desktop" = "ff"
-
-[hotkeys]                 # global shortcuts that open an item
-"builtin:clipboard" = "Super+V"
-"cmd:github/pull-requests" = "Super+G"
-```
-
-- `~/.config/backslash/style.css`: override any style or color, e.g.
-  `@define-color bs_accent #c2410c;` (see [`style.css`](crates/backslash/src/style.css)
-  and the palettes in [`theme.rs`](crates/backslash/src/theme.rs)).
-- `~/.local/share/backslash/extensions/`: drop extension folders here.
-- `backslash doctor` shows what works on your desktop.
+Then open it with <kbd>Super</kbd>+<kbd>Space</kbd>: a short welcome checklist
+sets up the shortcut, theme and launch at login. The [guide](docs/USAGE.md)
+covers shortcuts on every desktop, keys, script commands, configuration and
+building from source.
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). Bundled extensions in
-[`extensions/`](extensions/) are good examples to start from.
+Ideas, bug reports and pull requests are welcome: see
+[CONTRIBUTING.md](CONTRIBUTING.md), the [architecture](docs/ARCHITECTURE.md) and
+the [roadmap](docs/ROADMAP.md). Extensions go to
+[backslash-app/plugins](https://github.com/backslash-app/plugins).
 
 ## License
 
