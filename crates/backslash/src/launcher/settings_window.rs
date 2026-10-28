@@ -237,7 +237,40 @@ impl Launcher {
         window.add_css_class("bs-settings");
         let header = gtk::HeaderBar::new();
         header.set_title_widget(Some(&label("Settings", "card-title")));
+        // Our own close button: tiling compositors (Hyprland, Sway, i3…) and
+        // some decoration layouts show no window buttons at all.
+        header.set_show_title_buttons(false);
+        let close = gtk::Button::builder()
+            .child(&Glyph::new("bs-x", 14))
+            .tooltip_text("Close (Esc)")
+            .css_classes(["settings-close"])
+            .valign(gtk::Align::Center)
+            .build();
+        {
+            let window = window.downgrade();
+            close.connect_clicked(move |_| {
+                if let Some(w) = window.upgrade() {
+                    w.close();
+                }
+            });
+        }
+        header.pack_end(&close);
         window.set_titlebar(Some(&header));
+        // Escape closes it too, unless a field (a shortcut being recorded) used it.
+        let keys = gtk::EventControllerKey::new();
+        {
+            let window = window.downgrade();
+            keys.connect_key_pressed(move |_, key, _, _| {
+                if key != gdk::Key::Escape {
+                    return glib::Propagation::Proceed;
+                }
+                if let Some(w) = window.upgrade() {
+                    w.close();
+                }
+                glib::Propagation::Stop
+            });
+        }
+        window.add_controller(keys);
 
         let body = gtk::Box::new(gtk::Orientation::Horizontal, 0);
         let sidebar = gtk::ListBox::new();
