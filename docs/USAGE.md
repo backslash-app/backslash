@@ -1,6 +1,7 @@
 # Using Backslash
 
 - [First run](#first-run)
+- [Updates and the tray icon](#updates-and-the-tray-icon)
 - [Open it with a shortcut](#open-it-with-a-shortcut)
 - [Using it](#using-it)
 - [Script commands](#script-commands)
@@ -20,6 +21,25 @@ Extensions written in TypeScript run in [Deno](https://deno.com). If it isn't
 installed, Backslash offers to download it the first time you need it (or run
 `backslash install-runtime`); it comes from Deno's official npm package and is
 checked before use. `backslash doctor` checks that everything is in place.
+
+## Updates and the tray icon
+
+Backslash checks GitHub for a new version when it starts, then every six
+hours. When one is out, **Backslash 0.5.0 is available** shows at the bottom
+left of the window and in the tray menu. Click it, or run **Update Backslash**:
+you see what's new, and **Update and Restart** does the rest. The download is
+checked against the release's `SHA256SUMS`, then installed the way Backslash
+was installed: with apt or dnf/zypper for the `.deb` and `.rpm` (your system
+asks for your password), or unpacked in place for the tarball. Installed from
+the AUR or from source, you're told how to update instead.
+**Check for Updates** looks right away.
+
+While it runs, Backslash shows an icon in the system tray, with a menu to open
+it, open the settings, update and quit. KDE Plasma, Xfce, Cinnamon, Budgie and
+bars like waybar show it as is; on GNOME it needs the
+[AppIndicator extension](https://extensions.gnome.org/extension/615/appindicator-support/)
+(already there on Ubuntu). Both can be turned off in **Settings → General**,
+or with `tray = false` and `check_updates = false` in `config.toml`.
 
 ## Open it with a shortcut
 
@@ -123,6 +143,8 @@ theme = "system"          # "light", "dark" or "system"
 accent = "indigo"         # "blue", "green", "orange", "pink" or "graphite"
 density = "comfortable"   # or "compact"
 hotkey = "Super+Space"
+tray = true               # the icon in the system tray
+check_updates = true      # look for new versions of Backslash
 hidden_apps = ["org.gnome.Tour.desktop"]
 
 [[quicklinks]]            # type "gh tokio" to search GitHub

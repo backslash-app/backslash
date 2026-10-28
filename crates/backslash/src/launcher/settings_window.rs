@@ -380,10 +380,34 @@ impl Launcher {
                 }
             },
         );
+        let weak = Rc::downgrade(self);
+        let tray = switch(config.tray, move |on| {
+            let Some(l) = weak.upgrade() else { return };
+            l.update_config(|c| c.tray = on);
+            if on {
+                l.start_tray();
+            } else {
+                crate::tray::stop();
+            }
+        });
+        let weak = Rc::downgrade(self);
+        let updates = switch(config.check_updates, move |on| {
+            let Some(l) = weak.upgrade() else { return };
+            l.update_config(|c| c.check_updates = on);
+            if on {
+                l.check_app_update(false);
+            }
+        });
         page.append(&card(&[
             card_row("Global shortcut", Some(status), Some(&shortcut)),
             card_row("When reopened", Some("After an action, Escape or a click elsewhere"), Some(&reopen)),
             card_row("Launch at login", Some("Starts hidden, so the first press is instant"), Some(&login)),
+            card_row("Icon in the system tray", Some("Shows that Backslash is running, with a menu"), Some(&tray)),
+            card_row(
+                "Check for updates",
+                Some(&format!("You have Backslash {}", backslash_core::selfupdate::CURRENT)),
+                Some(&updates),
+            ),
             card_row("Paste into apps", Some(&paste_status), None),
         ]));
 

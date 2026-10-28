@@ -279,6 +279,26 @@ fn builtin_commands(s: &State) -> Vec<(Entry, Row)> {
         Op::OpenBuiltin(Builtin::Welcome),
         "Set up the shortcut, theme, clipboard history and extensions.",
     );
+    match &s.app_update.release {
+        Some(r) => add(
+            "update",
+            &format!("Update Backslash to {}", r.version),
+            &["update", "upgrade", "version", "release", "mise à jour", "nouveautés"],
+            "bs-download",
+            "orange",
+            Op::OpenAppUpdate,
+            "A new version of Backslash is out: see what's new and update in one step.",
+        ),
+        None => add(
+            "update",
+            "Check for Updates",
+            &["update", "upgrade", "version", "release", "mise à jour", "about", "à propos"],
+            "bs-download",
+            "blue",
+            Op::OpenAppUpdate,
+            &format!("You have Backslash {}. Look for a newer version.", backslash_core::selfupdate::CURRENT),
+        ),
+    }
     add(
         "settings",
         "Settings",
@@ -289,6 +309,15 @@ fn builtin_commands(s: &State) -> Vec<(Entry, Row)> {
         "Appearance, shortcuts, extensions and their accounts, quicklinks, snippets.",
     );
     add(
+        "quit",
+        "Quit Backslash",
+        &["quit", "exit", "close", "stop", "quitter", "fermer"],
+        "bs-power",
+        "red",
+        Op::Quit,
+        "Stops Backslash until you start it again. The shortcut does nothing meanwhile.",
+    );
+    add(
         "config",
         "Open Config File",
         &["settings", "preferences", "quicklinks", "snippets", "réglages"],
@@ -297,6 +326,15 @@ fn builtin_commands(s: &State) -> Vec<(Entry, Row)> {
         Op::Open(backslash_core::config::Config::path().display().to_string()),
         "Everything in the settings lives in `config.toml`, easy to keep in your dotfiles.",
     );
+    if let (Some((_, row)), Some(release)) =
+        (out.iter_mut().find(|(e, _)| e.key == "builtin:update"), &s.app_update.release)
+    {
+        row.accessories.push(Accessory {
+            tag: Some(format!("New: {}", release.version)),
+            color: Some("orange".into()),
+            ..Default::default()
+        });
+    }
     if let Some((_, row)) =
         out.iter_mut().find(|(e, _)| e.key == "builtin:store").filter(|_| !s.catalog.updates.is_empty())
     {

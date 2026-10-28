@@ -18,6 +18,7 @@ mod paste;
 mod portal;
 mod scaffold;
 mod theme;
+mod tray;
 
 use std::path::PathBuf;
 

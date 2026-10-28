@@ -750,3 +750,18 @@ window.bs-settings {
 .ext-row-commands {
   padding-left: 46px;
 }
+
+/* "Backslash 0.5.0 is available" after the footer's context line. */
+.footer .update-pill {
+  margin: 0 0 0 10px;
+  padding: 2px 10px;
+  min-height: 16px;
+  border-radius: 999px;
+  border: none;
+  box-shadow: none;
+  background: alpha(@bs_accent, 0.16);
+  color: @bs_accent;
+  font-size: 0.85em;
+  font-weight: 600;
+}
+.footer .update-pill:hover { background: alpha(@bs_accent, 0.26); }
