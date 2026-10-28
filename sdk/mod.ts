@@ -266,6 +266,20 @@ export const Icons = {
   activity: "bs-activity",
   braces: "bs-braces",
   layers: "bs-layers",
+  printer: "bs-printer",
+  database: "bs-database",
+  bookmark: "bs-bookmark",
+  hourglass: "bs-hourglass",
+  coin: "bs-coin",
+  chartUp: "bs-chart-up",
+  chartDown: "bs-chart-down",
+  film: "bs-film",
+  radio: "bs-radio",
+  qr: "bs-qr",
+  dice: "bs-dice",
+  font: "bs-font",
+  mouse: "bs-mouse",
+  kanban: "bs-kanban",
 } as const;
 
 export interface Item {

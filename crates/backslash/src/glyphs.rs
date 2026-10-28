@@ -240,6 +240,21 @@ fn shapes(name: &str) -> Option<&'static [(Kind, &'static str)]> {
         "activity" => &[(Stroke, "M3 12h4l3-8 4 16 3-8h4")],
         "braces" => &[(Stroke, "M8 4H7a2 2 0 0 0-2 2v4l-2 2 2 2v4a2 2 0 0 0 2 2h1M16 4h1a2 2 0 0 1 2 2v4l2 2-2 2v4a2 2 0 0 1-2 2h-1")],
         "layers" => &[(Stroke, "M12 3 3 7.5 12 12l9-4.5zM3 12l9 4.5 9-4.5M3 16.5 12 21l9-4.5")],
+        // Tools, finance, media and productivity
+        "printer" => &[(Stroke, "M7 9V3h10v6M7 17H5a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-2M7 14h10v7H7z")],
+        "database" => &[(Stroke, "M4 6c0-1.7 3.6-3 8-3s8 1.3 8 3-3.6 3-8 3-8-1.3-8-3zM4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3")],
+        "bookmark" => &[(Stroke, "M6 3h12v18l-6-4-6 4z")],
+        "hourglass" => &[(Stroke, "M6 3h12M6 21h12M7 3v3a5 5 0 0 0 10 0V3M7 21v-3a5 5 0 0 1 10 0v3")],
+        "coin" => &[(Stroke, circle!(12, 12, 9)), (Stroke, "M14.5 9.5c-.5-1-1.5-1.5-2.5-1.5-1.4 0-2.5.8-2.5 2s1 1.6 2.5 2 2.5.8 2.5 2-1.1 2-2.5 2c-1 0-2-.5-2.5-1.5M12 6.5V8M12 16v1.5")],
+        "chart-up" => &[(Stroke, "M3 17l6-6 4 4 8-8M15 7h6v6")],
+        "chart-down" => &[(Stroke, "M3 7l6 6 4-4 8 8M15 17h6v-6")],
+        "film" => &[(Stroke, "M4 3h16a1 1 0 0 1 1 1v16a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1zM7 3v18M17 3v18M3 8h4M3 12h18M3 16h4M17 8h4M17 16h4")],
+        "radio" => &[(Stroke, "M4 9h16a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-9a1 1 0 0 1 1-1zM6 9l11-5M14 15h3"), (Stroke, circle!(8, 14.5, 2))],
+        "qr" => &[(Stroke, "M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h2v2h-2zM18 18h2v2h-2zM14 18v2M18 14h2")],
+        "dice" => &[(Stroke, "M6 3h12a3 3 0 0 1 3 3v12a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3V6a3 3 0 0 1 3-3z"), (Fill, circle!(8.5, 8.5, 1.5)), (Fill, circle!(15.5, 15.5, 1.5)), (Fill, circle!(12, 12, 1.5))],
+        "font" => &[(Stroke, "M4 20 10 4h1l6 16M6.5 14h8M15 20h5")],
+        "mouse" => &[(Stroke, "M12 3a6 6 0 0 1 6 6v6a6 6 0 0 1-12 0V9a6 6 0 0 1 6-6zM12 7v4")],
+        "kanban" => &[(Stroke, "M4 4h4v16H4zM10 4h4v10h-4zM16 4h4v7h-4z")],
         _ => return None,
     })
 }
