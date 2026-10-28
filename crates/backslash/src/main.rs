@@ -96,11 +96,23 @@ enum Cmd {
         id: Option<String>,
         #[arg(short, long)]
         yes: bool,
+        /// Wait for the latest registry instead of falling back to the cached copy.
+        #[arg(long)]
+        refresh: bool,
     },
     /// List extensions with updates available.
-    Outdated,
+    Outdated {
+        /// Wait for the latest registry instead of falling back to the cached copy.
+        #[arg(long)]
+        refresh: bool,
+    },
     /// Search the extension registry.
-    Search { query: Option<String> },
+    Search {
+        query: Option<String>,
+        /// Wait for the latest registry instead of falling back to the cached copy.
+        #[arg(long)]
+        refresh: bool,
+    },
     /// Print the registry entry for the extension in a git repository.
     Publish { dir: Option<PathBuf> },
     /// Download Deno, the runtime of TypeScript extensions, into Backslash's data folder.
@@ -136,9 +148,9 @@ fn run(args: Args) -> anyhow::Result<()> {
         Some(Cmd::Doctor) => cli::doctor(),
         Some(Cmd::Install { target, rev, path, yes }) => catalog_cli::install(&target, rev, path, yes),
         Some(Cmd::Uninstall { id }) => catalog_cli::uninstall(&id),
-        Some(Cmd::Update { id, yes }) => catalog_cli::update(id.as_deref(), yes),
-        Some(Cmd::Outdated) => catalog_cli::outdated(),
-        Some(Cmd::Search { query }) => catalog_cli::search(query.as_deref()),
+        Some(Cmd::Update { id, yes, refresh }) => catalog_cli::update(id.as_deref(), yes, refresh),
+        Some(Cmd::Outdated { refresh }) => catalog_cli::outdated(refresh),
+        Some(Cmd::Search { query, refresh }) => catalog_cli::search(query.as_deref(), refresh),
         Some(Cmd::Publish { dir }) => catalog_cli::publish(dir.as_deref()),
         Some(Cmd::InstallRuntime) => cli::install_runtime(),
     }

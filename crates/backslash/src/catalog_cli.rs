@@ -10,24 +10,57 @@ use backslash_core::catalog::{self, Entry, Locations, Revision, Update};
 use backslash_core::config::Config;
 use backslash_core::manifest::Manifest;
 
-/// The registry is refreshed when older than this.
+/// `install` refreshes the registry when it is older than this.
 const MAX_AGE: Duration = Duration::from_secs(3600);
+/// How long `search`, `update` and `outdated` wait for the registry before
+/// answering from the cached copy.
+const QUICK: Duration = Duration::from_secs(5);
 
 fn locations() -> Locations {
     Locations::user(&Config::load())
 }
 
-fn ensure_synced(loc: &Locations, force: bool) -> Result<()> {
-    if force || catalog::age(loc).is_none_or(|age| age > MAX_AGE) {
-        eprintln!("Updating the registry from {}…", loc.registry);
-        if let Err(e) = catalog::sync(loc) {
-            if catalog::entries(loc).is_empty() {
-                return Err(e);
+/// How hard to try to refresh the registry before answering.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Refresh {
+    /// Only when the copy is older than [`MAX_AGE`].
+    IfStale,
+    /// Always, but answer from the cache after [`QUICK`] or when offline.
+    Quick,
+    /// Always, and fail rather than use an old copy (`--refresh`).
+    Force,
+}
+
+fn ensure_synced(loc: &Locations, refresh: Refresh) -> Result<()> {
+    let cached = !catalog::entries(loc).is_empty();
+    if refresh == Refresh::IfStale && cached && catalog::age(loc).is_some_and(|age| age <= MAX_AGE) {
+        return Ok(());
+    }
+    let (tx, rx) = std::sync::mpsc::channel();
+    let thread_loc = loc.clone();
+    std::thread::spawn(move || {
+        let _ = tx.send(catalog::sync(&thread_loc));
+    });
+    let wait = if refresh == Refresh::Quick && cached { QUICK } else { Duration::from_secs(600) };
+    match rx.recv_timeout(wait) {
+        Ok(Ok(report)) => {
+            if !report.added.is_empty() || !report.changed.is_empty() {
+                eprintln!("Registry: {}", report.summary());
             }
-            eprintln!("warning: could not update the registry ({e:#}); using the cached copy");
+            Ok(())
+        }
+        Ok(Err(e)) if refresh == Refresh::Force || !cached => Err(e.context("could not update the registry")),
+        Ok(Err(e)) => {
+            let reason = format!("{e:#}");
+            let reason = reason.lines().next().unwrap_or_default();
+            eprintln!("warning: could not update the registry ({reason}); using the cached copy");
+            Ok(())
+        }
+        Err(_) => {
+            eprintln!("warning: the registry did not answer in {} s; using the cached copy", wait.as_secs());
+            Ok(())
         }
     }
-    Ok(())
 }
 
 /// Shows what is asked and waits for consent (or `--yes`).
@@ -93,7 +126,7 @@ pub fn install(target: &str, rev: Option<String>, path: Option<String>, yes: boo
         return Ok(());
     }
 
-    ensure_synced(&loc, false)?;
+    ensure_synced(&loc, Refresh::IfStale)?;
     let entry = catalog::find(&loc, target)
         .ok_or_else(|| anyhow!("no extension `{target}` in the registry (try `backslash search`)"))?;
     if catalog::installed(&loc, target).is_some_and(|r| r.commit == entry.commit) {
@@ -141,9 +174,9 @@ fn managed(loc: &Locations) -> Vec<(String, Manifest)> {
     out
 }
 
-pub fn outdated() -> Result<()> {
+pub fn outdated(refresh: bool) -> Result<()> {
     let loc = locations();
-    ensure_synced(&loc, true)?;
+    ensure_synced(&loc, if refresh { Refresh::Force } else { Refresh::Quick })?;
     let mut any = false;
     for (id, manifest) in managed(&loc) {
         match catalog::check_update(&loc, &id, &manifest) {
@@ -166,9 +199,9 @@ pub fn outdated() -> Result<()> {
     Ok(())
 }
 
-pub fn update(only: Option<&str>, yes: bool) -> Result<()> {
+pub fn update(only: Option<&str>, yes: bool, refresh: bool) -> Result<()> {
     let loc = locations();
-    ensure_synced(&loc, true)?;
+    ensure_synced(&loc, if refresh { Refresh::Force } else { Refresh::Quick })?;
     let mut updated = 0;
     for (id, manifest) in managed(&loc) {
         if only.is_some_and(|o| o != id) {
@@ -208,9 +241,9 @@ pub fn update(only: Option<&str>, yes: bool) -> Result<()> {
     Ok(())
 }
 
-pub fn search(query: Option<&str>) -> Result<()> {
+pub fn search(query: Option<&str>, refresh: bool) -> Result<()> {
     let loc = locations();
-    ensure_synced(&loc, false)?;
+    ensure_synced(&loc, if refresh { Refresh::Force } else { Refresh::Quick })?;
     let q = query.unwrap_or_default().to_lowercase();
     let entries: Vec<Entry> = catalog::entries(&loc)
         .into_iter()
