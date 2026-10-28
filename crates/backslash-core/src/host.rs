@@ -164,7 +164,7 @@ pub fn launch_for(ext: &Extension, command: &CommandDef, sdk: &Path) -> Result<L
             let program = if program.contains('/') { dir.join(program) } else { PathBuf::from(program) };
             let mut args = rest.to_vec();
             args.push(entry.to_string_lossy().into_owned());
-            Ok(Launch { program, args, cwd: dir })
+            crate::sandbox::wrap(Launch { program, args, cwd: dir }, &ext.manifest.permissions, &[])
         }
         Runtime::Deno => {
             let perms = &ext.manifest.permissions;

@@ -221,8 +221,8 @@ pub fn list() -> Result<()> {
         let state = if config.is_enabled(&m.extension.id) { "" } else { " (disabled)" };
         println!("{} {} — {}{state}", m.extension.id, m.extension.version, m.extension.title);
         println!("  {}", ext.dir.display());
-        if matches!(m.runtime, backslash_core::manifest::Runtime::Exec { .. }) {
-            println!("  ! Not sandboxed: runs as a regular program");
+        if m.runtime != backslash_core::manifest::Runtime::Deno {
+            println!("  ! Sandboxed by bubblewrap: any program, and any website if it asks for one");
         }
         for p in m.permissions.describe() {
             println!("  ! {p}");
@@ -266,6 +266,10 @@ pub fn doctor() -> Result<()> {
     );
     let sdk = paths::sdk_dir();
     println!("[{}] SDK: {}", ok(sdk.join("mod.ts").exists()), sdk.display());
+    match backslash_core::sandbox::bwrap() {
+        Some(bwrap) => println!("[ok  ] Sandbox for Python and exec extensions: {}", bwrap.display()),
+        None => println!("[info] Sandbox for Python and exec extensions: install bubblewrap to run them"),
+    }
 
     let session = std::env::var("XDG_SESSION_TYPE").unwrap_or_else(|_| "unknown".into());
     let desktop = std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_else(|_| "unknown".into());

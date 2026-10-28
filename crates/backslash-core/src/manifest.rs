@@ -54,8 +54,8 @@ pub enum Runtime {
     /// declared permissions enforced by Deno itself.
     #[default]
     Deno,
-    /// Any executable speaking the protocol on stdin/stdout. Not sandboxed:
-    /// the install screen says so.
+    /// Any executable speaking the protocol on stdin/stdout, run in a
+    /// bubblewrap sandbox (see [`crate::sandbox`]).
     Exec { command: Vec<String> },
 }
 

@@ -352,7 +352,14 @@ kind = "exec"
 command = ["python3"]   # the command entry path is appended
 ```
 
-Exec extensions are not sandboxed; `backslash list` flags them as such.
+Extensions that are not run by Deno are sandboxed with
+[bubblewrap](https://github.com/containers/bubblewrap) (the `bubblewrap`
+package, required to run them). They see the system read-only, their own
+folder read-only, an empty home and `/tmp`, the `read` and `write` paths and
+`env` variables they declare, and no network unless `net` lists a host.
+Bubblewrap cannot filter hosts or programs: declaring any host gives the whole
+network, and any installed program can be started. The permission prompt says
+so.
 
 ## Preferences and permissions
 

@@ -16,6 +16,7 @@ optdepends=(
   'libsecret: keep extension secrets in the keyring'
   'gtk4-layer-shell: overlay window on wlroots compositors'
   'wmctrl: window switcher on X11'
+  'bubblewrap: sandbox for Python and other non-TypeScript extensions'
 )
 source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
 sha256sums=('0a7e97b4297fb618b2244588225f5785bc74ec30e523297fab0d2307660e8baf')
