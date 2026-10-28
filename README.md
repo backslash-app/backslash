@@ -109,7 +109,7 @@ Arch, openSUSE Tumbleweed and other recent distributions.
 |---|---|
 | Debian, Ubuntu | `sudo apt install ./backslash_<version>_amd64.deb` from the [latest release](https://github.com/backslash-app/backslash/releases/latest) |
 | Fedora, openSUSE | `sudo dnf install ./backslash-<version>-1.x86_64.rpm` from the same page |
-| Arch | the `backslash` package from the AUR (`packaging/aur/PKGBUILD`) |
+| Arch | `makepkg -si` with [`packaging/aur/PKGBUILD`](packaging/aur/PKGBUILD) (an AUR package is coming), or the tarball below |
 | Anything else | `tar -xzf backslash-<version>-x86_64.tar.gz -C ~/.local` |
 
 Extensions written in TypeScript run in [Deno](https://deno.com). If it isn't
