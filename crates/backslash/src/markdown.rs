@@ -140,7 +140,6 @@ fn toggle(out: &mut String, open: &mut Vec<&'static str>, tag: &'static str) {
 /// Shows `markdown` in `label`. If the markup is somehow refused, the plain
 /// text is shown rather than whatever the label showed before.
 pub fn set(label: &gtk::Label, markdown: &str) {
-    use gtk::prelude::*;
     label.set_text("");
     label.set_markup(&to_pango(markdown));
     if label.text().is_empty() && !markdown.trim().is_empty() {
