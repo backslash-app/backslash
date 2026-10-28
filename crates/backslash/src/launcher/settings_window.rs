@@ -6,7 +6,7 @@ use std::cell::Cell;
 use std::rc::Rc;
 
 use backslash_core::catalog::{self, Locations};
-use backslash_core::config::{Accent, Density, Quicklink, Snippet, Theme};
+use backslash_core::config::{Accent, Density, Quicklink, Reopen, Snippet, Theme};
 use backslash_core::manifest::PreferenceKind;
 use backslash_core::{paths, runtime, secrets};
 use gtk::prelude::*;
@@ -366,8 +366,23 @@ impl Launcher {
             Some(m) => format!("With {}", m.name()),
             None => "Not available here: items are copied instead".to_string(),
         };
+        let weak = Rc::downgrade(self);
+        let reopen = segmented(
+            &["Where I was", "For a minute", "Search"],
+            match config.reopen {
+                Reopen::Restore => 0,
+                Reopen::Minute => 1,
+                Reopen::Root => 2,
+            },
+            move |i| {
+                if let Some(l) = weak.upgrade() {
+                    l.update_config(|c| c.reopen = [Reopen::Restore, Reopen::Minute, Reopen::Root][i]);
+                }
+            },
+        );
         page.append(&card(&[
             card_row("Global shortcut", Some(status), Some(&shortcut)),
+            card_row("When reopened", Some("After an action, Escape or a click elsewhere"), Some(&reopen)),
             card_row("Launch at login", Some("Starts hidden, so the first press is instant"), Some(&login)),
             card_row("Paste into apps", Some(&paste_status), None),
         ]));

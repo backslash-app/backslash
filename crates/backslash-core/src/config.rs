@@ -4,6 +4,7 @@
 //! theme = "system"            # "light", "dark" or "system"
 //! accent = "indigo"           # indigo, blue, green, orange, pink, graphite
 //! density = "comfortable"     # or "compact"
+//! reopen = "restore"          # where I was; "minute": for a minute; "root": always the search
 //! hotkey = "Super+Space"      # asked to the desktop through the GlobalShortcuts portal
 //!
 //! [extensions.github]
@@ -50,6 +51,9 @@ pub struct Config {
     pub accent: Accent,
     /// `compact` fits more rows.
     pub density: Density,
+    /// What the launcher shows when it opens again after hiding (after an
+    /// action, Escape, or losing the focus).
+    pub reopen: Reopen,
     /// Shortcut requested from the desktop, e.g. `Super+Space`. Empty disables it.
     pub hotkey: String,
     /// Show as an overlay on compositors supporting wlr-layer-shell (Sway, Hyprland, KDE…).
@@ -74,6 +78,7 @@ impl Default for Config {
             theme: Theme::System,
             accent: Accent::default(),
             density: Density::default(),
+            reopen: Reopen::default(),
             hotkey: "Super+Space".into(),
             layer_shell: true,
             hidden_apps: Vec::new(),
@@ -131,6 +136,18 @@ pub enum Density {
     #[default]
     Comfortable,
     Compact,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Reopen {
+    /// Where the user was: the open command, its search, filter and selection.
+    #[default]
+    Restore,
+    /// Where the user was if it hid less than a minute ago, else the root search.
+    Minute,
+    /// Always the root search.
+    Root,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
