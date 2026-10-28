@@ -1,58 +1,147 @@
 //! Styling: one layout stylesheet using named colors, two palettes (light and
-//! dark) swapped at runtime, the user's override, and the desktop's color
+//! dark, each with an accent) swapped at runtime, the user's override, and the desktop's color
 //! scheme, followed live when the theme is "system".
 
-use backslash_core::config::Theme;
+use backslash_core::config::{Accent, Config, Density, Theme};
 use gtk::prelude::*;
 use gtk::{gdk, gio, glib};
 
 const LAYOUT_CSS: &str = include_str!("style.css");
 
-const LIGHT: &str = "
-@define-color bs_bg #ffffff;
-@define-color bs_preview_bg #f8f9fb;
-@define-color bs_border #dcdfe6;
-@define-color bs_divider #eceef2;
-@define-color bs_fg #15171c;
-@define-color bs_dim #5b6170;
-@define-color bs_faint #8a90a0;
-@define-color bs_surface #f1f3f6;
-@define-color bs_selected rgba(36, 72, 200, 0.09);
-@define-color bs_accent #2448c8;
-@define-color bs_on_accent #ffffff;
-@define-color bs_shadow rgba(20, 24, 40, 0.18);
-@define-color bs_blue_bg #e8f0ff;   @define-color bs_blue #2448c8;
-@define-color bs_orange_bg #fff1e6; @define-color bs_orange #c2410c;
-@define-color bs_green_bg #e3f7ea;  @define-color bs_green #157a3c;
-@define-color bs_purple_bg #f1eaff; @define-color bs_purple #6d28d9;
-@define-color bs_yellow_bg #fdf6dc; @define-color bs_yellow #8a6a00;
-@define-color bs_red_bg #fde8e8;    @define-color bs_red #c62828;
-@define-color bs_teal_bg #ddf4f2;   @define-color bs_teal #0f766e;
-@define-color bs_gray_bg #eef0f3;   @define-color bs_gray #4a5060;
-";
+/// Named colors of one appearance. Status colors come in pairs: the color
+/// itself (text, icons) and a faint background for pills.
+struct Palette {
+    bg: &'static str,
+    panel: &'static str,
+    raise: &'static str,
+    line: &'static str,
+    fg: &'static str,
+    dim: &'static str,
+    faint: &'static str,
+    shadow: &'static str,
+    /// Selected rows: the accent at this opacity.
+    selection: f32,
+    /// red, orange, yellow, green, blue, purple, teal, pink, gray.
+    colors: [(&'static str, &'static str); 9],
+    /// Background opacity of colored pills.
+    pill: f32,
+}
 
-const DARK: &str = "
-@define-color bs_bg #17181c;
-@define-color bs_preview_bg #1c1d22;
-@define-color bs_border rgba(255, 255, 255, 0.09);
-@define-color bs_divider rgba(255, 255, 255, 0.06);
-@define-color bs_fg #ececf1;
-@define-color bs_dim #a1a5b2;
-@define-color bs_faint #7d8190;
-@define-color bs_surface rgba(255, 255, 255, 0.07);
-@define-color bs_selected rgba(124, 156, 255, 0.15);
-@define-color bs_accent #8fa8ff;
-@define-color bs_on_accent #101218;
-@define-color bs_shadow rgba(0, 0, 0, 0.5);
-@define-color bs_blue_bg rgba(96, 140, 255, 0.16);   @define-color bs_blue #9db8ff;
-@define-color bs_orange_bg rgba(255, 140, 60, 0.16); @define-color bs_orange #ffab78;
-@define-color bs_green_bg rgba(74, 222, 128, 0.14);  @define-color bs_green #7be8a4;
-@define-color bs_purple_bg rgba(167, 139, 250, 0.17); @define-color bs_purple #c2b0ff;
-@define-color bs_yellow_bg rgba(250, 204, 21, 0.14); @define-color bs_yellow #f5d565;
-@define-color bs_red_bg rgba(248, 113, 113, 0.16);   @define-color bs_red #ff9b9b;
-@define-color bs_teal_bg rgba(45, 212, 191, 0.14);   @define-color bs_teal #6ee9d6;
-@define-color bs_gray_bg rgba(255, 255, 255, 0.08);  @define-color bs_gray #c0c4cf;
-";
+const NAMES: [&str; 9] = ["red", "orange", "yellow", "green", "blue", "purple", "teal", "pink", "gray"];
+
+const LIGHT: Palette = Palette {
+    bg: "#ffffff",
+    panel: "#f8f8fa",
+    raise: "#efeff3",
+    line: "rgba(0, 0, 0, 0.08)",
+    fg: "#17171c",
+    dim: "#55555f",
+    faint: "#6b6b75",
+    shadow: "rgba(20, 22, 40, 0.20)",
+    selection: 0.10,
+    colors: [
+        ("red", "#cf222e"),
+        ("orange", "#bc4c00"),
+        ("yellow", "#9a6700"),
+        ("green", "#1a7f37"),
+        ("blue", "#0969da"),
+        ("purple", "#8250df"),
+        ("teal", "#1b7c83"),
+        ("pink", "#bf3989"),
+        ("gray", "#6b6b75"),
+    ],
+    pill: 0.10,
+};
+
+const DARK: Palette = Palette {
+    bg: "#141417",
+    panel: "#18181c",
+    raise: "#24242b",
+    line: "rgba(255, 255, 255, 0.08)",
+    fg: "#ececf1",
+    dim: "#a1a1aa",
+    faint: "#8e8e98",
+    shadow: "rgba(0, 0, 0, 0.55)",
+    selection: 0.15,
+    colors: [
+        ("red", "#ff7b72"),
+        ("orange", "#f0883e"),
+        ("yellow", "#e3b341"),
+        ("green", "#3fb950"),
+        ("blue", "#58a6ff"),
+        ("purple", "#bc8cff"),
+        ("teal", "#39c5cf"),
+        ("pink", "#f778ba"),
+        ("gray", "#8e8e98"),
+    ],
+    pill: 0.15,
+};
+
+/// The accent of each preset, for light and dark backgrounds.
+fn accent_colors(accent: Accent) -> (&'static str, &'static str) {
+    match accent {
+        Accent::Indigo => ("#5359e0", "#8b93ff"),
+        Accent::Blue => ("#0969da", "#58a6ff"),
+        Accent::Green => ("#1a7f37", "#3fb950"),
+        Accent::Orange => ("#bc4c00", "#f0883e"),
+        Accent::Pink => ("#bf3989", "#f778ba"),
+        Accent::Graphite => ("#3d3d45", "#c6c6cf"),
+    }
+}
+
+/// `#rrggbb` → `rgba(r, g, b, alpha)`.
+fn with_alpha(hex: &str, alpha: f32) -> String {
+    let h = hex.trim_start_matches('#');
+    let c = |i: usize| u8::from_str_radix(&h[i..i + 2], 16).unwrap_or(0);
+    format!("rgba({}, {}, {}, {alpha})", c(0), c(2), c(4))
+}
+
+/// The `@define-color` lines for an appearance and accent.
+fn palette_css(dark: bool, accent: Accent) -> String {
+    let p = if dark { &DARK } else { &LIGHT };
+    let (light_accent, dark_accent) = accent_colors(accent);
+    let accent = if dark { dark_accent } else { light_accent };
+    let on_accent = if dark && accent != "#c6c6cf" { "#101015" } else { "#ffffff" };
+    let mut css = format!(
+        "@define-color bs_bg {};\n@define-color bs_preview_bg {};\n@define-color bs_surface {};\n\
+         @define-color bs_border {};\n@define-color bs_divider {};\n@define-color bs_fg {};\n\
+         @define-color bs_dim {};\n@define-color bs_faint {};\n@define-color bs_shadow {};\n\
+         @define-color bs_accent {accent};\n@define-color bs_on_accent {on_accent};\n\
+         @define-color bs_selected {};\n@define-color bs_accent_bg {};\n",
+        p.bg,
+        p.panel,
+        p.raise,
+        p.line,
+        p.line,
+        p.fg,
+        p.dim,
+        p.faint,
+        p.shadow,
+        with_alpha(accent, p.selection),
+        with_alpha(accent, p.pill),
+    );
+    for (name, color) in p.colors {
+        css.push_str(&format!(
+            "@define-color bs_{name} {color};\n@define-color bs_{name}_bg {};\n",
+            with_alpha(color, p.pill)
+        ));
+    }
+    css
+}
+
+/// Color classes: `.accent-red` colors text and icons, a pill inside gets
+/// the faint background.
+fn color_classes() -> String {
+    let mut css = String::new();
+    for name in NAMES.iter().chain(["accent"].iter()) {
+        css.push_str(&format!(
+            ".accent-{name}, .tint-{name} glyph {{ color: @bs_{name}; }}\n\
+             .accent-{name} .tag, .tag.accent-{name} {{ color: @bs_{name}; background-color: @bs_{name}_bg; }}\n\
+             .tile.tint-{name} {{ background-color: @bs_{name}_bg; color: @bs_{name}; }}\n"
+        ));
+    }
+    css
+}
 
 pub struct Styles {
     palette: gtk::CssProvider,
@@ -61,11 +150,11 @@ pub struct Styles {
 impl Styles {
     pub fn install(display: &gdk::Display) -> Self {
         let palette = gtk::CssProvider::new();
-        palette.load_from_string(LIGHT);
+        palette.load_from_string(&palette_css(false, Accent::default()));
         gtk::style_context_add_provider_for_display(display, &palette, gtk::STYLE_PROVIDER_PRIORITY_APPLICATION);
 
         let layout = gtk::CssProvider::new();
-        layout.load_from_string(LAYOUT_CSS);
+        layout.load_from_string(&format!("{LAYOUT_CSS}\n{}", color_classes()));
         gtk::style_context_add_provider_for_display(display, &layout, gtk::STYLE_PROVIDER_PRIORITY_APPLICATION);
 
         let user = backslash_core::paths::config_dir().join("style.css");
@@ -80,16 +169,24 @@ impl Styles {
         Self { palette }
     }
 
-    /// Applies `theme` (resolving "system") to the palette and `window`.
-    pub fn apply(&self, theme: Theme, window: &impl IsA<gtk::Widget>) {
-        let dark = match theme {
+    /// Applies the appearance (resolving "system"), accent and density to
+    /// the palette and to `windows`.
+    pub fn apply(&self, config: &Config, windows: &[&gtk::Widget]) {
+        let dark = match config.theme {
             Theme::Light => false,
             Theme::Dark => true,
             Theme::System => system_prefers_dark(),
         };
-        self.palette.load_from_string(if dark { DARK } else { LIGHT });
-        window.remove_css_class(if dark { "light" } else { "dark" });
-        window.add_css_class(if dark { "dark" } else { "light" });
+        self.palette.load_from_string(&palette_css(dark, config.accent));
+        for window in windows {
+            window.remove_css_class(if dark { "light" } else { "dark" });
+            window.add_css_class(if dark { "dark" } else { "light" });
+            if config.density == Density::Compact {
+                window.add_css_class("compact");
+            } else {
+                window.remove_css_class("compact");
+            }
+        }
     }
 }
 

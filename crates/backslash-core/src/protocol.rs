@@ -43,6 +43,19 @@ pub struct ListView {
     pub layout: Layout,
     /// Tiles per line in a grid.
     pub columns: Option<u32>,
+    /// Choices shown as chips under the search bar (an assignee, a team…).
+    pub filter: Option<ListFilter>,
+    /// A short line in the footer: "12 issues · updated just now".
+    pub status: Option<String>,
+}
+
+/// Mutually exclusive choices that change what a list shows. Picking one
+/// sends `filter` and the extension answers with the new list.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct ListFilter {
+    pub options: Vec<DropdownOption>,
+    pub value: String,
 }
 
 /// How list items are shown.
@@ -78,6 +91,32 @@ pub struct Item {
     pub accessories: Vec<Accessory>,
     /// The first action is the primary one (Enter).
     pub actions: Vec<Action>,
+    /// Colors a symbolic icon (one of the [`Accessory::color`] names).
+    pub icon_tint: Option<String>,
+    /// What the side panel shows for this item; without it, the launcher
+    /// derives a summary from the title, subtitle and accessories.
+    pub detail: Option<ItemDetail>,
+}
+
+/// The side panel of a list item.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct ItemDetail {
+    /// A picture shown big at the top (album cover, screenshot): a URL from
+    /// the extension's `net` hosts, or an absolute path.
+    pub image: Option<String>,
+    /// Big numbers in a row of small cards: "3 · In progress".
+    pub stats: Vec<Stat>,
+    pub markdown: Option<String>,
+    pub metadata: Vec<MetadataEntry>,
+}
+
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Stat {
+    pub label: String,
+    pub value: String,
+    pub color: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
@@ -87,8 +126,13 @@ pub struct Accessory {
     /// Rendered as a pill.
     pub tag: Option<String>,
     pub icon: Option<String>,
-    /// One of the theme accents: `red`, `orange`, `yellow`, `green`, `blue`, `purple`, `gray`.
+    /// One of the theme accents: `red`, `orange`, `yellow`, `green`, `blue`,
+    /// `purple`, `teal`, `pink`, `gray`.
     pub color: Option<String>,
+    /// A person: initials in a colored circle, or a picture (URL or path).
+    pub avatar: Option<String>,
+    /// Shown on hover.
+    pub tooltip: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -106,6 +150,9 @@ pub struct Action {
     /// Ask the user before running the action.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub confirm: Option<String>,
+    /// Groups actions under a header in the action panel.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub section: Option<String>,
     #[serde(flatten)]
     pub kind: ActionKind,
 }
@@ -122,6 +169,14 @@ pub enum ActionKind {
     Paste { text: String },
     /// Handled by the extension (`action` request), which answers with an [`Effect`].
     Callback,
+    /// Opens more actions in the action panel. With `lazy`, they are asked
+    /// for (`submenu` request) when the user opens it.
+    Submenu {
+        #[serde(default)]
+        actions: Vec<Action>,
+        #[serde(default)]
+        lazy: bool,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
@@ -136,13 +191,35 @@ pub struct DetailView {
     pub actions: Vec<Action>,
     /// More text is coming (a streamed answer).
     pub loading: bool,
+    pub stats: Vec<Stat>,
+    /// A short line in the footer.
+    pub status: Option<String>,
 }
 
+/// One line of a side panel: a label and a value, which can be text with
+/// an icon, colored tags, a link, a person or a progress bar. A `separator`
+/// draws a line instead.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct MetadataEntry {
     pub label: String,
     pub value: String,
+    pub icon: Option<String>,
+    pub color: Option<String>,
+    pub tags: Vec<Tag>,
+    /// Opened when the value is clicked.
+    pub link: Option<String>,
+    pub avatar: Option<String>,
+    /// From 0 to 1.
+    pub progress: Option<f64>,
+    pub separator: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Tag {
+    pub text: String,
+    pub color: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
@@ -267,6 +344,40 @@ mod tests {
             serde_json::from_value(json!({ "type": "list", "layout": "grid", "columns": 8, "items": [] })).unwrap();
         let View::List(list) = view else { panic!("expected a list") };
         assert_eq!((list.layout, list.columns), (Layout::Grid, Some(8)));
+    }
+
+    #[test]
+    fn rich_items_filters_and_submenus() {
+        let view: View = serde_json::from_value(json!({
+            "type": "list",
+            "filter": { "options": [{ "value": "me", "title": "Mine" }], "value": "me" },
+            "items": [{
+                "id": "ENG-1", "title": "Crash", "icon": "bs-circle-half", "iconTint": "yellow",
+                "accessories": [{ "avatar": "Ada Lovelace" }],
+                "detail": {
+                    "stats": [{ "label": "Points", "value": "3" }],
+                    "metadata": [
+                        { "label": "Labels", "tags": [{ "text": "Bug", "color": "red" }] },
+                        { "separator": true },
+                        { "label": "Progress", "progress": 0.5 }
+                    ]
+                },
+                "actions": [{ "id": "s", "title": "Status", "kind": "submenu", "section": "Issue", "actions": [
+                    { "id": "s1", "title": "Done", "kind": "callback" }
+                ] }]
+            }]
+        }))
+        .unwrap();
+        let View::List(list) = view else { panic!("expected a list") };
+        assert_eq!(list.filter.unwrap().value, "me");
+        let item = &list.items[0];
+        assert_eq!(item.icon_tint.as_deref(), Some("yellow"));
+        let detail = item.detail.as_ref().unwrap();
+        assert_eq!(detail.metadata[0].tags[0].color.as_deref(), Some("red"));
+        assert!(detail.metadata[1].separator);
+        assert_eq!(item.actions[0].section.as_deref(), Some("Issue"));
+        let ActionKind::Submenu { actions, lazy } = &item.actions[0].kind else { panic!("expected a submenu") };
+        assert_eq!((actions.len(), *lazy), (1, false));
     }
 
     #[test]

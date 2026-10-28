@@ -97,6 +97,7 @@ fn with_body(mut r: Row, body: String) -> Row {
         subtitle: r.subtitle.clone(),
         facts: Vec::new(),
         body: Some(body),
+        ..Default::default()
     });
     r
 }
@@ -129,11 +130,11 @@ pub fn rows(s: &State, desktop: &Desktop) -> Vec<Row> {
             ),
         ),
     };
-    let mut shortcut = row("shortcut", "Open Backslash with a shortcut", &subtitle, "input-keyboard", "blue", "Set up");
+    let mut shortcut = row("shortcut", "Open Backslash with a shortcut", &subtitle, "bs-keyboard", "blue", "Set up");
     shortcut.accessories = vec![tag];
     shortcut.actions = match desktop.shortcut {
         Status::Active | Status::Pending => {
-            vec![UiAction::new("Change Shortcut…", Op::EditHotkey).icon("input-keyboard")]
+            vec![UiAction::new("Change Shortcut…", Op::EditHotkey).icon("bs-keyboard")]
         }
         _ => {
             let mut a = Vec::new();
@@ -143,18 +144,18 @@ pub fn rows(s: &State, desktop: &Desktop) -> Vec<Row> {
                         "Open Keyboard Settings",
                         Op::Spawn("gnome-control-center".into(), vec!["keyboard".into()]),
                     )
-                    .icon("preferences-desktop-keyboard"),
+                    .icon("bs-keyboard"),
                 ),
                 Kind::Kde => a.push(
                     UiAction::new(
                         "Open Shortcut Settings",
                         Op::Spawn("systemsettings".into(), vec!["kcm_keys".into()]),
                     )
-                    .icon("preferences-desktop-keyboard"),
+                    .icon("bs-keyboard"),
                 ),
                 _ => {}
             }
-            a.push(UiAction::new("Copy Command", Op::Copy("backslash".into())).icon("edit-copy"));
+            a.push(UiAction::new("Copy Command", Op::Copy("backslash".into())).icon("bs-copy"));
             a
         }
     };
@@ -166,7 +167,7 @@ pub fn rows(s: &State, desktop: &Desktop) -> Vec<Row> {
         Theme::Light => "Light",
         Theme::Dark => "Dark",
     };
-    let mut look = row("theme", "Choose light or dark", theme, "preferences-desktop-appearance", "yellow", "Set up");
+    let mut look = row("theme", "Choose light or dark", theme, "bs-palette", "yellow", "Set up");
     look.actions = vec![UiAction::new("Change Theme", Op::OpenBuiltin(Builtin::Theme))];
     rows.push(look);
 
@@ -175,7 +176,7 @@ pub fn rows(s: &State, desktop: &Desktop) -> Vec<Row> {
         "autostart",
         "Start with your session",
         if s.autostart { "On: always ready" } else { "Off: starts on first use" },
-        "system-run",
+        "bs-power",
         "green",
         "Set up",
     );
@@ -196,7 +197,7 @@ pub fn rows(s: &State, desktop: &Desktop) -> Vec<Row> {
         } else {
             "Install wl-clipboard to record in the background"
         },
-        "edit-paste",
+        "bs-paste",
         "purple",
         "Set up",
     );
@@ -212,7 +213,7 @@ pub fn rows(s: &State, desktop: &Desktop) -> Vec<Row> {
         Op::SetClipboard(!c.clipboard.enabled),
     )];
     if c.clipboard.enabled && !watcher && kind != Kind::Gnome {
-        clip.actions.push(UiAction::new("Copy Package Name", Op::Copy("wl-clipboard".into())).icon("edit-copy"));
+        clip.actions.push(UiAction::new("Copy Package Name", Op::Copy("wl-clipboard".into())).icon("bs-copy"));
     }
     rows.push(with_body(
         clip,
@@ -227,14 +228,14 @@ pub fn rows(s: &State, desktop: &Desktop) -> Vec<Row> {
         None if wayland() => "Install wtype (Sway, Hyprland) or ydotool; until then items are copied",
         None => "Install xdotool; until then items are copied",
     };
-    let mut paste_row = row("paste", "Paste into apps", paste_hint, "edit-paste", "orange", "Set up");
+    let mut paste_row = row("paste", "Paste into apps", paste_hint, "bs-paste", "orange", "Set up");
     paste_row.accessories = vec![match s.paste {
         Some(_) => status("Ready", "green"),
         None => status("Optional", "gray"),
     }];
     if s.paste.is_none() {
         let package = if wayland() { "wtype" } else { "xdotool" };
-        paste_row.actions = vec![UiAction::new("Copy Package Name", Op::Copy(package.into())).icon("edit-copy")];
+        paste_row.actions = vec![UiAction::new("Copy Package Name", Op::Copy(package.into())).icon("bs-copy")];
     }
     rows.push(with_body(
         paste_row,
@@ -261,13 +262,12 @@ pub fn rows(s: &State, desktop: &Desktop) -> Vec<Row> {
             "overlay",
             "Show as an overlay",
             "Install gtk4-layer-shell, or make the window float",
-            "preferences-system-windows",
+            "bs-window",
             "teal",
             "Set up",
         );
         overlay.accessories = vec![status("Optional", "gray")];
-        overlay.actions =
-            vec![UiAction::new("Copy Package Name", Op::Copy("gtk4-layer-shell".into())).icon("edit-copy")];
+        overlay.actions = vec![UiAction::new("Copy Package Name", Op::Copy("gtk4-layer-shell".into())).icon("bs-copy")];
         rows.push(with_body(
             overlay,
             "With gtk4-layer-shell installed, Backslash opens above everything, centered, on Sway, Hyprland, KDE and other Wayland desktops. Without it, a window rule does the job:\n\nHyprland:\nwindowrulev2 = float, class:^(app\\.backslash\\.Backslash)$\n\nSway:\nfor_window [app_id=\"app.backslash.Backslash\"] floating enable".into(),
@@ -280,7 +280,7 @@ pub fn rows(s: &State, desktop: &Desktop) -> Vec<Row> {
         "runtime",
         "Extensions runtime",
         if deno { "Deno is installed" } else { "Deno, about 40 MB, downloaded when first needed" },
-        "application-x-executable",
+        "bs-box",
         "gray",
         "Set up",
     );
@@ -292,7 +292,7 @@ pub fn rows(s: &State, desktop: &Desktop) -> Vec<Row> {
         status("Optional", "gray")
     }];
     if !deno {
-        rt.actions = vec![UiAction::new("Download Now", Op::InstallRuntime).icon("folder-download")];
+        rt.actions = vec![UiAction::new("Download Now", Op::InstallRuntime).icon("bs-download")];
     }
     rows.push(with_body(
         rt,
@@ -304,30 +304,24 @@ pub fn rows(s: &State, desktop: &Desktop) -> Vec<Row> {
         "store",
         "Add extensions",
         "AI, browser history, media, projects, ports, Wi-Fi and Bluetooth…",
-        "system-software-install",
+        "bs-package",
         "blue",
         "Then",
     );
     store.actions = vec![UiAction::new("Browse Extensions", Op::OpenBuiltin(Builtin::Store))];
     rows.push(store);
 
-    let mut tips = row("tips", "Make it yours", "A few keys worth knowing", "help-about", "teal", "Then");
-    tips.actions = vec![UiAction::new("Open Settings", Op::OpenBuiltin(Builtin::Settings))];
+    let mut tips = row("tips", "Make it yours", "A few keys worth knowing", "bs-info", "teal", "Then");
+    tips.actions = vec![UiAction::new("Open Settings", Op::OpenSettings)];
     rows.push(with_body(
         tips,
         "Type anything: apps, commands, 12*7, 5 km in miles, 20 € in $.\nTab: filter apps or commands.\nCtrl+K: every action of the selected item.\nCtrl+K → Set Alias…: type \"ff\" to get Firefox first.\nCtrl+K → Set Hotkey…: open anything with its own shortcut.\nEsc: back, then close."
             .into(),
     ));
 
-    let mut done = row(
-        "done",
-        "Start using Backslash",
-        "You can come back here with \"Welcome\"",
-        "object-select",
-        "green",
-        "Then",
-    );
-    done.actions = vec![UiAction::new("Get Started", Op::FinishWelcome).icon("object-select")];
+    let mut done =
+        row("done", "Start using Backslash", "You can come back here with \"Welcome\"", "bs-check", "green", "Then");
+    done.actions = vec![UiAction::new("Get Started", Op::FinishWelcome).icon("bs-check")];
     rows.push(done);
 
     rows

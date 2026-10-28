@@ -195,18 +195,59 @@ Throwing shows the error in the launcher. That applies everywhere.
 ## Items
 
 ```ts
+import { Icons, meta } from "@backslash/api";
+
 {
   id: "unique-id",            // keeps the selection across refreshes (default: title)
   title: "react",
   subtitle: "A JavaScript library",
-  icon: "package-x-generic",  // icon name, /absolute/path.png, or "🔥"
+  icon: { source: Icons.package, tint: "blue" },  // or a theme icon name, /absolute/path.png, a URL, "🔥"
   section: "Recent",          // grouped under a header
   keywords: ["ui"],           // extra words to match
   tags: ["v19.0.0"],          // pills on the right
-  accessories: [{ text: "75%", color: "red" }],
+  accessories: [{ text: "75%", color: "red", tooltip: "Coverage" }, { avatar: "Ada Lovelace" }],
+  detail: {                   // the preview panel on the right
+    stats: [{ label: "Downloads", value: "25M" }],
+    markdown: "A JavaScript library for building user interfaces.",
+    metadata: [
+      meta.text("Version", "19.0.0", { icon: Icons.tag }),
+      meta.tags("Keywords", [{ text: "ui", color: "blue" }, "web"]),
+      meta.separator(),
+      meta.person("Author", "Meta"),  // initials, or pass a picture URL
+      meta.link("Homepage", "react.dev", "https://react.dev"),
+      meta.progress("Coverage", 0.75),
+    ],
+  },
   actions: [ /* first = Enter, second = Ctrl+Enter, all in Ctrl+K */ ],
 }
 ```
+
+**Icons.** `Icons` lists Backslash's own glyphs (`Icons.inProgress`,
+`Icons.pullRequest`, `Icons.priorityHigh`…): crisp vector icons drawn in
+the theme's colors, the same on every desktop. Prefer them to theme icon
+names and emoji. `tint` takes `red`, `orange`, `yellow`, `green`, `teal`,
+`blue`, `purple`, `pink`, `gray` or a `#rrggbb` color. Pictures from the web
+(avatars, favicons, covers in `detail.image`) are shown only when their host
+is in your `net` permission.
+
+**Filters and status.** A list can offer a few views of its data as chips
+under the search field, cycled with Tab. The picked value is `ctx.filter`
+and is remembered:
+
+```ts
+export default list({
+  filter: { options: [{ value: "assigned", title: "Assigned" }, { value: "created", title: "Created" }] },
+  status: (items) => `${items.length} issues`,   // the footer line
+  async items({ filter }) { /* … */ },
+});
+```
+
+**Command subtitle.** `updateCommandMetadata({ subtitle: "3 in progress" })`
+shows a line under your command in the root search until the next update;
+`null` clears it.
+
+A `detail()` view takes `stats`, `status` and `metadata` as an array of
+`meta.*` lines too.
 
 ## Actions
 
@@ -216,8 +257,10 @@ Throwing shows the error in the launcher. That applies everywhere.
 | `copy(text, title?)` | in the launcher | copies and closes |
 | `paste(text, title?)` | in the launcher | pastes into the app the user was in (copies where the desktop doesn't allow it) |
 | `action(title, fn)` | your code | return a view to navigate to it, or an effect |
+| `submenu(title, actions)` | in the launcher | a second level in the action panel; pass a function to load it when it opens |
 
-Options for all of them: `{ icon, shortcut: "<Ctrl><Shift>c", destructive: true, confirm: "Really?" }`.
+Options for all of them: `{ icon, shortcut: "<Ctrl><Shift>c", destructive: true, confirm: "Really?", section: "Copy" }`.
+Actions with the same `section` are grouped under a header in Ctrl+K.
 `confirm` asks in the footer before running, keyboard only.
 
 **Effects** an action can return: `close(message?)`, `pop()`, `refresh()`

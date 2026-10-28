@@ -24,6 +24,8 @@ is for other languages and for contributors. The Rust types live in
 |---|---|---|
 | `start` | `{ command, arguments, preferences, query }` | Effect |
 | `search` | `{ view, query }` | View (a list) |
+| `filter` | `{ view, value }` | View (the list for that filter option) |
+| `submenu` | `{ action }` | Action[] (the content of a `lazy` submenu) |
 | `action` | `{ action, values? }` | Effect |
 | `$/cancel` (notification) | `{ id }` | — abort request `id` |
 
@@ -47,6 +49,7 @@ A cancelled request should answer with error code `-32800`.
 | `storage/keys` | `{}` | string[] |
 | `oauth/token` | `{ provider, interactive }` | access token; `null` when not signed in and `interactive` is `false` |
 | `oauth/signOut` | `{ provider }` | `null` |
+| `command/metadata` | `{ subtitle }` | `null`; the subtitle shown under the command in the root search (`null` clears it) |
 
 `provider` is an object with `id`, `authorizeUrl`, `tokenUrl`, `clientId`
 and optionally `title`, `clientSecret`, `scopes`, `scopeSeparator`, `params`,
@@ -69,18 +72,38 @@ and used to target `view/update`.
   "loading": false,
   "layout": "list",           // or "grid": tiles with a big icon and the title below
   "columns": null,            // tiles per line in a grid (default 6)
+  "filter": { "options": [{ "value": "mine", "title": "Mine" }], "value": "mine" },  // chips under the search field
+  "status": "3 in progress",  // footer line
   "items": [{
     "id": "react",
     "title": "react",
     "subtitle": "UI library",
-    "icon": "package-x-generic",   // theme icon name, absolute path, or emoji
+    "icon": "bs-package",       // a Backslash glyph (bs-*), theme icon name, absolute path, URL or emoji
+    "iconTint": "blue",         // colors a glyph
     "section": null,
     "keywords": [],
-    "accessories": [{ "text": "75%", "tag": null, "icon": null, "color": "red" }],
+    "accessories": [
+      { "text": "75%", "tag": null, "icon": null, "color": "red", "tooltip": "Coverage" },
+      { "avatar": "Ada Lovelace" }   // initials, or a picture URL from the `net` hosts
+    ],
+    "detail": {                 // the preview panel
+      "image": null,
+      "stats": [{ "label": "Downloads", "value": "25M", "color": null }],
+      "markdown": "A JavaScript library…",
+      "metadata": [
+        { "label": "Version", "value": "19.0.0", "icon": "bs-tag", "color": null },
+        { "label": "Keywords", "tags": [{ "text": "ui", "color": "blue" }] },
+        { "separator": true },
+        { "label": "Author", "value": "Meta", "avatar": "Meta" },
+        { "label": "Homepage", "value": "react.dev", "link": "https://react.dev" },
+        { "label": "Coverage", "value": "75%", "progress": 0.75 }
+      ]
+    },
     "actions": [
       { "id": "a1", "title": "Open", "kind": "open", "target": "https://…" },
-      { "id": "a2", "title": "Copy", "kind": "copy", "text": "…" },   // or "paste"
-      { "id": "a3", "title": "Details", "kind": "callback", "shortcut": "<Ctrl>d", "destructive": false, "confirm": null }
+      { "id": "a2", "title": "Copy", "kind": "copy", "text": "…", "section": "Copy" },   // or "paste"
+      { "id": "a3", "title": "Details", "kind": "callback", "shortcut": "<Ctrl>d", "destructive": false, "confirm": null },
+      { "id": "a4", "title": "Set Status", "kind": "submenu", "actions": [ /* … */ ], "lazy": false }
     ]
   }],
   "empty": { "title": "Type to search", "description": null, "icon": null },
@@ -89,7 +112,9 @@ and used to target `view/update`.
 ```
 
 ```jsonc
-{ "type": "detail", "id": "v2", "title": "react", "markdown": "# react", "metadata": [{ "label": "Version", "value": "19" }], "actions": [], "loading": false }
+{ "type": "detail", "id": "v2", "title": "react", "markdown": "# react",
+  "stats": [{ "label": "Stars", "value": "230k" }], "status": "Updated 2 h ago",
+  "metadata": [{ "label": "Version", "value": "19" }], "actions": [], "loading": false }
 ```
 
 ```jsonc
@@ -103,7 +128,13 @@ and used to target `view/update`.
 Field kinds: `text`, `password`, `textArea`, `checkbox`, `dropdown`.
 
 `open` and `copy` actions run inside the launcher without waking the
-extension; `callback` actions are sent back as `action` requests.
+extension; `callback` actions are sent back as `action` requests. A
+`submenu` opens a second level in the action panel; when `lazy` is true its
+actions are asked for with `submenu` the moment it opens. Actions sharing a
+`section` are grouped under a header.
+
+Colors (`iconTint`, `color`) are `red`, `orange`, `yellow`, `green`, `teal`,
+`blue`, `purple`, `pink`, `gray`, or a `#rrggbb` value.
 
 ## Effects
 

@@ -18,7 +18,6 @@ pub enum Builtin {
     Files,
     Windows,
     Theme,
-    Settings,
     Store,
     Welcome,
 }
@@ -30,7 +29,6 @@ impl Builtin {
             Self::Files => "Search Files",
             Self::Windows => "Switch Windows",
             Self::Theme => "Theme",
-            Self::Settings => "Settings",
             Self::Store => "Extensions",
             Self::Welcome => "Welcome to Backslash",
         }
@@ -42,7 +40,7 @@ impl Builtin {
             Self::Clipboard => ("Nothing copied yet", "Text you copy will show up here."),
             Self::Files => ("Search your files", "Type at least two letters. Recent files appear here."),
             Self::Windows => ("No open windows", ""),
-            Self::Theme | Self::Settings | Self::Welcome => ("", ""),
+            Self::Theme | Self::Welcome => ("", ""),
             Self::Store => ("No extensions found", "Check your connection, then open the store again."),
         }
     }
@@ -53,7 +51,6 @@ impl Builtin {
             Self::Files => "Search files in your home folder…",
             Self::Windows => "Search open windows…",
             Self::Theme => "Choose a theme…",
-            Self::Settings => "Search settings…",
             Self::Store => "Search extensions…",
             Self::Welcome => "Set up Backslash…",
         }
@@ -88,12 +85,6 @@ pub enum Op {
     /// Alias or global shortcut of a root search item, by row key.
     EditAlias(String),
     EditKeyHotkey(String),
-    ToggleExtension(String),
-    ConfigureExtension(String),
-    EditQuicklink(Option<usize>),
-    DeleteQuicklink(usize),
-    EditSnippet(Option<usize>),
-    DeleteSnippet(usize),
     UnhideApp(String),
     /// Allow the extension of the approval screen, then run its command.
     Approve,
@@ -115,7 +106,13 @@ pub enum Op {
     UninstallEntry(String),
     /// Download Deno, then run the command that needed it.
     InstallRuntime,
+    /// Opens the settings window.
+    OpenSettings,
     Back,
+    /// Opens more actions in the action panel.
+    Submenu(Vec<UiAction>),
+    /// Same, asked from the extension (by action id) when opened.
+    LazySubmenu(String),
 }
 
 #[derive(Clone)]
@@ -125,12 +122,19 @@ pub struct UiAction {
     pub shortcut: Option<String>,
     pub destructive: bool,
     pub confirm: Option<String>,
+    /// Header grouping it in the action panel.
+    pub section: Option<String>,
     pub op: Op,
 }
 
 impl UiAction {
     pub fn new(title: impl Into<String>, op: Op) -> Self {
-        Self { title: title.into(), icon: None, shortcut: None, destructive: false, confirm: None, op }
+        Self { title: title.into(), icon: None, shortcut: None, destructive: false, confirm: None, section: None, op }
+    }
+
+    pub fn section(mut self, section: &str) -> Self {
+        self.section = Some(section.into());
+        self
     }
 
     pub fn icon(mut self, icon: &str) -> Self {
@@ -159,6 +163,8 @@ impl UiAction {
             ActionKind::Copy { text } => Op::Copy(text.clone()),
             ActionKind::Paste { text } => Op::Paste(text.clone()),
             ActionKind::Callback => Op::Callback(a.id.clone()),
+            ActionKind::Submenu { lazy: true, .. } => Op::LazySubmenu(a.id.clone()),
+            ActionKind::Submenu { actions, .. } => Op::Submenu(actions.iter().map(Self::from_proto).collect()),
         };
         Self {
             title: a.title.clone(),
@@ -166,6 +172,7 @@ impl UiAction {
             shortcut: a.shortcut.clone(),
             destructive: a.destructive,
             confirm: a.confirm.clone(),
+            section: a.section.clone(),
             op,
         }
     }
@@ -183,10 +190,27 @@ pub enum RowStyle {
 #[derive(Clone, Default)]
 pub struct Preview {
     pub icon: Option<Icon>,
+    /// Tile color of a symbolic icon.
+    pub tint: Option<String>,
     pub title: String,
     pub subtitle: Option<String>,
-    pub facts: Vec<(String, String)>,
+    /// Big numbers in small cards.
+    pub stats: Vec<proto::Stat>,
+    /// A large color sample (clipboard colors).
+    pub swatch: Option<String>,
+    /// Markdown subset, shown as text.
+    pub markdown: Option<String>,
+    /// Monospace text in a box (file excerpts, copied code).
     pub body: Option<String>,
+    /// Plain text in a box (copied prose).
+    pub text: Option<String>,
+    /// An image file shown big (file search).
+    pub picture: Option<std::path::PathBuf>,
+    /// A picture from the web shown big (album cover).
+    pub image_url: Option<String>,
+    /// Label/value lines, before `metadata`.
+    pub facts: Vec<(String, String)>,
+    pub metadata: Vec<proto::MetadataEntry>,
 }
 
 #[derive(Clone, Default)]
@@ -196,8 +220,12 @@ pub struct Row {
     pub subtitle: Option<String>,
     pub icon: Option<Icon>,
     /// Accent of the icon tile: blue, orange, green, purple, yellow, red, teal.
+    /// Without one, the icon is drawn plain, colored by `icon_tint`.
     pub tint: Option<&'static str>,
+    pub icon_tint: Option<String>,
     pub accessories: Vec<Accessory>,
+    /// Typed to find it first; shown as a key cap.
+    pub alias: Option<String>,
     pub section: Option<String>,
     pub actions: Vec<UiAction>,
     pub style: RowStyle,
@@ -212,15 +240,25 @@ impl Row {
         }
         Preview {
             icon: self.icon.clone(),
+            tint: self.tint.map(str::to_owned).or_else(|| self.icon_tint.clone()),
             title: self.title.clone(),
             subtitle: self.subtitle.clone(),
-            facts: self
+            metadata: self
                 .accessories
                 .iter()
-                .filter_map(|a| a.text.clone().or_else(|| a.tag.clone()))
-                .map(|v| (String::new(), v))
+                .filter_map(|a| {
+                    let value = a.text.clone().or_else(|| a.tag.clone()).or_else(|| a.avatar.clone())?;
+                    Some(proto::MetadataEntry {
+                        label: a.tooltip.clone().unwrap_or_default(),
+                        value,
+                        icon: a.icon.clone(),
+                        color: a.color.clone(),
+                        avatar: a.avatar.clone(),
+                        ..Default::default()
+                    })
+                })
                 .collect(),
-            body: None,
+            ..Default::default()
         }
     }
 }
@@ -278,12 +316,6 @@ pub enum FormPurpose {
     Preferences {
         extension_id: String,
         then_run: Option<String>,
-    },
-    Quicklink {
-        index: Option<usize>,
-    },
-    Snippet {
-        index: Option<usize>,
     },
     Hotkey,
     Alias {
