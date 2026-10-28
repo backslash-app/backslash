@@ -7,7 +7,7 @@ Apps, files, clipboard, math, and your whole dev stack, one keystroke away.</p>
 
 <p align="center">
   <a href="https://github.com/backslash-app/backslash/releases/latest"><img src="https://img.shields.io/github/v/release/backslash-app/backslash?style=flat-square&color=e81cff&label=release" alt="Latest release"/></a>
-  <a href="https://github.com/backslash-app/plugins"><img src="https://img.shields.io/badge/extensions-100-7a22d6?style=flat-square" alt="100 extensions"/></a>
+  <a href="https://github.com/backslash-app/plugins"><img src="https://img.shields.io/badge/extensions-growing_every_week-7a22d6?style=flat-square" alt="Extensions"/></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-3b1d8f?style=flat-square" alt="MIT"/></a>
   <a href="https://discord.gg/sTzwBzDkK9"><img src="https://img.shields.io/badge/chat-Discord-5865f2?style=flat-square" alt="Discord"/></a>
 </p>
@@ -51,14 +51,14 @@ JWT without leaving the keyboard.
 |---|---|
 | ⚡ **Instant** | One small Rust + GTK4 binary that stays in the background. Wayland and X11. |
 | 🐧 **Made for Linux** | Your apps (Flatpak and Snap too), your icon theme, your light or dark mode. GNOME, KDE, Hyprland, Sway, niri… |
-| 🧩 **100 extensions** | Install them from the built-in store. Each one says what it may access, you approve it once, and the sandbox enforces it. |
+| 🧩 **Extensions for everything** | A large and growing library, installed from the built-in store. Each one says what it may access, you approve it once, and the sandbox enforces it. |
 | 🛠️ **Built for developers** | Extensions in TypeScript, no build step. Scripts in any language become commands. Everything runs from the terminal too: `backslash run github/pull-requests --json`. |
 | 📋 **Useful from day one** | Calculator and conversions as you type, clipboard history, file search, window switcher, snippets and quicklinks. |
 | 🔓 **Yours** | Open source (MIT). No account, no telemetry, no paywall. Plain config files for your dotfiles. |
 
 ## Extensions for developers
 
-A few of the [100 first-party extensions](https://github.com/backslash-app/plugins#first-party-extensions):
+A few of the [many extensions](https://github.com/backslash-app/plugins#first-party-extensions), with more added all the time:
 
 | | |
 |---|---|
