@@ -12,7 +12,8 @@ Thanks for helping! Questions and ideas are welcome on
 cargo run                                    # the launcher, using ./sdk and your installed extensions
 BACKSLASH_EXTENSIONS_PATH=$PWD/extensions cargo run   # with the bundled extensions
 cargo run -- run npm/search react            # CLI
-make check                                   # everything CI runs
+make check                                   # what CI runs, but the UI tests
+make ui-test                                 # the window in Xvfb, driven by xdotool
 ```
 
 `backslash dev <dir>` runs a separate instance (`app.backslash.Backslash.Devel`)
@@ -33,7 +34,9 @@ Protocol changes must update `protocol.rs`, `sdk/`, and `docs/PROTOCOL.md` toget
 
 - Keep them focused; describe the user-visible change.
 - `make check` must pass (format, clippy, tests, Deno lint and type check).
-- New behavior in `backslash-core` comes with a test.
+- New behavior in `backslash-core` comes with a test. Keyboard and window
+  behavior can be tested in `crates/backslash/tests/ui.rs`: the launcher
+  writes what it shows to `BACKSLASH_UI_TRACE` as JSON.
 
 ## Releasing
 

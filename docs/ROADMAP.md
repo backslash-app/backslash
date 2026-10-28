@@ -48,4 +48,4 @@ the CLI and two bundled extensions. Next steps, roughly in order.
 - [x] Settings window: shortcut, theme, accent color, density, extensions, clipboard, quicklinks, snippets.
 - [x] More themes and window sizes.
 - [ ] Localization (French first).
-- [ ] UI tests driving the window under a virtual display in CI.
+- [x] UI tests driving the window under a virtual display in CI.

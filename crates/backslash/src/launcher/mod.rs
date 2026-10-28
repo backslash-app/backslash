@@ -15,6 +15,7 @@ mod settings;
 mod settings_window;
 mod signin;
 mod store;
+mod trace;
 mod welcome;
 mod widgets;
 
@@ -712,6 +713,7 @@ impl Launcher {
     fn start_services(self: &Rc<Self>) {
         self.watch_dev_dir();
         self.start_background();
+        self.start_trace();
         // Pictures (avatars, favicons) arrive after the rows: redraw them.
         let weak = Rc::downgrade(self);
         crate::images::on_ready(move || {
