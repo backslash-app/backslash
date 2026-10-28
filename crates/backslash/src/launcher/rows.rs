@@ -976,30 +976,36 @@ pub fn builtin_rows(s: &mut State, builtin: Builtin, query: &str) -> Vec<Row> {
         }
         Builtin::Theme => {
             let current = s.config.theme;
-            let entries = [
-                (Theme::System, "System", "Follow the desktop's light or dark preference", "bs-monitor"),
-                (Theme::Light, "Light", "Bright and calm", "bs-sun"),
-                (Theme::Dark, "Dark", "Easy on the eyes at night", "bs-moon"),
-            ]
-            .into_iter()
-            .map(|(theme, title, about, icon)| {
-                let row = Row {
-                    key: format!("theme:{title}"),
-                    title: title.into(),
-                    subtitle: Some(about.into()),
-                    icon: Some(Icon::Spec(icon.into())),
-                    tint: Some("yellow"),
-                    accessories: if theme == current {
-                        vec![Accessory { tag: Some("Current".into()), ..Default::default() }]
-                    } else {
-                        Vec::new()
-                    },
-                    actions: vec![UiAction::new("Use Theme", Op::SetTheme(theme)).icon("bs-check")],
-                    ..Default::default()
-                };
-                (entry(title, &[]), row)
-            })
-            .collect();
+            let entries = Theme::ALL
+                .into_iter()
+                .map(|theme| {
+                    let (about, icon) = match theme {
+                        Theme::System => ("Follow the desktop's light or dark preference", "bs-monitor"),
+                        Theme::Light => ("Bright and calm", "bs-sun"),
+                        Theme::Dark => ("Easy on the eyes at night", "bs-moon"),
+                        t if t.is_dark() == Some(false) => ("A light theme", "bs-palette"),
+                        _ => ("A dark theme", "bs-palette"),
+                    };
+                    (theme, theme.name(), about, icon)
+                })
+                .map(|(theme, title, about, icon)| {
+                    let row = Row {
+                        key: format!("theme:{title}"),
+                        title: title.into(),
+                        subtitle: Some(about.into()),
+                        icon: Some(Icon::Spec(icon.into())),
+                        tint: Some("yellow"),
+                        accessories: if theme == current {
+                            vec![Accessory { tag: Some("Current".into()), ..Default::default() }]
+                        } else {
+                            Vec::new()
+                        },
+                        actions: vec![UiAction::new("Use Theme", Op::SetTheme(theme)).icon("bs-check")],
+                        ..Default::default()
+                    };
+                    (entry(title, &[]), row)
+                })
+                .collect();
             ranked_rows(&mut s.ranker, query, entries)
         }
     }

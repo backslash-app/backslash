@@ -139,9 +139,11 @@ also edit them by hand or keep them in your dotfiles.
 `~/.config/backslash/config.toml`:
 
 ```toml
-theme = "system"          # "light", "dark" or "system"
-accent = "indigo"         # "blue", "green", "orange", "pink" or "graphite"
+theme = "system"          # "light", "dark", "nord", "dracula", "catppuccin-mocha", "catppuccin-latte",
+                          # "gruvbox", "solarized-light", "tokyo-night"
+accent = "theme"          # the theme's own, or "indigo", "blue", "green", "orange", "pink", "graphite"
 density = "comfortable"   # or "compact"
+window_size = "medium"    # "small" or "large"
 hotkey = "Super+Space"
 tray = true               # the icon in the system tray
 check_updates = true      # look for new versions of Backslash

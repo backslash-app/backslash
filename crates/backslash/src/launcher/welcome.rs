@@ -164,8 +164,7 @@ pub fn rows(s: &State, desktop: &Desktop) -> Vec<Row> {
     // 2. Look.
     let theme = match c.theme {
         Theme::System => "Follows your system",
-        Theme::Light => "Light",
-        Theme::Dark => "Dark",
+        other => other.name(),
     };
     let mut look = row("theme", "Choose light or dark", theme, "bs-palette", "yellow", "Set up");
     look.actions = vec![UiAction::new("Change Theme", Op::OpenBuiltin(Builtin::Theme))];

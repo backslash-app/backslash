@@ -57,10 +57,6 @@ pub struct Options {
     pub open: Option<String>,
 }
 
-const WIDTH: i32 = 860;
-const HEIGHT: i32 = 540;
-const LIST_WIDTH: i32 = 450;
-
 pub fn run(options: Options) -> anyhow::Result<()> {
     layer::reexec_if_needed(Config::load().layer_shell);
 
@@ -237,6 +233,8 @@ impl CommandMeta {
 
 pub struct Launcher {
     window: gtk::ApplicationWindow,
+    /// The rounded panel inside the window, sized by `window_size`.
+    panel: gtk::Box,
     styles: Styles,
     layer_shell: bool,
     entry: gtk::Entry,
@@ -304,8 +302,8 @@ impl Launcher {
         let window = gtk::ApplicationWindow::builder()
             .application(app)
             .title("Backslash")
-            .default_width(WIDTH)
-            .default_height(HEIGHT)
+            .default_width(860)
+            .default_height(540)
             .resizable(false)
             .decorated(false)
             .build();
@@ -315,7 +313,6 @@ impl Launcher {
         let panel = gtk::Box::new(gtk::Orientation::Vertical, 0);
         panel.add_css_class("panel");
         panel.set_overflow(gtk::Overflow::Hidden);
-        panel.set_size_request(WIDTH - 28, HEIGHT - 28);
 
         // Header: where you are (or the search icon), query, chips, spinner.
         let header = gtk::Box::new(gtk::Orientation::Horizontal, 12);
@@ -365,11 +362,7 @@ impl Launcher {
         list.add_css_class("results");
         list.set_selection_mode(gtk::SelectionMode::Browse);
         list.set_activate_on_single_click(true);
-        let scroller = gtk::ScrolledWindow::builder()
-            .hscrollbar_policy(gtk::PolicyType::Never)
-            .child(&list)
-            .width_request(LIST_WIDTH)
-            .build();
+        let scroller = gtk::ScrolledWindow::builder().hscrollbar_policy(gtk::PolicyType::Never).child(&list).build();
         let preview = gtk::Box::new(gtk::Orientation::Vertical, 16);
         preview.add_css_class("preview");
         preview.set_hexpand(true);
@@ -542,6 +535,7 @@ impl Launcher {
         let kwin = if window_backend.is_none() { crate::kwin::Kwin::new() } else { None };
         let launcher = Rc::new(Self {
             window,
+            panel,
             styles,
             layer_shell,
             entry,
@@ -1117,6 +1111,11 @@ impl Launcher {
         }
         let refs: Vec<&gtk::Widget> = windows.iter().collect();
         self.styles.apply(&config, &refs);
+        let (width, height, list) = config.window_size.pixels();
+        // The window is not resizable: it takes the panel's size, plus room for the shadow.
+        self.panel.set_size_request(width - 28, height - 28);
+        self.scroller.set_width_request(list);
+        self.window.set_default_size(width, height);
     }
 
     // -----------------------------------------------------------------------

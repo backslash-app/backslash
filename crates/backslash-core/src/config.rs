@@ -1,9 +1,11 @@
 //! `~/.config/backslash/config.toml`, hand-editable and dotfiles friendly.
 //!
 //! ```toml
-//! theme = "system"            # "light", "dark" or "system"
-//! accent = "indigo"           # indigo, blue, green, orange, pink, graphite
+//! theme = "system"            # "light", "dark", "system", "nord", "dracula", "catppuccin-mocha",
+//!                             # "catppuccin-latte", "gruvbox", "solarized-light", "tokyo-night"
+//! accent = "indigo"           # theme (the theme's own), indigo, blue, green, orange, pink, graphite
 //! density = "comfortable"     # or "compact"
+//! window_size = "medium"      # "small" or "large"
 //! reopen = "restore"          # where I was; "minute": for a minute; "root": always the search
 //! hotkey = "Super+Space"      # asked to the desktop through the GlobalShortcuts portal
 //!
@@ -51,6 +53,8 @@ pub struct Config {
     pub accent: Accent,
     /// `compact` fits more rows.
     pub density: Density,
+    /// `small`, `medium` or `large`.
+    pub window_size: WindowSize,
     /// What the launcher shows when it opens again after hiding (after an
     /// action, Escape, or losing the focus).
     pub reopen: Reopen,
@@ -86,6 +90,7 @@ impl Default for Config {
             theme: Theme::System,
             accent: Accent::default(),
             density: Density::default(),
+            window_size: WindowSize::default(),
             reopen: Reopen::default(),
             hotkey: "Super+Space".into(),
             layer_shell: true,
@@ -112,13 +117,96 @@ pub enum Theme {
     System,
     Light,
     Dark,
+    Nord,
+    Dracula,
+    #[serde(rename = "catppuccin-mocha")]
+    CatppuccinMocha,
+    #[serde(rename = "catppuccin-latte")]
+    CatppuccinLatte,
+    Gruvbox,
+    #[serde(rename = "solarized-light")]
+    SolarizedLight,
+    #[serde(rename = "tokyo-night")]
+    TokyoNight,
+}
+
+impl Theme {
+    pub const ALL: [Theme; 10] = [
+        Self::System,
+        Self::Light,
+        Self::Dark,
+        Self::Nord,
+        Self::Dracula,
+        Self::CatppuccinMocha,
+        Self::CatppuccinLatte,
+        Self::Gruvbox,
+        Self::SolarizedLight,
+        Self::TokyoNight,
+    ];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::System => "System",
+            Self::Light => "Light",
+            Self::Dark => "Dark",
+            Self::Nord => "Nord",
+            Self::Dracula => "Dracula",
+            Self::CatppuccinMocha => "Catppuccin Mocha",
+            Self::CatppuccinLatte => "Catppuccin Latte",
+            Self::Gruvbox => "Gruvbox",
+            Self::SolarizedLight => "Solarized Light",
+            Self::TokyoNight => "Tokyo Night",
+        }
+    }
+
+    /// Whether it is dark, light, or follows the desktop (`None`).
+    pub fn is_dark(self) -> Option<bool> {
+        match self {
+            Self::System => None,
+            Self::Light | Self::CatppuccinLatte | Self::SolarizedLight => Some(false),
+            _ => Some(true),
+        }
+    }
+}
+
+/// Size of the launcher window.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum WindowSize {
+    Small,
+    #[default]
+    Medium,
+    Large,
+}
+
+impl WindowSize {
+    pub const ALL: [WindowSize; 3] = [Self::Small, Self::Medium, Self::Large];
+
+    /// Width and height in pixels, and the width of the list next to the preview.
+    pub fn pixels(self) -> (i32, i32, i32) {
+        match self {
+            Self::Small => (740, 460, 390),
+            Self::Medium => (860, 540, 450),
+            Self::Large => (1020, 660, 520),
+        }
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Small => "Small",
+            Self::Medium => "Medium",
+            Self::Large => "Large",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Accent {
-    #[default]
     Indigo,
+    /// The named theme's own accent (indigo for System, Light and Dark).
+    #[default]
+    Theme,
     Blue,
     Green,
     Orange,
@@ -127,11 +215,13 @@ pub enum Accent {
 }
 
 impl Accent {
-    pub const ALL: [Accent; 6] = [Self::Indigo, Self::Blue, Self::Green, Self::Orange, Self::Pink, Self::Graphite];
+    pub const ALL: [Accent; 7] =
+        [Self::Theme, Self::Indigo, Self::Blue, Self::Green, Self::Orange, Self::Pink, Self::Graphite];
 
     pub fn name(self) -> &'static str {
         match self {
             Self::Indigo => "Indigo",
+            Self::Theme => "Theme",
             Self::Blue => "Blue",
             Self::Green => "Green",
             Self::Orange => "Orange",

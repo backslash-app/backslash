@@ -46,6 +46,6 @@ the CLI and two bundled extensions. Next steps, roughly in order.
 ## Quality
 - [x] Welcome checklist on first launch, with the real state of each step on this desktop.
 - [x] Settings window: shortcut, theme, accent color, density, extensions, clipboard, quicklinks, snippets.
-- [ ] More themes and window sizes.
+- [x] More themes and window sizes.
 - [ ] Localization (French first).
 - [ ] UI tests driving the window under a virtual display in CI.
