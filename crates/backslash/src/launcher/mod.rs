@@ -1764,10 +1764,21 @@ impl Launcher {
                     ]
                 }
                 FrameKind::Extension { view: View::List(l), .. } => from(&l.actions),
-                FrameKind::Builtin(Builtin::Store) => vec![UiAction::new("Refresh Extensions", Op::RefreshCatalog)
-                    .icon("bs-refresh")
-                    .shortcut("<Ctrl>r")
-                    .section("Extensions")],
+                FrameKind::Builtin(Builtin::Store) => {
+                    let mut actions = vec![UiAction::new("Refresh Extensions", Op::RefreshCatalog)
+                        .icon("bs-refresh")
+                        .shortcut("<Ctrl>r")
+                        .section("Extensions")];
+                    let lost = store::previous_ids(&s).len();
+                    if lost > 0 {
+                        actions.push(
+                            UiAction::new(format!("Reinstall Previously Installed ({lost})"), Op::ReinstallPrevious)
+                                .icon("bs-download")
+                                .section("Extensions"),
+                        );
+                    }
+                    actions
+                }
                 FrameKind::Root | FrameKind::Builtin(_) | FrameKind::AppUpdate => Vec::new(),
             }
         };
@@ -2542,6 +2553,10 @@ impl Launcher {
             Op::InstallEntry(id) => self.install_entry(id),
             Op::UpdateAll => self.update_all(),
             Op::RefreshCatalog => self.refresh_catalog(true, true),
+            Op::ReinstallPrevious => {
+                let ids = store::previous_ids(&self.state.borrow());
+                self.install_entries(ids);
+            }
             Op::Spawn(program, args) => {
                 if let Err(e) = std::process::Command::new(&program).args(&args).spawn() {
                     self.fail(format!("Could not start {program}: {e}"));

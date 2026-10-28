@@ -36,7 +36,10 @@ install:
 
 uninstall:
 	rm -f $(DESTDIR)$(PREFIX)/bin/backslash
-	rm -rf $(SHARE)/backslash
+	# Only what install put there: with PREFIX=~/.local, $(SHARE)/backslash is
+	# also where your installed extensions and their data live.
+	rm -rf $(SHARE)/backslash/sdk
+	for e in extensions/*/; do rm -rf "$(SHARE)/backslash/extensions/$$(basename $$e)"; done
 	rm -f $(SHARE)/applications/app.backslash.Backslash.desktop
 	rm -f $(SHARE)/icons/hicolor/512x512/apps/app.backslash.Backslash.png
 	rm -f $(SHARE)/icons/hicolor/scalable/apps/app.backslash.Backslash.svg
@@ -46,7 +49,7 @@ uninstall:
 dist: all
 	rm -rf dist
 	$(MAKE) install DESTDIR=dist/root PREFIX=/usr
-	tar -czf dist/backslash-$(VERSION)-$(ARCH).tar.gz -C dist/root/usr --owner=0 --group=0 .
+	tar -czf dist/backslash-$(VERSION)-$(ARCH)-linux.tar.gz -C dist/root/usr --owner=0 --group=0 .
 	ARCH=$(DEB_ARCH) VERSION=$(VERSION) nfpm package -f packaging/nfpm.yaml -p deb -t dist/
 	ARCH=$(DEB_ARCH) VERSION=$(VERSION) nfpm package -f packaging/nfpm.yaml -p rpm -t dist/
 	cd dist && sha256sum *.tar.gz *.deb *.rpm > SHA256SUMS
