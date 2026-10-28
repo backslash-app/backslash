@@ -1931,6 +1931,10 @@ impl Launcher {
                 self.open_action_panel();
                 return Stop;
             }
+            gdk::Key::comma if ctrl => {
+                self.open_settings(None);
+                return Stop;
+            }
             _ => {}
         }
 

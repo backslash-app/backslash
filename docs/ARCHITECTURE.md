@@ -34,14 +34,15 @@
   under XDG directories, friendly to dotfiles.
 - **Linux-native.** Applications come from GIO (all XDG rules, Flatpak and Snap
   exports, D-Bus activation), the color scheme from the settings portal,
-  icons from the user's icon theme.
+  icons from the user's icon theme (and Backslash's own `bs-*` glyphs, drawn
+  in the theme's colors so extensions look the same on every desktop).
 
 ## Crates and folders
 
 | Path | Role |
 |---|---|
 | `crates/backslash-core` | Protocol types, manifest parsing, extension host, ranking, calculator, unit conversions, config, `catalog` (registry: fetch, verify, install, publish), `approvals`, `secrets`, and `system/` (clipboard history store, file search, window backends). No GTK. |
-| `crates/backslash` | GTK4 window (`launcher/`: state and navigation, rows, widgets), CLI (`cli.rs`), app discovery (`apps.rs`), themes (`theme.rs` palettes + `style.css` layout), global shortcut portal (`hotkey.rs`), layer-shell (`layer.rs`), clipboard watcher, exchange rates, autostart. |
+| `crates/backslash` | GTK4 window (`launcher/`: state and navigation, rows, widgets, settings window), CLI (`cli.rs`), app discovery (`apps.rs`), icons (`glyphs.rs`: Backslash's own vector icons, `icons.rs`: tiles, avatars, accessories), pictures from the web (`images.rs`, limited to the extension's `net` hosts), themes (`theme.rs` palettes and accents + `style.css` layout), global shortcut portal (`hotkey.rs`), layer-shell (`layer.rs`), clipboard watcher, exchange rates, autostart. |
 | `sdk/` | TypeScript API (`mod.ts`) and protocol runtime (`runtime.ts`), run by Deno. |
 | `extensions/` | Bundled extensions, also the reference examples. |
 
