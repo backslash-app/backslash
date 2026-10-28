@@ -1,10 +1,10 @@
 [extension]
 id = "system"
 title = "System"
-version = "1.0.0"
+version = "1.1.0"
 description = "Power, volume and processes"
 author = "Backslash"
-icon = "preferences-system"
+icon = "bs-settings"
 license = "MIT"
 
 [permissions]
@@ -14,13 +14,13 @@ run = ["systemctl", "loginctl", "wpctl", "pactl", "ps", "kill"]
 name = "power"
 title = "Power"
 description = "Lock, suspend, restart or shut down"
-icon = "system-shutdown"
+icon = "bs-power"
 keywords = ["shutdown", "reboot", "restart", "suspend", "sleep", "lock", "logout"]
 
 [[commands]]
 name = "volume"
 title = "Set Volume"
-icon = "audio-volume-high"
+icon = "bs-speaker"
 keywords = ["sound", "audio", "mute"]
 mode = "no-view"
 [[commands.arguments]]
@@ -35,5 +35,5 @@ required = true
 name = "processes"
 title = "Processes"
 description = "Find and stop running processes"
-icon = "utilities-system-monitor"
+icon = "bs-cpu"
 keywords = ["kill", "task manager", "top"]

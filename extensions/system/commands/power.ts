@@ -1,23 +1,23 @@
-import { action, close, exec, list } from "@backslash/api";
+import { action, close, type Color, exec, Icons, list } from "@backslash/api";
 
-const power = (title: string, icon: string, program: string, args: string[], confirm?: string) => ({
+const power = (title: string, icon: string, tint: Color, program: string, args: string[], confirm?: string) => ({
   title,
-  icon,
+  icon: { source: icon, tint },
   actions: [
     action(title, async () => {
       await exec(program, args);
       return close();
-    }, { confirm, destructive: Boolean(confirm) }),
+    }, { icon, confirm, destructive: Boolean(confirm) }),
   ],
 });
 
 export default list({
   placeholder: "Power…",
   items: [
-    power("Lock Screen", "system-lock-screen", "loginctl", ["lock-session"]),
-    power("Suspend", "weather-clear-night", "systemctl", ["suspend"]),
-    power("Restart", "system-reboot", "systemctl", ["reboot"], "Restart now?"),
-    power("Shut Down", "system-shutdown", "systemctl", ["poweroff"], "Shut down now?"),
-    power("Log Out", "system-log-out", "loginctl", ["terminate-user", "self"], "Log out now?"),
+    power("Lock Screen", Icons.lock, "blue", "loginctl", ["lock-session"]),
+    power("Suspend", Icons.moon, "purple", "systemctl", ["suspend"]),
+    power("Restart", Icons.refresh, "orange", "systemctl", ["reboot"], "Restart now?"),
+    power("Shut Down", Icons.power, "red", "systemctl", ["poweroff"], "Shut down now?"),
+    power("Log Out", Icons.arrowRight, "gray", "loginctl", ["terminate-user", "self"], "Log out now?"),
   ],
 });

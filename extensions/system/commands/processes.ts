@@ -1,4 +1,4 @@
-import { action, copy, exec, list, refresh } from "@backslash/api";
+import { action, copy, exec, Icons, list, meta, refresh } from "@backslash/api";
 
 interface Process {
   pid: string;
@@ -17,30 +17,49 @@ async function processes(): Promise<Process[]> {
   });
 }
 
+let total = 0;
+
 export default list({
   placeholder: "Filter processes…",
-  items: async () =>
-    (await processes()).slice(0, 200).map((p) => ({
+  status: (items) => `${items.length} of ${total} processes · by CPU`,
+  items: async () => {
+    const all = await processes();
+    total = all.length;
+    return all.slice(0, 200).map((p) => ({
       id: p.pid,
       title: p.name,
       subtitle: p.command,
-      icon: "application-x-executable",
+      icon: { source: Icons.cpu, tint: p.cpu > 50 ? "red" : p.cpu > 10 ? "orange" : "gray" },
       keywords: [p.pid, p.user],
       accessories: [
-        { text: `${p.cpu.toFixed(1)}% CPU`, color: p.cpu > 50 ? "red" : undefined },
-        { text: `${p.memMb.toFixed(0)} MB` },
-        { tag: p.pid },
+        { text: `${p.cpu.toFixed(1)}%`, color: p.cpu > 50 ? "red" : undefined, tooltip: "CPU" },
+        { text: `${p.memMb.toFixed(0)} MB`, tooltip: "Memory" },
       ],
+      detail: {
+        stats: [{ label: "CPU", value: `${p.cpu.toFixed(1)}%` }, {
+          label: "Memory",
+          value: `${p.memMb.toFixed(0)} MB`,
+        }],
+        metadata: [
+          meta.text("PID", p.pid, { icon: Icons.hash }),
+          meta.person("User", p.user),
+          meta.progress("CPU", Math.min(p.cpu / 100, 1), `${p.cpu.toFixed(1)}%`),
+          meta.separator(),
+          meta.text("Command", p.command),
+        ],
+      },
       actions: [
         action("Stop Process", async () => {
           await exec("kill", [p.pid]);
           return refresh();
-        }, { icon: "process-stop", destructive: true }),
+        }, { icon: Icons.stop, destructive: true }),
         action("Force Kill", async () => {
           await exec("kill", ["-9", p.pid]);
           return refresh();
-        }, { icon: "process-stop", destructive: true, confirm: `Force kill ${p.name}?`, shortcut: "<Ctrl><Shift>k" }),
-        copy(p.pid, "Copy PID", { shortcut: "<Ctrl><Shift>c" }),
+        }, { icon: Icons.cross, destructive: true, confirm: `Force kill ${p.name}?`, shortcut: "<Ctrl><Shift>k" }),
+        copy(p.pid, "Copy PID", { shortcut: "<Ctrl><Shift>c", section: "Copy" }),
+        copy(p.command, "Copy Command", { section: "Copy" }),
       ],
-    })),
+    }));
+  },
 });

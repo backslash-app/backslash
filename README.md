@@ -31,6 +31,9 @@
 - **Extensions that are easy to write.** TypeScript, no build step, no
   `node_modules`. Describe a list, the launcher does the rest: fuzzy search,
   keyboard navigation, action panel, cancellation of slow requests.
+- **Information, not just lists.** A preview panel with key numbers, tags,
+  people, links and progress; filters (<kbd>Tab</kbd>), sections, submenus in
+  the action panel, and live subtitles in the root search ("2 in progress").
 - **Useful out of the box.** Calculator and unit/currency conversions as you
   type, clipboard history, file search with previews, window switcher,
   quicklinks and snippets.
@@ -59,17 +62,22 @@ title = "Search npm Packages"
 `commands/search.ts`:
 
 ```ts
-import { copy, list, open } from "@backslash/api";
+import { copy, Icons, list, meta, open } from "@backslash/api";
 
 export default list({
   placeholder: "Search npm packages…",
   async search(query, { signal }) {
     const res = await fetch(`https://registry.npmjs.org/-/v1/search?text=${query}`, { signal });
     const { objects } = await res.json();
-    return objects.map(({ package: pkg }) => ({
+    return objects.map(({ package: pkg, downloads }) => ({
       title: pkg.name,
       subtitle: pkg.description,
+      icon: { source: Icons.package, tint: "red" },
       tags: [`v${pkg.version}`],
+      detail: {
+        stats: [{ label: "Weekly downloads", value: downloads.weekly.toLocaleString() }],
+        metadata: [meta.text("License", pkg.license), meta.person("Publisher", pkg.publisher.username)],
+      },
       actions: [open(pkg.links.npm), copy(`npm install ${pkg.name}`, "Copy Install Command")],
     }));
   },
@@ -87,8 +95,10 @@ The [registry](https://github.com/backslash-app/plugins) lists extensions that
 live in their authors' repositories, each pinned to a reviewed commit with a
 checksum: you see exactly what an extension may do before installing, and
 Backslash refuses any file that differs from what was reviewed. First-party
-extensions: GitHub, Packages (apt/dnf/pacman/zypper/Flathub), Services
-(systemd), Containers (Docker/Podman), Emoji & Symbols.
+extensions: GitHub, Linear, Todoist, AI (Claude, OpenAI, Mistral, Groq,
+OpenRouter, Ollama), Media Controls, Browser, Code Projects, Network & Devices,
+Timers, Ports, Packages (apt/dnf/pacman/zypper/Flathub), Services (systemd),
+Containers (Docker/Podman), Emoji & Symbols.
 
 ## Install
 
@@ -161,10 +171,10 @@ Run the **Enable Launch at Login** command so Backslash is always ready.
 | Key | Action |
 |---|---|
 | type | search apps and commands; math and conversions are computed as you type |
-| <kbd>Tab</kbd> | filter: All, Apps, Commands |
+| <kbd>Tab</kbd> | filter: All, Apps, Commands (and an extension's own filters) |
 | <kbd>↑</kbd> <kbd>↓</kbd> / <kbd>Ctrl</kbd>+<kbd>N</kbd> <kbd>P</kbd> | move |
 | <kbd>Enter</kbd> / <kbd>Ctrl</kbd>+<kbd>Enter</kbd> | primary / secondary action |
-| <kbd>Ctrl</kbd>+<kbd>K</kbd> | all actions |
+| <kbd>Ctrl</kbd>+<kbd>K</kbd> | all actions; <kbd>→</kbd> opens a submenu, <kbd>←</kbd> goes back |
 | <kbd>Esc</kbd> / <kbd>Backspace</kbd> on empty search | back, then close |
 
 Results learn from you: what you pick for a given query comes first next time.
@@ -189,7 +199,8 @@ Built in:
 - **Switch Windows**: Hyprland, Sway, niri, KDE Plasma (through a KWin
   script, nothing to install), GNOME (through a tiny Shell extension the
   launcher installs for you, or "Window Calls") and X11.
-- **Change Theme**: light, dark, or following the system.
+- **Settings**: a window for the shortcut, theme, accent color, density,
+  extensions, clipboard history, quicklinks and snippets.
 
 ## Script commands
 
@@ -220,15 +231,18 @@ files.
 
 ## Make it yours
 
-Everything is in the **Settings** command: theme, shortcut, launch at login,
-clipboard history, extensions (enable, see their permissions, configure them),
-quicklinks, snippets and hidden apps. It all lives in plain files, so you can
+Everything is in the **Settings** window (<kbd>Ctrl</kbd>+<kbd>,</kbd>, or the
+Settings command): shortcut, launch at login, theme, accent color and density,
+clipboard history, extensions (enable, aliases and hotkeys of each command,
+permissions, preferences), quicklinks, snippets and hidden apps. It all lives in plain files, so you can
 also edit them by hand or keep them in your dotfiles.
 
 `~/.config/backslash/config.toml`:
 
 ```toml
 theme = "system"          # "light", "dark" or "system"
+accent = "indigo"         # "blue", "green", "orange", "pink" or "graphite"
+density = "comfortable"   # or "compact"
 hotkey = "Super+Space"
 hidden_apps = ["org.gnome.Tour.desktop"]
 
