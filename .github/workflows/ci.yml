@@ -56,5 +56,7 @@ jobs:
         run: pacman -Syu --noconfirm --needed git openssh
       - name: Prepare the AUR package
         run: |
-          latest=$(curl -fsSL "https://api.github.com/repos/$GITHUB_REPOSITORY/releases/latest" | sed -n 's/.*"tag_name": *"v\([^"]*\)".*/\1/p')
+          # From the tags, not the API, which rate-limits shared runners.
+          latest=$(git ls-remote --tags --refs "https://github.com/$GITHUB_REPOSITORY" 'v*' | sed 's|.*refs/tags/v||' | sort -V | tail -1)
+          [ -n "$latest" ] || { echo "::error::No release tag found"; exit 1; }
           packaging/aur/publish.sh "$latest"
