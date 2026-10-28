@@ -151,7 +151,7 @@ pub fn fill_preview(container: &gtk::Box, preview: &Preview) {
     }
     if let Some(md) = preview.markdown.as_deref().filter(|m| !m.trim().is_empty()) {
         let text = gtk::Label::new(None);
-        text.set_markup(&markdown::to_pango(md));
+        markdown::set(&text, md);
         text.add_css_class("preview-text");
         text.set_wrap(true);
         text.set_wrap_mode(gtk::pango::WrapMode::WordChar);

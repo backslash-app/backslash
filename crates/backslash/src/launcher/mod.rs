@@ -1601,7 +1601,7 @@ impl Launcher {
         }
         self.entry.set_editable(false);
         self.entry.set_placeholder_text(d.title.as_deref());
-        self.detail.set_markup(&markdown::to_pango(&d.markdown));
+        markdown::set(&self.detail, &d.markdown);
         while let Some(child) = self.metadata.first_child() {
             self.metadata.remove(&child);
         }
