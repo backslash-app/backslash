@@ -98,6 +98,8 @@ pub enum Op {
     UpdateAll,
     /// Fetches the latest registry now and says what changed.
     RefreshCatalog,
+    /// Installs again every extension that was approved but is gone.
+    ReinstallPrevious,
     /// Starts a program (desktop settings panels).
     Spawn(String, Vec<String>),
     /// Leaves the welcome screen for the search.

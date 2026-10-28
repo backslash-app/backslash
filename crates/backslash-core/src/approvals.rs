@@ -46,6 +46,22 @@ pub fn approve(manifest: &Manifest) -> anyhow::Result<()> {
     store::write_json(&path(), &approved)
 }
 
+/// Extensions the user approved at some point. An installed extension that
+/// is missing from disk but still listed here was lost, not uninstalled.
+pub fn approved_ids() -> Vec<String> {
+    let approved: BTreeMap<String, Vec<String>> = store::read_json(&path());
+    approved.into_keys().collect()
+}
+
+/// Forgets an extension's approval (when it is uninstalled on purpose).
+pub fn forget(id: &str) -> anyhow::Result<()> {
+    let mut approved: BTreeMap<String, Vec<String>> = store::read_json(&path());
+    if approved.remove(id).is_some() {
+        store::write_json(&path(), &approved)?;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

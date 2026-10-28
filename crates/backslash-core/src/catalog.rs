@@ -453,6 +453,8 @@ pub fn uninstall(loc: &Locations, id: &str) -> Result<()> {
         bail!("{id} is not installed in {}", loc.extensions.display());
     }
     std::fs::remove_dir_all(&dir)?;
+    // Uninstalled on purpose: it isn't offered back under "Previously Installed".
+    crate::approvals::forget(id)?;
     Ok(())
 }
 

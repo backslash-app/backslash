@@ -28,6 +28,21 @@ pub enum Status {
     Available,
     Installed,
     Update,
+    /// Approved once, no longer on disk: lost (e.g. by the 0.5.0 tarball
+    /// update), as uninstalling forgets the approval.
+    Previous,
+}
+
+/// Registry extensions that were installed and approved, then lost.
+pub fn previous_ids(s: &State) -> Vec<String> {
+    let loc = Locations::user(&s.config);
+    let approved = backslash_core::approvals::approved_ids();
+    s.catalog
+        .entries
+        .iter()
+        .filter(|e| approved.contains(&e.id) && catalog::installed(&loc, &e.id).is_none())
+        .map(|e| e.id.clone())
+        .collect()
 }
 
 pub fn status(loc: &Locations, entry: &Entry) -> Status {
@@ -40,17 +55,22 @@ pub fn status(loc: &Locations, entry: &Entry) -> Status {
 
 pub fn rows(s: &State) -> Vec<Row> {
     let loc = Locations::user(&s.config);
+    let previous = previous_ids(s);
     let mut rows: Vec<(u8, Row)> = s
         .catalog
         .entries
         .iter()
         .map(|e| {
-            let status = status(&loc, e);
+            let status = match status(&loc, e) {
+                Status::Available if previous.contains(&e.id) => Status::Previous,
+                other => other,
+            };
             let busy = s.catalog.busy.as_deref() == Some(e.id.as_str());
             let (order, section, tag, color) = match status {
                 Status::Update => (0, "Updates", "Update", "orange"),
-                Status::Installed => (1, "Installed", "Installed", "green"),
-                Status::Available => (2, "Available", "", "gray"),
+                Status::Previous => (1, "Previously Installed", "Removed", "red"),
+                Status::Installed => (2, "Installed", "Installed", "green"),
+                Status::Available => (3, "Available", "", "gray"),
             };
             let mut actions = Vec::new();
             match status {
@@ -63,11 +83,15 @@ pub fn rows(s: &State) -> Vec<Row> {
                         actions.push(UiAction::new("Update All", Op::UpdateAll).icon("bs-refresh"));
                     }
                 }
+                Status::Previous => {
+                    // "Reinstall Previously Installed (N)" is in the action panel.
+                    actions.push(UiAction::new("Reinstall…", Op::ReviewInstall(e.id.clone())).icon("bs-download"));
+                }
                 Status::Installed => {}
             }
             let page = repository_page(e);
             actions.push(UiAction::new("Open Source Code", Op::Open(page.clone())).icon("bs-external"));
-            if !matches!(status, Status::Available) {
+            if !matches!(status, Status::Available | Status::Previous) {
                 actions.push(
                     UiAction::new("Uninstall", Op::UninstallEntry(e.id.clone()))
                         .icon("bs-trash")
@@ -132,6 +156,13 @@ fn entry_metadata(e: &Entry, status: &Status) -> Vec<MetadataEntry> {
                 ..Default::default()
             },
             Status::Available => line("Status", "Not installed".into()),
+            Status::Previous => MetadataEntry {
+                label: "Status".into(),
+                value: "Was installed, then removed: reinstall it".into(),
+                icon: Some("bs-alert".into()),
+                color: Some("red".into()),
+                ..Default::default()
+            },
         },
         line("Version", e.version.clone()),
         line("Author", if e.author.is_empty() { "Unknown".into() } else { e.author.clone() }),

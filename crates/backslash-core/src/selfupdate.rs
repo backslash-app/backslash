@@ -198,7 +198,11 @@ pub fn asset_for<'a>(release: &'a Release, install: &Install, arch: &str) -> Opt
     let suffix = match install {
         Install::Deb => format!("_{deb_arch}.deb"),
         Install::Rpm => format!(".{arch}.rpm"),
-        Install::Tarball { .. } => format!("-{arch}.tar.gz"),
+        // Not `-{arch}.tar.gz`: Backslash 0.5.0 looks for that name and its
+        // tarball update deletes `<prefix>/share/backslash`, which holds the
+        // user's extensions in `~/.local`. With this name it finds no file
+        // and asks for a manual update instead.
+        Install::Tarball { .. } => format!("-{arch}-linux.tar.gz"),
         Install::Managed { .. } | Install::Source => return None,
     };
     release.assets.iter().find(|a| a.name.ends_with(&suffix))
@@ -298,15 +302,11 @@ pub fn apply(install: &Install, file: &Path) -> Result<()> {
 
 /// Unpacks a release tarball over `prefix`. Files are removed before being
 /// written again, because the running binary can't be overwritten in place.
+/// Nothing else is removed: with a `~/.local` prefix, `share/backslash` is
+/// also the user's data folder (installed extensions, their storage, Deno).
 pub fn unpack(tarball: &Path, prefix: &Path) -> Result<()> {
     let data = std::fs::read(tarball)?;
     let mut archive = tar::Archive::new(flate2::read::GzDecoder::new(&data[..]));
-    // Bundled extensions and the SDK are replaced as a whole, so ones the new
-    // version dropped don't linger.
-    let shared = prefix.join("share/backslash");
-    if shared.is_dir() {
-        std::fs::remove_dir_all(&shared)?;
-    }
     for entry in archive.entries()? {
         let mut entry = entry?;
         let path = entry.path()?.into_owned();
@@ -352,8 +352,8 @@ mod tests {
                 { "name": "SHA256SUMS", "browser_download_url": "https://x/SHA256SUMS" },
                 { "name": "backslash-0.5.0-1.aarch64.rpm", "browser_download_url": "https://x/a.rpm" },
                 { "name": "backslash-0.5.0-1.x86_64.rpm", "browser_download_url": "https://x/x.rpm" },
-                { "name": "backslash-0.5.0-aarch64.tar.gz", "browser_download_url": "https://x/a.tgz" },
-                { "name": "backslash-0.5.0-x86_64.tar.gz", "browser_download_url": "https://x/x.tgz" },
+                { "name": "backslash-0.5.0-aarch64-linux.tar.gz", "browser_download_url": "https://x/a.tgz" },
+                { "name": "backslash-0.5.0-x86_64-linux.tar.gz", "browser_download_url": "https://x/x.tgz" },
                 { "name": "backslash_0.5.0_amd64.deb", "browser_download_url": "https://x/x.deb" },
                 { "name": "backslash_0.5.0_arm64.deb", "browser_download_url": "https://x/a.deb" }
             ]
@@ -377,7 +377,7 @@ mod tests {
         assert_eq!(name(&Install::Deb, "aarch64"), Some("backslash_0.5.0_arm64.deb"));
         assert_eq!(name(&Install::Rpm, "x86_64"), Some("backslash-0.5.0-1.x86_64.rpm"));
         let tarball = Install::Tarball { prefix: "/home/me/.local".into() };
-        assert_eq!(name(&tarball, "aarch64"), Some("backslash-0.5.0-aarch64.tar.gz"));
+        assert_eq!(name(&tarball, "aarch64"), Some("backslash-0.5.0-aarch64-linux.tar.gz"));
         assert_eq!(name(&Install::Source, "x86_64"), None);
         assert_eq!(name(&Install::Deb, "riscv64"), None);
     }
@@ -437,7 +437,10 @@ mod tests {
 
         let prefix = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(prefix.path().join("bin")).unwrap();
-        std::fs::create_dir_all(prefix.path().join("share/backslash/extensions/dropped")).unwrap();
+        // With a ~/.local prefix, this is where the user's extensions live.
+        std::fs::create_dir_all(prefix.path().join("share/backslash/extensions/github")).unwrap();
+        std::fs::write(prefix.path().join("share/backslash/extensions/github/backslash.toml"), "mine").unwrap();
+        std::fs::create_dir_all(prefix.path().join("share/backslash/storage")).unwrap();
         std::fs::write(prefix.path().join("bin/backslash"), "old").unwrap();
         std::fs::write(prefix.path().join("bin/other-tool"), "keep").unwrap();
         unpack(&tgz, prefix.path()).unwrap();
@@ -446,6 +449,7 @@ mod tests {
         assert_eq!(read("bin/backslash"), "new");
         assert_eq!(read("bin/other-tool"), "keep");
         assert_eq!(read("share/backslash/extensions/npm/backslash.toml"), "new");
-        assert!(!prefix.path().join("share/backslash/extensions/dropped").exists());
+        assert_eq!(read("share/backslash/extensions/github/backslash.toml"), "mine");
+        assert!(prefix.path().join("share/backslash/storage").is_dir());
     }
 }
