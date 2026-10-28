@@ -25,7 +25,7 @@ is for other languages and for contributors. The Rust types live in
 
 | Method | Params | Result |
 |---|---|---|
-| `start` | `{ command, arguments, preferences, query }` | Effect |
+| `start` | `{ command, arguments, preferences, query, launchType }` | Effect |
 | `search` | `{ view, query }` | View (a list) |
 | `filter` | `{ view, value }` | View (the list for that filter option) |
 | `submenu` | `{ action }` | Action[] (the content of a `lazy` submenu) |
@@ -33,6 +33,8 @@ is for other languages and for contributors. The Rust types live in
 | `$/cancel` (notification) | `{ id }` | — abort request `id` |
 
 `values` is set when submitting a form: the action id is then `"<form view id>:submit"`.
+`launchType` is `"userInitiated"`, or `"background"` when a command runs on
+its `interval` or refreshes its tray menu by itself.
 
 A cancelled request should answer with error code `-32800`.
 
@@ -129,6 +131,21 @@ and used to target `view/update`.
 ```
 
 Field kinds: `text`, `password`, `textArea`, `checkbox`, `dropdown`.
+
+A `menu-bar` command answers `start` with a menu, shown in the system tray:
+
+```jsonc
+{ "type": "menu", "id": "v4", "title": "3", "icon": "bs-inbox", "iconTint": null, "tooltip": "3 to review",
+  "items": [
+    { "id": "12", "title": "Fix the parser", "subtitle": null, "icon": null, "section": "To Review",
+      "enabled": true, "action": { "id": "v4:a1", "title": "Open", "kind": "open", "target": "https://…" }, "items": [] },
+    { "id": "Repositories", "title": "Repositories", "items": [ /* a submenu */ ] }
+  ] }
+```
+
+When an item with a `callback` action is clicked, the launcher starts the
+command again (`launchType` `"userInitiated"`), finds the item by its id path
+in the new menu and sends `action` with that item's action id.
 
 `open` and `copy` actions run inside the launcher without waking the
 extension; `callback` actions are sent back as `action` requests. A

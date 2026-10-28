@@ -193,7 +193,7 @@ impl Styles {
 /// `org.freedesktop.appearance color-scheme`: 1 = prefer dark, 2 = prefer
 /// light, 0 = no preference. Without a preference we look at the GTK theme
 /// name, then default to light (the main design).
-fn system_prefers_dark() -> bool {
+pub fn system_prefers_dark() -> bool {
     match portal_color_scheme() {
         Some(1) => true,
         Some(2) => false,

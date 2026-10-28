@@ -16,6 +16,14 @@ fn deno_available() -> bool {
 }
 
 fn start(command: &str, args: serde_json::Value) -> (Session, Result<Effect, RpcError>, tempfile::TempDir) {
+    start_as(command, args, "userInitiated")
+}
+
+fn start_as(
+    command: &str,
+    args: serde_json::Value,
+    launch_type: &str,
+) -> (Session, Result<Effect, RpcError>, tempfile::TempDir) {
     let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
     let registry = Registry::scan(&[fixtures]);
     let (ext, cmd) = registry.resolve(&format!("demo/{command}")).expect("fixture command");
@@ -29,7 +37,10 @@ fn start(command: &str, args: serde_json::Value) -> (Session, Result<Effect, Rpc
     let launch = launch_for(ext, cmd, &sdk).unwrap();
     let session = Session::spawn("demo", &launch, state.path()).unwrap();
     let reply = session
-        .request("start", json!({ "command": command, "arguments": args, "preferences": {}, "query": "" }))
+        .request(
+            "start",
+            json!({ "command": command, "arguments": args, "preferences": {}, "query": "", "launchType": launch_type }),
+        )
         .unwrap()
         .wait(T)
         .map(|v| serde_json::from_value(v).unwrap());
@@ -135,4 +146,21 @@ fn detail_streams_its_markdown() {
     }
     assert!(updates.len() >= 2, "text arrives in several updates: {updates:?}");
     assert_eq!(updates.last().unwrap(), "Once upon a time");
+}
+
+#[test]
+fn tray_menus() {
+    if !deno_available() {
+        return;
+    }
+    let (session, reply, _state) = start_as("tray", json!({}), "background");
+    let Effect::Push { view: View::Menu(menu) } = reply.unwrap() else { panic!("expected a menu") };
+    assert_eq!((menu.title.as_deref(), menu.icon.as_deref()), (Some("2"), Some("bs-bell")));
+    assert_eq!(menu.items[0].title, "background");
+    assert!(!menu.items[0].enabled);
+    assert_eq!(menu.items[1].section.as_deref(), Some("Mail"));
+    let archive = menu.find(&["Inbox".into(), "Archive".into()]).unwrap();
+    let action = archive.action.as_ref().unwrap();
+    let effect = session.request("action", json!({ "action": action.id })).unwrap().wait(T).unwrap();
+    assert_eq!(effect, json!({ "type": "close", "message": "Archived" }));
 }

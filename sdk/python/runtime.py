@@ -75,7 +75,7 @@ bs._set_rpc(rpc)
 
 # --- State -------------------------------------------------------------------
 
-session = {"command": "", "args": {}, "preferences": {}, "query": ""}
+session = {"command": "", "args": {}, "preferences": {}, "query": "", "launch_type": "userInitiated"}
 lifetime = threading.Event()
 view_ids = itertools.count(1)
 action_ids = itertools.count(1)
@@ -88,7 +88,8 @@ view_stops = {}
 
 
 def context(cancelled=None, filter=None):
-    return bs.Context(session["args"], session["preferences"], session["query"], cancelled or lifetime, filter)
+    return bs.Context(session["args"], session["preferences"], session["query"], cancelled or lifetime, filter,
+                      session["launch_type"])
 
 
 def call(fn, *args):
@@ -197,6 +198,38 @@ def items_json(items, view_id):
     return out
 
 
+def menu_items_json(items, view_id):
+    seen = {}
+    out = []
+    for item in items:
+        id = item.get("id") or item["title"]
+        n = seen.get(id, 0)
+        seen[id] = n + 1
+        if n:
+            id = f"{id}#{n}"
+        icon, tint = icon_json(item.get("icon"))
+        action = item.get("action")
+        out.append({
+            "id": id,
+            "title": item["title"],
+            "subtitle": item.get("subtitle"),
+            "icon": icon,
+            "iconTint": tint,
+            "section": item.get("section"),
+            "enabled": item.get("enabled", True),
+            "action": actions_json([action], view_id)[0] if action else None,
+            "items": menu_items_json(item.get("items") or [], view_id),
+        })
+    return out
+
+
+def menu_json(spec, id, ctx):
+    items = call(spec.items, ctx) if callable(spec.items) else spec.items
+    icon, tint = icon_json(spec.icon)
+    return {"type": "menu", "id": id, "title": spec.title, "icon": icon, "iconTint": tint,
+            "tooltip": spec.tooltip, "items": menu_items_json(items or [], id)}
+
+
 def filter_options(spec):
     return [bs._option(o) for o in spec.filter or []]
 
@@ -268,6 +301,8 @@ def render(view, filter=None):
     if isinstance(view, bs.List) and view.filter:
         filters[id] = filter if filter is not None else initial_filter(view)
     ctx = context(stop, filters.get(id))
+    if isinstance(view, bs.MenuBar):
+        return menu_json(view, id, ctx)
     if isinstance(view, bs.List):
         if view.search:
             return list_json(view, id, call(view.search, session["query"], ctx), False)
@@ -333,6 +368,8 @@ def stream_detail(spec, id, source, stop):
 def to_effect(outcome, view_id):
     if outcome is None:
         return {"type": "none"}
+    if isinstance(outcome, bs.MenuBar):
+        raise TypeError("an action cannot open a tray menu")
     if isinstance(outcome, bs.View):
         return {"type": "push", "view": render(outcome)}
     if not isinstance(outcome, bs.Effect):
@@ -372,6 +409,7 @@ def start(params, cancelled):
         args=params.get("arguments") or {},
         preferences=params.get("preferences") or {},
         query=params.get("query") or "",
+        launch_type="background" if params.get("launchType") == "background" else "userInitiated",
     )
     command = load_command()
     if isinstance(command, bs.View):

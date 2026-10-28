@@ -7,7 +7,7 @@ use crate::config::Config;
 use crate::host::{launch_for, Pending, Session};
 use crate::manifest::CommandDef;
 use crate::paths;
-use crate::protocol::StartParams;
+use crate::protocol::{LaunchType, StartParams};
 use crate::registry::Extension;
 
 /// Validates raw `name → text` argument values against the manifest.
@@ -35,6 +35,7 @@ pub fn start(
     config: &Config,
     arguments: Map<String, Value>,
     query: &str,
+    launch_type: LaunchType,
 ) -> Result<(Session, Pending)> {
     let (preferences, missing) = config.preferences(&ext.manifest);
     if !missing.is_empty() {
@@ -46,7 +47,8 @@ pub fn start(
     }
     let launch = launch_for(ext, command, &paths::sdk_dir())?;
     let session = Session::spawn(&ext.manifest.extension.id, &launch, &paths::data_dir().join("storage"))?;
-    let params = StartParams { command: command.name.clone(), arguments, preferences, query: query.to_string() };
+    let params =
+        StartParams { command: command.name.clone(), arguments, preferences, query: query.to_string(), launch_type };
     let pending = session.request("start", serde_json::to_value(params)?)?;
     Ok((session, pending))
 }

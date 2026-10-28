@@ -8,6 +8,7 @@
 //! are implemented here.
 
 mod appupdate;
+mod background;
 mod model;
 mod rows;
 mod settings;
@@ -27,7 +28,7 @@ use std::time::Duration;
 use backslash_core::config::{Config, Reopen};
 use backslash_core::host::{Incoming, RpcError, Session};
 use backslash_core::manifest::Runtime;
-use backslash_core::protocol::{self as proto, Effect, FieldKind, Filtering, FormView, View};
+use backslash_core::protocol::{self as proto, Effect, FieldKind, Filtering, FormView, LaunchType, View};
 use backslash_core::registry::{CommandEntry, Registry};
 use backslash_core::scripts::{self, Mode as ScriptMode, Script};
 use backslash_core::search::{Ranker, Usage};
@@ -202,6 +203,8 @@ pub(super) struct State {
     hidden_at: Option<std::time::Instant>,
     /// A new version of Backslash itself.
     app_update: appupdate::AppUpdate,
+    /// Commands running on their own: intervals and tray menus.
+    background: background::Background,
 }
 
 /// Subtitles set by commands with `updateCommandMetadata`, kept on disk.
@@ -611,6 +614,7 @@ impl Launcher {
                 early_updates: Vec::new(),
                 hidden_at: None,
                 app_update: Default::default(),
+                background: Default::default(),
                 gnome_helper_needed: window_backend.is_none()
                     && backslash_core::system::windows::is_gnome()
                     && std::env::var_os("WAYLAND_DISPLAY").is_some(),
@@ -713,6 +717,7 @@ impl Launcher {
     /// Background services, started once the application is registered.
     fn start_services(self: &Rc<Self>) {
         self.watch_dev_dir();
+        self.start_background();
         // Pictures (avatars, favicons) arrive after the rows: redraw them.
         let weak = Rc::downgrade(self);
         crate::images::on_ready(move || {
@@ -1129,7 +1134,8 @@ impl Launcher {
                 FrameKind::Root => ("Backslash".to_string(), "list"),
                 FrameKind::Builtin(b) => (b.title().to_string(), "list"),
                 FrameKind::Extension { view: View::List(_), title, .. } => (title.clone(), "list"),
-                FrameKind::Extension { view: View::Detail(_), title, .. } => (title.clone(), "detail"),
+                // Menus go to the tray and are never pushed; shown empty if one were.
+                FrameKind::Extension { view: View::Detail(_) | View::Menu(_), title, .. } => (title.clone(), "detail"),
                 FrameKind::Extension { view: View::Form(_), title, .. } => (title.clone(), "form"),
                 FrameKind::Form { form, .. } => (form.title.clone().unwrap_or_default(), "form"),
                 FrameKind::Approval { .. } => ("Permissions".to_string(), "detail"),
@@ -1172,6 +1178,7 @@ impl Launcher {
                     View::List(l) => l.title.clone(),
                     View::Detail(d) => d.title.clone(),
                     View::Form(f) => f.title.clone(),
+                    View::Menu(m) => m.title.clone(),
                 };
                 let parent = frames.len().checked_sub(2).map(|i| &frames[i].kind);
                 let text = match (parent, view_title) {
@@ -1720,7 +1727,9 @@ impl Launcher {
             let from = |actions: &[proto::Action]| actions.iter().map(UiAction::from_proto).collect::<Vec<_>>();
             match &s.frames.last().unwrap().kind {
                 FrameKind::Extension { view: View::Detail(d), .. } => return from(&d.actions),
-                FrameKind::Extension { view: View::Form(_), .. } | FrameKind::Form { .. } => return Vec::new(),
+                FrameKind::Extension { view: View::Form(_) | View::Menu(_), .. } | FrameKind::Form { .. } => {
+                    return Vec::new()
+                }
                 FrameKind::ConfirmInstall { id } => {
                     return vec![
                         UiAction::new("Install", Op::InstallEntry(id.clone())).icon("bs-check"),
@@ -2620,6 +2629,8 @@ impl Launcher {
             Started((Session, backslash_core::host::Pending), String, Map<String, Value>),
             Push(FrameKind),
             Failed(String),
+            /// A tray menu: refreshed rather than opened.
+            Tray,
         }
         let prepared = {
             let s = self.state.borrow();
@@ -2638,6 +2649,8 @@ impl Launcher {
                             purpose: FormPurpose::Preferences { extension_id: ext_id, then_run: Some(id.into()) },
                             form: settings::preferences_form(manifest, &s.config),
                         })
+                    } else if command.mode == backslash_core::manifest::CommandMode::MenuBar {
+                        Prepared::Tray
                     } else if arguments.is_none() && !command.arguments.is_empty() {
                         Prepared::Push(FrameKind::Form {
                             purpose: FormPurpose::Arguments { command_id: id.into() },
@@ -2645,7 +2658,7 @@ impl Launcher {
                         })
                     } else {
                         let arguments = arguments.unwrap_or_default();
-                        match runner::start(ext, command, &s.config, arguments.clone(), "") {
+                        match runner::start(ext, command, &s.config, arguments.clone(), "", LaunchType::UserInitiated) {
                             Ok(started) => Prepared::Started(started, command.title.clone(), arguments),
                             Err(e) => Prepared::Failed(format!("{e:#}")),
                         }
@@ -2657,6 +2670,10 @@ impl Launcher {
             Prepared::Started(started, title, arguments) => (started, title, arguments),
             Prepared::Failed(e) => return self.fail(e),
             Prepared::Push(kind) => return self.push(kind),
+            Prepared::Tray => {
+                self.run_in_background(id);
+                return self.flash_and_hide("Shown in the system tray");
+            }
         };
 
         let session = Rc::new(session);
@@ -3670,6 +3687,7 @@ fn view_id_ref(view: &View) -> Option<&str> {
         View::List(v) => v.id.as_deref(),
         View::Detail(v) => v.id.as_deref(),
         View::Form(v) => v.id.as_deref(),
+        View::Menu(v) => v.id.as_deref(),
     }
 }
 

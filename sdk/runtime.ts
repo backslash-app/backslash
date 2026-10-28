@@ -14,6 +14,8 @@ import type {
   Icon,
   Item,
   ListSpec,
+  MenuBarItem,
+  MenuBarSpec,
   Metadata,
   Outcome,
   Stat,
@@ -57,13 +59,14 @@ interface Session {
   args: Record<string, unknown>;
   preferences: Record<string, unknown>;
   query: string;
+  launchType: Context["launchType"];
 }
 
-let session: Session = { command: "", args: {}, preferences: {}, query: "" };
+let session: Session = { command: "", args: {}, preferences: {}, query: "", launchType: "userInitiated" };
 const lifetime = new AbortController();
 let viewCounter = 0;
 let actionCounter = 0;
-const views = new Map<string, View>();
+const views = new Map<string, View | MenuBarSpec>();
 const callbacks = new Map<string, { viewId: string; run: (ctx: Context, values?: unknown) => unknown }>();
 const inflight = new Map<number, AbortController>();
 
@@ -71,8 +74,8 @@ const inflight = new Map<number, AbortController>();
 const filters = new Map<string, string>();
 
 function context(signal: AbortSignal = lifetime.signal, filter?: string): Context {
-  const { args, preferences, query } = session;
-  return { args, preferences, query, signal, filter };
+  const { args, preferences, query, launchType } = session;
+  return { args, preferences, query, signal, filter, launchType };
 }
 
 // --- Serialization -----------------------------------------------------------
@@ -176,6 +179,43 @@ function serializeItems(items: Item[], viewId: string): Json[] {
   });
 }
 
+/** Item ids default to titles, made unique, as for lists. */
+function menuItemsJson(items: MenuBarItem[], viewId: string): Json[] {
+  const seen = new Map<string, number>();
+  return items.map((item) => {
+    let id = item.id ?? item.title;
+    const n = seen.get(id) ?? 0;
+    seen.set(id, n + 1);
+    if (n > 0) id = `${id}#${n}`;
+    const { icon, tint } = iconJson(item.icon);
+    return {
+      id,
+      title: item.title,
+      subtitle: item.subtitle ?? null,
+      icon,
+      iconTint: tint,
+      section: item.section ?? null,
+      enabled: item.enabled ?? true,
+      action: item.action ? serializeActions([item.action], viewId)[0] : null,
+      items: menuItemsJson(item.items ?? [], viewId),
+    };
+  });
+}
+
+async function menuJson(spec: MenuBarSpec, id: string, ctx: Context): Promise<Json> {
+  const items = typeof spec.items === "function" ? await spec.items(ctx) : spec.items;
+  const { icon, tint } = iconJson(spec.icon);
+  return {
+    type: "menu",
+    id,
+    title: spec.title ?? null,
+    icon,
+    iconTint: tint,
+    tooltip: spec.tooltip ?? null,
+    items: menuItemsJson(items, id),
+  };
+}
+
 function isAsyncIterable(v: unknown): v is AsyncIterable<Item[]> {
   return typeof v === "object" && v !== null && Symbol.asyncIterator in v;
 }
@@ -225,7 +265,7 @@ function retire(viewId: string) {
   filters.delete(viewId);
 }
 
-async function render(view: View, signal: AbortSignal = lifetime.signal, filter?: string): Promise<Json> {
+async function render(view: View | MenuBarSpec, signal: AbortSignal = lifetime.signal, filter?: string): Promise<Json> {
   const id = `v${++viewCounter}`;
   views.set(id, view);
   const own = new AbortController();
@@ -235,6 +275,8 @@ async function render(view: View, signal: AbortSignal = lifetime.signal, filter?
   }
   const ctx = context(AbortSignal.any([signal, own.signal]), filters.get(id));
   switch (view[KIND]) {
+    case "menu":
+      return await menuJson(view, id, ctx);
     case "list": {
       if (view.search) {
         return listJson(view, id, await view.search(session.query, ctx), false);
@@ -371,6 +413,7 @@ const handlers: Record<string, (params: any, signal: AbortSignal) => Promise<Jso
       args: params.arguments ?? {},
       preferences: params.preferences ?? {},
       query: params.query ?? "",
+      launchType: params.launchType === "background" ? "background" : "userInitiated",
     };
     const command = await loadCommand();
     if (typeof command === "function") {

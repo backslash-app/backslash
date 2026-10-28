@@ -14,6 +14,69 @@ pub enum View {
     List(ListView),
     Detail(DetailView),
     Form(FormView),
+    /// What a `menu-bar` command shows in the system tray.
+    Menu(MenuView),
+}
+
+/// An icon in the system tray, with a menu.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct MenuView {
+    pub id: Option<String>,
+    /// Text next to the icon, where the tray shows one (GNOME, Ubuntu).
+    pub title: Option<String>,
+    /// Defaults to the command's icon.
+    pub icon: Option<String>,
+    pub icon_tint: Option<String>,
+    pub tooltip: Option<String>,
+    pub items: Vec<MenuItem>,
+}
+
+/// A line of a tray menu: runs its action when clicked, or opens `items`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct MenuItem {
+    /// Stable across runs (defaults to the title): a click runs the command
+    /// again and finds the item by its id.
+    pub id: String,
+    pub title: String,
+    pub subtitle: Option<String>,
+    pub icon: Option<String>,
+    pub icon_tint: Option<String>,
+    /// Items with the same section are grouped under a header.
+    pub section: Option<String>,
+    pub enabled: bool,
+    pub action: Option<Action>,
+    /// A submenu.
+    pub items: Vec<MenuItem>,
+}
+
+impl Default for MenuItem {
+    fn default() -> Self {
+        Self {
+            id: String::new(),
+            title: String::new(),
+            subtitle: None,
+            icon: None,
+            icon_tint: None,
+            section: None,
+            enabled: true,
+            action: None,
+            items: Vec::new(),
+        }
+    }
+}
+
+impl MenuView {
+    /// The item at `path` (ids from the top level down).
+    pub fn find(&self, path: &[String]) -> Option<&MenuItem> {
+        let (first, rest) = path.split_first()?;
+        let mut item = self.items.iter().find(|i| &i.id == first)?;
+        for id in rest {
+            item = item.items.iter().find(|i| &i.id == id)?;
+        }
+        Some(item)
+    }
 }
 
 /// Who filters list items when the user types.
@@ -300,6 +363,19 @@ pub struct StartParams {
     pub arguments: Map<String, Value>,
     pub preferences: Map<String, Value>,
     pub query: String,
+    #[serde(default)]
+    pub launch_type: LaunchType,
+}
+
+/// Why a command runs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum LaunchType {
+    /// The user opened it, or clicked its tray menu.
+    #[default]
+    UserInitiated,
+    /// On its `interval`, or a tray menu refreshing on its own.
+    Background,
 }
 
 /// Toast severity used by `toast` requests from extensions.
@@ -397,6 +473,31 @@ mod tests {
         )
         .unwrap();
         assert_eq!(secret.kind, ActionKind::Copy { text: "x".into(), concealed: true });
+    }
+
+    #[test]
+    fn menu_views() {
+        let view: View = serde_json::from_value(serde_json::json!({
+            "type": "menu", "id": "v1", "title": "3", "icon": "bs-bell",
+            "items": [
+                { "id": "inbox", "title": "Inbox", "items": [
+                    { "id": "pr", "title": "PR #12", "action": { "id": "v1:a1", "title": "Open", "kind": "callback" } }
+                ] },
+                { "id": "off", "title": "Disabled", "enabled": false }
+            ]
+        }))
+        .unwrap();
+        let View::Menu(menu) = view else { panic!("expected a menu") };
+        assert!(menu.items[0].enabled, "enabled by default");
+        assert!(!menu.items[1].enabled);
+        let pr = menu.find(&["inbox".into(), "pr".into()]).unwrap();
+        assert_eq!(pr.action.as_ref().unwrap().id, "v1:a1");
+        assert!(menu.find(&["pr".into()]).is_none());
+        let start: StartParams = serde_json::from_value(serde_json::json!({
+            "command": "c", "arguments": {}, "preferences": {}, "query": "", "launchType": "background"
+        }))
+        .unwrap();
+        assert_eq!(start.launch_type, LaunchType::Background);
     }
 
     #[test]

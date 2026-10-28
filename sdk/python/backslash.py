@@ -26,7 +26,7 @@ import threading
 from typing import Any, Callable, Iterable, Optional
 
 __all__ = [
-    "Context", "List", "Detail", "Form", "Item", "Icon",
+    "Context", "List", "Detail", "Form", "Item", "Icon", "MenuBar", "MenuItem",
     "Open", "Copy", "Paste", "Action", "Submenu",
     "close", "pop", "refresh", "replace",
     "field", "meta", "storage", "clipboard", "oauth",
@@ -46,7 +46,7 @@ class Context:
     """Everything a command receives when it starts or handles an action."""
 
     def __init__(self, args: dict, preferences: dict, query: str, cancelled: threading.Event,
-                 filter: Optional[str] = None):
+                 filter: Optional[str] = None, launch_type: str = "userInitiated"):
         #: Values of the command's ``[[commands.arguments]]``, already validated.
         self.args = args
         #: Values of the extension's ``[[preferences]]``, defaults applied.
@@ -59,6 +59,9 @@ class Context:
         self.cancelled = cancelled
         #: The chip picked in the list's ``filter``, if it has one.
         self.filter = filter
+        #: ``"background"`` when the command runs on its ``interval`` or
+        #: refreshes its tray menu by itself, ``"userInitiated"`` otherwise.
+        self.launch_type = launch_type
 
 
 # ---------------------------------------------------------------------------
@@ -126,6 +129,28 @@ class Form(View):
     def __init__(self, fields: list, submit: Callable, *, title: Optional[str] = None,
                  submit_title: Optional[str] = None):
         self.fields, self.submit, self.title, self.submit_title = fields, submit, title, submit_title
+
+
+class MenuBar(View):
+    """What a ``mode = "menu-bar"`` command shows: an icon in the system tray
+    with a menu. ``items`` is a list of ``MenuItem``, or a function of the
+    context returning one. Backslash runs the command when it starts, every
+    ``interval``, and when the user opens it; clicking an item runs it again
+    and calls the item's action."""
+
+    def __init__(self, items: Any, *, title: Optional[str] = None, icon: Any = None,
+                 tooltip: Optional[str] = None):
+        self.items, self.title, self.icon, self.tooltip = items, title, icon, tooltip
+
+
+def MenuItem(title: str, action: Any = None, *, id: Optional[str] = None, subtitle: Optional[str] = None,
+             icon: Any = None, section: Optional[str] = None, enabled: bool = True,
+             items: Optional[list] = None) -> dict:
+    """A line of a tray menu: ``action`` (``Open``, ``Copy``, ``Action``) runs
+    when it is clicked, ``items`` makes it a submenu. The id defaults to the
+    title and must stay the same from one run to the next."""
+    return {"title": title, "action": action, "id": id, "subtitle": subtitle, "icon": icon,
+            "section": section, "enabled": enabled, "items": items or []}
 
 
 # ---------------------------------------------------------------------------

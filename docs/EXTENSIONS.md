@@ -49,7 +49,8 @@ title = "Search Repositories"
 description = "Your repositories, filtered as you type"
 icon = "folder-remote"
 keywords = ["git", "repo"]
-mode = "view"                       # "view" (default) or "no-view"
+mode = "view"                       # "view" (default), "no-view" or "menu-bar"
+# interval = "30m"                  # no-view and menu-bar: also run on their own this often
 
 [[commands]]
 name = "clone"
@@ -191,6 +192,69 @@ export default run<{ level: number }>(async ({ args }) => {
 ```
 
 Throwing shows the error in the launcher. That applies everywhere.
+
+### A command in the background
+
+A `no-view` command with an `interval` (`"30m"`, `"2h"`, `"1d"`, at least a
+minute) also runs on its own, without a window: keep a cache warm, check
+something and update the command's subtitle.
+
+```toml
+[[commands]]
+name = "sync"
+title = "Sync Notifications"
+mode = "no-view"
+interval = "15m"
+```
+
+```ts
+export default run(async ({ launchType }) => {
+  const unread = await countUnread();
+  await updateCommandMetadata({ subtitle: `${unread} unread` });
+  if (launchType === "userInitiated") return `${unread} unread`;
+});
+```
+
+`ctx.launchType` is `"background"` for these runs. In the background, toasts
+go to the log, signing in only uses a saved token, and pasting or reading the
+clipboard is refused. Users agree to it in the permission prompt ("Run “Sync
+Notifications” in the background every 15 minutes"), and only enabled
+extensions with their required preferences set run this way.
+
+### A menu in the system tray
+
+A `mode = "menu-bar"` command shows an icon in the system tray with a menu,
+from the moment Backslash starts, refreshed every `interval` if it has one,
+and when the user opens it from the search.
+
+```ts
+import { action, menuBar, open, Icons } from "@backslash/api";
+
+export default menuBar({
+  title: "3",                         // next to the icon, where the tray shows text
+  icon: Icons.inbox,                  // default: the command's icon
+  tooltip: "3 pull requests to review",
+  items: async () => [
+    ...(await reviews()).map((pr) => ({
+      id: String(pr.number),          // stable ids: a click finds the item again
+      title: pr.title,
+      section: "To Review",
+      action: open(pr.url),
+    })),
+    { title: "Mark All Read", action: action("Mark All Read", async () => { await markRead(); }) },
+    { title: "Repositories", items: [/* a submenu */] },
+  ],
+});
+```
+
+`open` and `copy` items run without starting your code. Clicking an `action`
+item runs the command again, finds the item by its `id` (the title by
+default: set one when the title changes from run to run) and calls it. A
+view it returns opens in the launcher, `close("Done")` becomes a desktop
+notification, and the menu is refreshed afterwards.
+
+Trays: KDE Plasma, Xfce, Cinnamon, Budgie, waybar and most bars show them;
+GNOME needs the AppIndicator extension (Ubuntu has it).
 
 ## Items
 
@@ -390,6 +454,9 @@ command without a view: the string is flashed and the launcher closes.
 - Actions: `Open(url)`, `Copy(text)`, `Paste(text)`, `Action(title, fn)`,
   `Submenu(title, actions)`, with `shortcut=`, `confirm=`, `section=`…
   Return a view or `close()`, `pop()`, `refresh()`, `replace(view)`.
+- `MenuBar(items, title=, icon=, tooltip=)` with
+  `MenuItem(title, action, id=, section=, items=, enabled=)` for tray menus;
+  `ctx.launch_type` is `"background"` when the command runs on its own.
 - Services: `storage`, `clipboard`, `toast`, `open_external`,
   `update_command_metadata`, `oauth`. Generators can be `async`, and
   functions `async def`.

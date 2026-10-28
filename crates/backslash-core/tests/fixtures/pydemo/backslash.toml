@@ -26,3 +26,8 @@ mode = "no-view"
 [[commands]]
 name = "story"
 title = "Story"
+
+[[commands]]
+name = "tray"
+title = "Tray"
+mode = "menu-bar"

@@ -6,7 +6,7 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-use crate::manifest::{Manifest, Runtime};
+use crate::manifest::{CommandMode, Manifest, Runtime};
 use crate::{paths, store};
 
 fn path() -> PathBuf {
@@ -36,6 +36,18 @@ pub fn requested(manifest: &Manifest) -> Vec<String> {
     lines.extend(p.env.iter().map(|x| format!("Read the environment variable {x}")));
     if p.clipboard_read {
         lines.push("Read the clipboard".into());
+    }
+    // Running without being asked is something to agree to as well.
+    for command in &manifest.commands {
+        let every = command.interval_text();
+        match (command.mode, every) {
+            (CommandMode::MenuBar, Some(every)) => {
+                lines.push(format!("Show “{}” in the system tray, updated {every}", command.title))
+            }
+            (CommandMode::MenuBar, None) => lines.push(format!("Show “{}” in the system tray", command.title)),
+            (_, Some(every)) => lines.push(format!("Run “{}” in the background {every}", command.title)),
+            _ => {}
+        }
     }
     lines
 }
@@ -88,6 +100,25 @@ mod tests {
         assert!(is_approved(&v1));
         assert!(is_approved(&manifest(&[])), "fewer permissions stay approved");
         assert!(!is_approved(&manifest(&["api.github.com", "evil.example"])));
+    }
+
+    #[test]
+    fn running_on_its_own_is_asked() {
+        let m: Manifest = toml::from_str(
+            "[extension]\nid = \"gh\"\ntitle = \"GitHub\"\n\
+             [[commands]]\nname = \"inbox\"\ntitle = \"Inbox\"\nmode = \"menu-bar\"\ninterval = \"5m\"\n\
+             [[commands]]\nname = \"sync\"\ntitle = \"Sync\"\nmode = \"no-view\"\ninterval = \"1h\"\n\
+             [[commands]]\nname = \"tray\"\ntitle = \"Tray\"\nmode = \"menu-bar\"\n",
+        )
+        .unwrap();
+        assert_eq!(
+            requested(&m),
+            [
+                "Show “Inbox” in the system tray, updated every 5 minutes",
+                "Run “Sync” in the background every hour",
+                "Show “Tray” in the system tray",
+            ]
+        );
     }
 
     #[test]

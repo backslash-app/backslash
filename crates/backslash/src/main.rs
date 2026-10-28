@@ -19,6 +19,7 @@ mod portal;
 mod scaffold;
 mod theme;
 mod tray;
+mod tray_items;
 
 use std::path::PathBuf;
 
