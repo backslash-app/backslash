@@ -163,10 +163,19 @@ pub struct Action {
 pub enum ActionKind {
     /// Open a URL, file or directory with the user's default handler.
     Open { target: String },
-    /// Copy text to the clipboard and close the window.
-    Copy { text: String },
+    /// Copy text to the clipboard and close the window. `concealed` marks a
+    /// secret: clipboard managers (ours included) don't record it.
+    Copy {
+        text: String,
+        #[serde(default)]
+        concealed: bool,
+    },
     /// Paste text into the app that had the focus (copies it where that is not possible).
-    Paste { text: String },
+    Paste {
+        text: String,
+        #[serde(default)]
+        concealed: bool,
+    },
     /// Handled by the extension (`action` request), which answers with an [`Effect`].
     Callback,
     /// Opens more actions in the action panel. With `lazy`, they are asked
@@ -378,6 +387,16 @@ mod tests {
         assert_eq!(item.actions[0].section.as_deref(), Some("Issue"));
         let ActionKind::Submenu { actions, lazy } = &item.actions[0].kind else { panic!("expected a submenu") };
         assert_eq!((actions.len(), *lazy), (1, false));
+
+        // Old extensions don't send `concealed`.
+        let copy: Action =
+            serde_json::from_value(json!({ "id": "c", "title": "Copy", "kind": "copy", "text": "x" })).unwrap();
+        assert_eq!(copy.kind, ActionKind::Copy { text: "x".into(), concealed: false });
+        let secret: Action = serde_json::from_value(
+            json!({ "id": "p", "title": "Copy Password", "kind": "copy", "text": "x", "concealed": true }),
+        )
+        .unwrap();
+        assert_eq!(secret.kind, ActionKind::Copy { text: "x".into(), concealed: true });
     }
 
     #[test]

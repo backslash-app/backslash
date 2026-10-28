@@ -239,6 +239,33 @@ export const Icons = {
   square: "bs-square",
   squareCheck: "bs-square-check",
   dottedCircle: "bs-circle-dot",
+  camera: "bs-camera",
+  video: "bs-video",
+  scan: "bs-scan",
+  pipette: "bs-pipette",
+  thermometer: "bs-thermometer",
+  coffee: "bs-coffee",
+  bellOff: "bs-bell-off",
+  drive: "bs-drive",
+  battery: "bs-battery",
+  batteryCharging: "bs-battery-charging",
+  cloudSun: "bs-cloud-sun",
+  cloudRain: "bs-cloud-rain",
+  snowflake: "bs-snowflake",
+  wind: "bs-wind",
+  droplet: "bs-droplet",
+  book: "bs-book",
+  rss: "bs-rss",
+  gamepad: "bs-gamepad",
+  lightbulb: "bs-lightbulb",
+  rocket: "bs-rocket",
+  bug: "bs-bug",
+  note: "bs-note",
+  ticket: "bs-ticket",
+  leaf: "bs-leaf",
+  activity: "bs-activity",
+  braces: "bs-braces",
+  layers: "bs-layers",
 } as const;
 
 export interface Item {
@@ -382,6 +409,11 @@ interface ActionOptions {
   confirm?: string;
   /** Groups actions under a header in the action panel (Ctrl+K). */
   section?: string;
+  /**
+   * `copy` and `paste` only: the text is a secret (a password, a code).
+   * Clipboard histories, Backslash's included, don't record it.
+   */
+  concealed?: boolean;
 }
 
 export type Action =
@@ -498,14 +530,15 @@ export const field = {
 // Launcher services
 
 export const clipboard = {
-  write: async (text: string): Promise<void> => {
-    await rpc().request("clipboard/write", { text });
+  /** With `concealed`, clipboard histories don't record the text (passwords, codes). */
+  write: async (text: string, options: { concealed?: boolean } = {}): Promise<void> => {
+    await rpc().request("clipboard/write", { text, concealed: options.concealed ?? false });
   },
   /** Requires `clipboard-read = true` in `[permissions]`. */
   read: async (): Promise<string> => String(await rpc().request("clipboard/read") ?? ""),
   /** Pastes into the app the user was in and closes the launcher (copies where it can't). */
-  paste: async (text: string): Promise<void> => {
-    await rpc().request("clipboard/paste", { text });
+  paste: async (text: string, options: { concealed?: boolean } = {}): Promise<void> => {
+    await rpc().request("clipboard/paste", { text, concealed: options.concealed ?? false });
   },
 };
 

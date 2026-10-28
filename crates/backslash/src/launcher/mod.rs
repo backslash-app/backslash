@@ -2312,6 +2312,11 @@ impl Launcher {
                 self.window.clipboard().set_text(&text);
                 self.flash_and_hide("Copied to clipboard");
             }
+            Op::CopyConcealed(text) => {
+                set_clipboard(&self.window, &text, true);
+                self.flash_and_hide("Copied to clipboard");
+            }
+            Op::PasteConcealed(text) => self.paste(text, true),
             Op::Open(target) => match apps::open(&target) {
                 Ok(()) => self.hide(),
                 Err(e) => self.fail(e),
@@ -2970,13 +2975,15 @@ impl Launcher {
                 let text = |k: &str| params.get(k).and_then(Value::as_str).unwrap_or_default().to_string();
                 let result: Result<Value, RpcError> = match method.as_str() {
                     "clipboard/write" => {
-                        self.window.clipboard().set_text(&text("text"));
+                        let concealed = params.get("concealed").and_then(Value::as_bool).unwrap_or(false);
+                        set_clipboard(&self.window, &text("text"), concealed);
                         Ok(Value::Null)
                     }
                     "clipboard/paste" => {
                         // Answer first: pasting hides the window.
                         session.respond(id, Ok(Value::Null));
-                        self.paste_text(text("text"));
+                        let concealed = params.get("concealed").and_then(Value::as_bool).unwrap_or(false);
+                        self.paste(text("text"), concealed);
                         return;
                     }
                     "clipboard/read" => {
@@ -3435,7 +3442,11 @@ impl Launcher {
     /// Puts `text` in the clipboard, hides, and pastes it into the app that
     /// had the focus. Where pasting is not possible, it stays copied.
     fn paste_text(self: &Rc<Self>, text: String) {
-        self.window.clipboard().set_text(&text);
+        self.paste(text, false);
+    }
+
+    fn paste(self: &Rc<Self>, text: String, concealed: bool) {
+        set_clipboard(&self.window, &text, concealed);
         let (method, terminal) = {
             let s = self.state.borrow();
             (s.paste, s.paste_target.as_deref().is_some_and(paste::is_terminal))
@@ -3456,6 +3467,23 @@ impl Launcher {
                 }
             }
         });
+    }
+}
+
+/// Puts text on the clipboard. A concealed text carries the
+/// `x-kde-passwordManagerHint` type that password managers use, so clipboard
+/// histories (ours, Klipper, CopyQ, cliphist with a filter…) skip it.
+fn set_clipboard(window: &gtk::ApplicationWindow, text: &str, concealed: bool) {
+    if !concealed {
+        window.clipboard().set_text(text);
+        return;
+    }
+    let provider = gdk::ContentProvider::new_union(&[
+        gdk::ContentProvider::for_value(&text.to_value()),
+        gdk::ContentProvider::for_bytes("x-kde-passwordManagerHint", &glib::Bytes::from_static(b"secret")),
+    ]);
+    if let Err(e) = window.clipboard().set_content(Some(&provider)) {
+        eprintln!("backslash: could not copy: {e}");
     }
 }
 

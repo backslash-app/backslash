@@ -98,9 +98,9 @@ function serializeActions(actions: Action[] | undefined, viewId: string): Json[]
       case "open":
         return { ...base, kind: "open", target: a.target };
       case "copy":
-        return { ...base, kind: "copy", text: a.text };
+        return { ...base, kind: "copy", text: a.text, concealed: a.concealed ?? false };
       case "paste":
-        return { ...base, kind: "paste", text: a.text };
+        return { ...base, kind: "paste", text: a.text, concealed: a.concealed ?? false };
       case "callback":
         callbacks.set(base.id as string, { viewId, run: a.run });
         return { ...base, kind: "callback" };
