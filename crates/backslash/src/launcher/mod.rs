@@ -23,7 +23,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-use backslash_core::config::Config;
+use backslash_core::config::{Config, Reopen};
 use backslash_core::host::{Incoming, RpcError, Session};
 use backslash_core::manifest::Runtime;
 use backslash_core::protocol::{self as proto, Effect, FieldKind, Filtering, FormView, View};
@@ -197,6 +197,8 @@ pub(super) struct State {
     command_meta: CommandMeta,
     /// View updates that arrived before their view was shown.
     early_updates: Vec<(Rc<Session>, View)>,
+    /// When the window last hid, to know whether to restore it as it was.
+    hidden_at: Option<std::time::Instant>,
 }
 
 /// Subtitles set by commands with `updateCommandMetadata`, kept on disk.
@@ -596,6 +598,7 @@ impl Launcher {
                 kwin: kwin.is_some(),
                 command_meta: CommandMeta::load(),
                 early_updates: Vec::new(),
+                hidden_at: None,
                 gnome_helper_needed: window_backend.is_none()
                     && backslash_core::system::windows::is_gnome()
                     && std::env::var_os("WAYLAND_DISPLAY").is_some(),
@@ -960,8 +963,10 @@ impl Launcher {
         };
         // Apps open directly; everything else shows in the launcher.
         if !matches!(action.op, Op::LaunchApp(..)) {
-            if self.window.is_visible() && !self.is_root() {
-                self.hide();
+            // A shortcut opens its item from the root search, not on top of
+            // where the user left the launcher.
+            if !self.is_root() {
+                self.reset_to_root();
             }
             if !self.window.is_visible() {
                 self.show();
@@ -982,6 +987,17 @@ impl Launcher {
 
     fn show(self: &Rc<Self>) {
         self.reload();
+        let expired = {
+            let s = self.state.borrow();
+            match s.config.reopen {
+                Reopen::Restore => false,
+                Reopen::Minute => s.hidden_at.is_some_and(|t| t.elapsed() > Duration::from_secs(60)),
+                Reopen::Root => true,
+            }
+        };
+        if expired {
+            self.reset_to_root();
+        }
         // config.toml may have been edited by hand.
         self.bind_shortcuts();
         if self.dev_dir.is_none() && self.is_root() && !welcome::seen() {
@@ -1006,6 +1022,8 @@ impl Launcher {
         self.render();
         self.window.present();
         self.entry.grab_focus();
+        // Text kept from last time is selected: typing replaces it.
+        self.entry.select_region(0, -1);
         // Where the clipboard can't be watched in the background (GNOME),
         // at least record what is in it now.
         if self.state.borrow().config.clipboard.enabled {
@@ -1021,7 +1039,21 @@ impl Launcher {
     fn hide(self: &Rc<Self>) {
         self.close_action_panel();
         self.window.set_visible(false);
-        // Start fresh next time; dropping the frames stops extension processes.
+        let reopen = {
+            let mut s = self.state.borrow_mut();
+            s.confirm = None;
+            s.hidden_at = Some(std::time::Instant::now());
+            s.config.reopen
+        };
+        // Otherwise everything stays as it is (the open command keeps
+        // running) and comes back on the next show.
+        if reopen == Reopen::Root {
+            self.reset_to_root();
+        }
+    }
+
+    /// Back to the root search; dropping the frames stops extension processes.
+    fn reset_to_root(self: &Rc<Self>) {
         {
             let mut s = self.state.borrow_mut();
             s.frames.truncate(1);
