@@ -392,6 +392,11 @@ hash, checksum of the files, permissions). Open a pull request adding it to
 [backslash-app/plugins](https://github.com/backslash-app/plugins) as
 `registry/<id>.toml`. Your code stays in your repository; Backslash installs
 exactly the reviewed commit and refuses anything that differs.
+The registry itself is signed: Backslash reads it only from commits signed
+by the registry key, and never goes back to an older one than it has seen,
+so a mirror can neither forge entries nor serve stale ones. A registry of
+your own (`registry` in `config.toml`) needs its own keys,
+`registry_signers = ["ssh-ed25519 AAAA…"]`, or `[]` to read it unchecked.
 
 For local development, copy or symlink the folder into
 `~/.local/share/backslash/extensions/`, or use `backslash dev`.
