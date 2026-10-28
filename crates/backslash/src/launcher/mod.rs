@@ -274,6 +274,8 @@ pub struct Launcher {
     actions_entry: gtk::Entry,
     actions_context: gtk::Label,
     popover_list: gtk::ListBox,
+    /// Scrolls the action panel's list (long lists, submenus).
+    popover_scroll: gtk::ScrolledWindow,
     /// Actions shown in the panel (after filtering), in list order.
     popover_actions: RefCell<Vec<UiAction>>,
     /// Open submenus: title and actions of each level, the top one shown.
@@ -573,6 +575,7 @@ impl Launcher {
             actions_entry,
             actions_context,
             popover_list,
+            popover_scroll,
             popover_actions: RefCell::default(),
             menu_levels: RefCell::default(),
             state: RefCell::new(State {
@@ -1948,14 +1951,7 @@ impl Launcher {
 
     /// Keeps the selected row visible (rows are not focusable, so GTK won't do it).
     fn scroll_to(&self, row: &gtk::ListBoxRow) {
-        let Some(bounds) = row.compute_bounds(&self.list) else { return };
-        let adj = self.scroller.vadjustment();
-        let (top, bottom) = (bounds.y() as f64, (bounds.y() + bounds.height()) as f64);
-        if top < adj.value() {
-            adj.set_value(top - 6.0);
-        } else if bottom > adj.value() + adj.page_size() {
-            adj.set_value(bottom - adj.page_size() + 6.0);
-        }
+        scroll_into_view(row, &self.list, &self.scroller);
     }
 
     fn on_key(self: &Rc<Self>, key: gdk::Key, mods: gdk::ModifierType) -> glib::Propagation {
@@ -2115,8 +2111,9 @@ impl Launcher {
         let select = |i: i32| {
             if let Some(row) = self.popover_list.row_at_index(i.clamp(0, actions.len() as i32 - 1)) {
                 self.popover_list.select_row(Some(&row));
-                row.grab_focus();
-                self.actions_entry.grab_focus_without_selecting();
+                // The focus stays in the search field, so the scrolled window
+                // doesn't follow the selection by itself.
+                scroll_into_view(&row, &self.popover_list, &self.popover_scroll);
             }
         };
         match key {
@@ -2318,6 +2315,7 @@ impl Launcher {
         if let Some(first) = self.popover_list.row_at_index(0) {
             self.popover_list.select_row(Some(&first));
         }
+        self.popover_scroll.vadjustment().set_value(0.0);
     }
 
     fn on_actions_query_changed(&self) {
@@ -3641,6 +3639,27 @@ fn reveal(path: &std::path::Path) {
 
 // ---------------------------------------------------------------------------
 // Helpers
+
+/// Scrolls `scroller` just enough for `row` of `list` to be visible. The first
+/// row scrolls to the very top, to show its section header.
+fn scroll_into_view(row: &gtk::ListBoxRow, list: &gtk::ListBox, scroller: &gtk::ScrolledWindow) {
+    let adj = scroller.vadjustment();
+    if row.index() == 0 {
+        adj.set_value(0.0);
+        return;
+    }
+    let Some(bounds) = row.compute_bounds(list) else { return };
+    let (mut top, bottom) = (bounds.y() as f64, (bounds.y() + bounds.height()) as f64);
+    // A section's first row comes with its header: show both.
+    if let Some(header) = row.header().and_then(|h| h.compute_bounds(list)) {
+        top = top.min(header.y() as f64);
+    }
+    if top < adj.value() {
+        adj.set_value(top - 6.0);
+    } else if bottom > adj.value() + adj.page_size() {
+        adj.set_value(bottom - adj.page_size() + 6.0);
+    }
+}
 
 fn view_id(view: &View) -> Option<String> {
     view_id_ref(view).map(str::to_owned)
