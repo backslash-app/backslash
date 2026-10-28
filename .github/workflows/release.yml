@@ -1,25 +1,73 @@
 name: Release
 
-# Push a tag like v0.3.0 to build the packages and publish a GitHub release.
+# One click: Actions → Release → Run workflow, type the version (e.g. 0.4.0).
+# It builds the packages, creates the tag and the GitHub release, publishes the
+# AUR package, and opens a pull request bumping the version in the repository.
+# Pushing a tag such as v0.4.0 does the same.
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release, e.g. 0.4.0"
+        required: true
 
 permissions:
   contents: write
+  pull-requests: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 jobs:
+  version:
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - id: v
+        env:
+          INPUT: ${{ inputs.version || github.ref_name }}
+        run: |
+          v="${INPUT#v}"
+          echo "$v" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$' || { echo "::error::\"$v\" is not a version like 1.2.3"; exit 1; }
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        if: github.event_name == 'workflow_dispatch'
+      # The tag points to a commit carrying the new version, so that builds
+      # from the tagged source (the AUR) report the right one.
+      - name: Tag the release
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          VERSION: ${{ steps.v.outputs.version }}
+        run: |
+          tag="v$VERSION"
+          if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null; then
+            echo "$tag exists already: building it again"
+            exit 0
+          fi
+          packaging/set-version.sh "$VERSION"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -qam "Version $VERSION" || true
+          git tag "$tag"
+          git push origin "refs/tags/$tag"
+
   build:
+    needs: version
     strategy:
       matrix:
         runner: [ubuntu-24.04, ubuntu-24.04-arm]
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - name: Check the tag matches the version
-        run: |
-          version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
-          test "v$version" = "$GITHUB_REF_NAME" || { echo "tag $GITHUB_REF_NAME but Cargo.toml says $version"; exit 1; }
+        with:
+          ref: v${{ needs.version.outputs.version }}
+      # A tag pushed by hand may still carry the previous version.
+      - name: Set the version
+        run: packaging/set-version.sh "${{ needs.version.outputs.version }}"
       - name: Install GTK
         run: sudo apt-get update && sudo apt-get install -y libgtk-4-dev
       - uses: dtolnay/rust-toolchain@stable
@@ -39,7 +87,7 @@ jobs:
             dist/*.rpm
 
   release:
-    needs: build
+    needs: [version, build]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/download-artifact@v4
@@ -51,4 +99,56 @@ jobs:
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --title "Backslash ${GITHUB_REF_NAME#v}" --generate-notes
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          tag="v$VERSION"
+          # A release made by hand on GitHub (which pushed the tag) gets the files.
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$tag" dist/* --clobber --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create "$tag" dist/* --repo "$GITHUB_REPOSITORY" --verify-tag \
+              --title "Backslash $VERSION" --generate-notes
+          fi
+
+  aur:
+    needs: [version, release]
+    runs-on: ubuntu-24.04
+    container: archlinux:base-devel
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: v${{ needs.version.outputs.version }}
+      - name: Install git and ssh
+        run: pacman -Syu --noconfirm --needed git openssh
+      - name: Publish to the AUR
+        env:
+          AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+        run: packaging/aur/publish.sh "${{ needs.version.outputs.version }}"
+
+  # main only takes reviewed pull requests, so the new version comes back as one.
+  bump:
+    needs: [version, release]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: main
+      - name: Open a pull request with the new version
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          packaging/set-version.sh "$VERSION"
+          if git diff --quiet; then
+            echo "main already says $VERSION"
+            exit 0
+          fi
+          branch="release/v$VERSION"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$branch"
+          git commit -qam "Version $VERSION"
+          git push -f origin "$branch"
+          gh pr create --base main --head "$branch" --title "Version $VERSION" \
+            --body "Released as [v$VERSION](https://github.com/$GITHUB_REPOSITORY/releases/tag/v$VERSION): this brings the version, the AppStream release list and the AUR checksum up to date." \
+            || echo "::warning::Could not open the pull request (allow GitHub Actions to create pull requests in Settings → Actions → General). The branch $branch is pushed: open it by hand."
