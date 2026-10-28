@@ -375,7 +375,16 @@ backslash install github                          # from the registry
 backslash install https://github.com/you/repo     # straight from git (not reviewed)
 backslash install ./my-repo --path extensions/x   # a local repository
 backslash update                                  # update everything installed
+backslash search --refresh                        # wait for the latest registry
 ```
+
+The list of extensions is a small git repository that Backslash keeps a copy
+of. It is refreshed every hour, when **Browse Extensions** opens with a copy
+older than that (the cached list shows first, then updates), and on demand with
+**Refresh Extensions** (<kbd>Ctrl</kbd>+<kbd>R</kbd> in the store). `search`,
+`update` and `outdated` refresh it first too, answering from the cached copy
+when the registry doesn't respond within a few seconds; `--refresh` waits for
+it and fails rather than use an old copy.
 
 To list yours in the registry, push it to a public git repository and run
 `backslash publish`: it prints the registry entry for your last commit (commit

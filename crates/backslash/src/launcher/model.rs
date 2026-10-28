@@ -96,6 +96,8 @@ pub enum Op {
     InstallEntry(String),
     /// Updates every extension whose update asks for no new permission.
     UpdateAll,
+    /// Fetches the latest registry now and says what changed.
+    RefreshCatalog,
     /// Starts a program (desktop settings panels).
     Spawn(String, Vec<String>),
     /// Leaves the welcome screen for the search.

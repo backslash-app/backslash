@@ -8,7 +8,7 @@
 //! refuses anything that does not match: the registry is a curated, reviewed
 //! index, not a host, so authors keep their code and reviews stay small.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -142,31 +142,96 @@ pub fn find(loc: &Locations, id: &str) -> Option<Entry> {
 
 /// Time since the last successful sync.
 pub fn age(loc: &Locations) -> Option<Duration> {
-    let stamp = std::fs::metadata(loc.registry_dir().join(".git/FETCH_HEAD"))
+    let stamp = std::fs::metadata(loc.registry_dir().join(".git/backslash-synced"))
         .or_else(|_| std::fs::metadata(loc.registry_dir().join(".git/HEAD")))
         .ok()?;
     SystemTime::now().duration_since(stamp.modified().ok()?).ok()
 }
 
-/// Downloads or refreshes the registry (a shallow clone).
-pub fn sync(loc: &Locations) -> Result<()> {
-    let dir = loc.registry_dir();
-    if dir.join(".git").is_dir() {
-        let remote = git(&["remote", "get-url", "origin"], Some(&dir)).unwrap_or_default();
-        if remote == loc.registry {
-            git(&["fetch", "--quiet", "--depth", "1", "origin", "HEAD"], Some(&dir))?;
-            git(&["reset", "--quiet", "--hard", "FETCH_HEAD"], Some(&dir))?;
-            return Ok(());
+/// What a [`sync`] changed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SyncReport {
+    /// Extensions in the registry now.
+    pub total: usize,
+    /// Ids that were not in the previous copy.
+    pub added: Vec<String>,
+    /// Ids whose entry changed (a new version or commit).
+    pub changed: Vec<String>,
+}
+
+impl SyncReport {
+    /// "143 extensions, 45 new", for a toast or the terminal.
+    pub fn summary(&self) -> String {
+        let mut parts = vec![format!("{} extension{}", self.total, if self.total == 1 { "" } else { "s" })];
+        if !self.added.is_empty() {
+            parts.push(format!("{} new", self.added.len()));
         }
-        // The configured registry changed: start over.
-        std::fs::remove_dir_all(&dir)?;
+        if !self.changed.is_empty() {
+            parts.push(format!("{} updated", self.changed.len()));
+        }
+        if parts.len() == 1 {
+            parts.push("up to date".into());
+        }
+        parts.join(", ")
     }
+}
+
+/// Brings the local registry copy to the latest commit of the registry (a
+/// shallow clone: fetch, then reset to what was fetched). When the copy can't
+/// be updated in place, it is cloned again. Errors are returned, never
+/// swallowed: the caller decides whether the old copy is still worth showing.
+pub fn sync(loc: &Locations) -> Result<SyncReport> {
+    let before: BTreeMap<String, String> = entries(loc).into_iter().map(|e| (e.id, e.commit)).collect();
+    let dir = loc.registry_dir();
+    let updated = dir.join(".git").is_dir()
+        && git(&["remote", "get-url", "origin"], Some(&dir)).is_ok_and(|remote| remote == loc.registry)
+        // When it fails, a fresh clone below either fixes the copy or reports the error.
+        && update_in_place(&dir).is_ok();
+    if !updated {
+        clone_fresh(loc)?;
+    }
+    stamp(&dir);
+    let after = entries(loc);
+    Ok(SyncReport {
+        total: after.len(),
+        added: after.iter().filter(|e| !before.contains_key(&e.id)).map(|e| e.id.clone()).collect(),
+        changed: after
+            .iter()
+            .filter(|e| before.get(&e.id).is_some_and(|commit| commit != &e.commit))
+            .map(|e| e.id.clone())
+            .collect(),
+    })
+}
+
+/// Fetches the remote's latest commit and moves the copy onto it.
+fn update_in_place(dir: &Path) -> Result<()> {
+    git(&["fetch", "--quiet", "--depth", "1", "origin", "HEAD"], Some(dir))?;
+    let fetched = git(&["rev-parse", "FETCH_HEAD"], Some(dir))?;
+    git(&["reset", "--quiet", "--hard", &fetched], Some(dir))?;
+    git(&["clean", "--quiet", "-fd"], Some(dir))?;
+    if git(&["rev-parse", "HEAD"], Some(dir))? != fetched {
+        bail!("the registry copy did not move to the fetched commit");
+    }
+    Ok(())
+}
+
+/// Clones the registry next to the copy, then swaps them, so a failed clone
+/// leaves the old copy in place.
+fn clone_fresh(loc: &Locations) -> Result<()> {
     std::fs::create_dir_all(&loc.cache)?;
     let tmp = tempfile::Builder::new().prefix("registry-").tempdir_in(&loc.cache)?;
     let target = tmp.path().join("clone");
     git(&["clone", "--quiet", "--depth", "1", &loc.registry, &target.to_string_lossy()], None)?;
+    let dir = loc.registry_dir();
+    if dir.exists() {
+        std::fs::remove_dir_all(&dir)?;
+    }
     std::fs::rename(&target, &dir)?;
     Ok(())
+}
+
+fn stamp(dir: &Path) {
+    let _ = std::fs::write(dir.join(".git/backslash-synced"), "");
 }
 
 // ---------------------------------------------------------------------------
@@ -550,7 +615,9 @@ mod tests {
         assert_eq!(entry.commands, vec!["Weather Now"]);
         add_entry(&w, &entry);
 
-        sync(&w.loc).unwrap();
+        let report = sync(&w.loc).unwrap();
+        assert_eq!(report.added, vec!["weather"]);
+        assert_eq!(report.summary(), "1 extension, 1 new");
         assert_eq!(entries(&w.loc), vec![entry.clone()]);
         assert!(age(&w.loc).is_some());
 
@@ -568,7 +635,9 @@ mod tests {
         sh(&w.author, &["commit", "-qam", "v2"]);
         let v2 = publish_entry(&w.loc, &w.author.join("ext")).unwrap();
         add_entry(&w, &v2);
-        sync(&w.loc).unwrap();
+        let report = sync(&w.loc).unwrap();
+        assert_eq!((report.added.len(), report.changed.clone()), (0, vec!["weather".to_string()]));
+        assert_eq!(report.summary(), "1 extension, 1 updated");
         match check_update(&w.loc, "weather", &manifest).unwrap() {
             Update::Registry { entry, new_permissions } => {
                 assert_eq!(entry.version, "2.0.0");
@@ -582,6 +651,29 @@ mod tests {
         uninstall(&w.loc, "weather").unwrap();
         assert!(installed(&w.loc, "weather").is_none());
         assert!(uninstall(&w.loc, "../etc").is_err());
+    }
+
+    #[test]
+    fn sync_recovers_or_reports() {
+        let w = world();
+        let entry = publish_entry(&w.loc, &w.author.join("ext")).unwrap();
+        add_entry(&w, &entry);
+        sync(&w.loc).unwrap();
+        assert_eq!(sync(&w.loc).unwrap().summary(), "1 extension, up to date");
+
+        // A broken copy is cloned again rather than kept as it was.
+        let copy = w.loc.registry_dir();
+        std::fs::write(copy.join(".git/HEAD"), "garbage").unwrap();
+        std::fs::write(w.registry.join("registry/extra.toml"), "not an entry").unwrap();
+        sh(&w.registry, &["add", "."]);
+        sh(&w.registry, &["commit", "-qm", "extra"]);
+        sync(&w.loc).unwrap();
+        assert!(copy.join("registry/extra.toml").is_file());
+
+        // An unreachable registry is an error, and the copy stays usable.
+        let gone = Locations { registry: w.loc.registry.clone() + "-missing", ..w.loc.clone() };
+        assert!(sync(&gone).is_err());
+        assert_eq!(entries(&w.loc).len(), 1);
     }
 
     #[test]

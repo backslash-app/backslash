@@ -1328,7 +1328,14 @@ impl Launcher {
                                 .iter()
                                 .filter(|e| backslash_core::catalog::installed(&loc, &e.id).is_some())
                                 .count();
-                            Some(format!("{} extensions · {installed} installed", s.catalog.entries.len()))
+                            Some(if s.catalog.syncing {
+                                "Updating the extension list…".to_string()
+                            } else if s.catalog.error.is_some() {
+                                let age = backslash_core::catalog::age(&loc).map(ago).unwrap_or_default();
+                                format!("Couldn't update the list · showing the copy from {age}")
+                            } else {
+                                format!("{} extensions · {installed} installed", s.catalog.entries.len())
+                            })
                         }
                         _ => None,
                     };
@@ -1757,6 +1764,10 @@ impl Launcher {
                     ]
                 }
                 FrameKind::Extension { view: View::List(l), .. } => from(&l.actions),
+                FrameKind::Builtin(Builtin::Store) => vec![UiAction::new("Refresh Extensions", Op::RefreshCatalog)
+                    .icon("bs-refresh")
+                    .shortcut("<Ctrl>r")
+                    .section("Extensions")],
                 FrameKind::Root | FrameKind::Builtin(_) | FrameKind::AppUpdate => Vec::new(),
             }
         };
@@ -2530,6 +2541,7 @@ impl Launcher {
             Op::ReviewInstall(id) => self.push(FrameKind::ConfirmInstall { id }),
             Op::InstallEntry(id) => self.install_entry(id),
             Op::UpdateAll => self.update_all(),
+            Op::RefreshCatalog => self.refresh_catalog(true, true),
             Op::Spawn(program, args) => {
                 if let Err(e) = std::process::Command::new(&program).args(&args).spawn() {
                     self.fail(format!("Could not start {program}: {e}"));
@@ -3160,7 +3172,13 @@ impl Launcher {
                 s.files.recent = files::recent(30);
                 s.files.results.clear();
             }
-            Builtin::Store => self.refresh_catalog(),
+            Builtin::Store => {
+                // The cached list shows right away; a stale one updates under it.
+                self.refresh_catalog(false, false);
+                if let Some(e) = self.state.borrow().catalog.error.clone() {
+                    self.fail(format!("The extension list may be out of date: {}", first_line(&e)));
+                }
+            }
             Builtin::Clipboard | Builtin::Theme | Builtin::Welcome => {}
         }
         self.record(format!("builtin:{}", builtin_id(builtin)));
@@ -3205,16 +3223,22 @@ impl Launcher {
 
     /// Shows the cached registry at once, and refreshes it in the background
     /// when it is older than an hour.
-    fn refresh_catalog(self: &Rc<Self>) {
+    /// Reads the registry copy, then refreshes it in the background when it
+    /// is more than an hour old, or right away when `force`d. `announce`
+    /// says what changed in a toast ("143 extensions, 45 new").
+    fn refresh_catalog(self: &Rc<Self>, force: bool, announce: bool) {
         let loc = backslash_core::catalog::Locations::user(&self.state.borrow().config);
         self.state.borrow_mut().catalog.entries = backslash_core::catalog::entries(&loc);
         self.recount_updates();
         let stale = backslash_core::catalog::age(&loc).is_none_or(|age| age > Duration::from_secs(3600));
-        if !stale || self.state.borrow().catalog.syncing {
+        if !(stale || force) || self.state.borrow().catalog.syncing {
             return;
         }
         self.state.borrow_mut().catalog.syncing = true;
         self.spinner.set_spinning(true);
+        if self.window.is_visible() && self.in_store() {
+            self.render();
+        }
         let (tx, rx) = async_channel::bounded(1);
         let thread_loc = loc.clone();
         std::thread::spawn(move || {
@@ -3222,7 +3246,7 @@ impl Launcher {
         });
         let weak = Rc::downgrade(self);
         glib::spawn_future_local(async move {
-            let result = rx.recv().await.unwrap_or_else(|_| Err("sync thread died".into()));
+            let result = rx.recv().await.unwrap_or_else(|_| Err("the update stopped".into()));
             let Some(l) = weak.upgrade() else { return };
             l.spinner.set_spinning(false);
             {
@@ -3232,17 +3256,23 @@ impl Launcher {
                 s.catalog.error = result.as_ref().err().cloned();
             }
             l.recount_updates();
-            let in_store =
-                matches!(l.state.borrow().frames.last().map(|f| &f.kind), Some(FrameKind::Builtin(Builtin::Store)));
-            match result {
-                Err(e) if in_store => l.fail(format!("Could not update the extension list: {e}")),
+            let visible = l.window.is_visible();
+            match &result {
+                Err(e) if announce || (visible && l.in_store()) => {
+                    l.fail(format!("Couldn't update the extension list: {}", first_line(e)))
+                }
                 Err(e) => eprintln!("backslash: could not update the extension list: {e}"),
-                Ok(()) => {}
+                Ok(report) if announce => l.show_toast(&report.summary(), proto::ToastStyle::Success),
+                Ok(_) => {}
             }
-            if l.window.is_visible() {
+            if visible && !l.action_panel.is_visible() && !l.is_form() {
                 l.render();
             }
         });
+    }
+
+    fn in_store(&self) -> bool {
+        matches!(self.state.borrow().frames.last().map(|f| &f.kind), Some(FrameKind::Builtin(Builtin::Store)))
     }
 
     /// Recomputes which installed extensions have an update in the registry.
@@ -3252,13 +3282,14 @@ impl Launcher {
         s.catalog.updates = store::pending_updates(&loc, &s.catalog.entries);
     }
 
-    /// Refreshes the registry now and every few hours, for the update badge.
+    /// Refreshes the registry now and every hour, for the update badge (a
+    /// shallow fetch of a small repository: cheap).
     fn watch_updates(self: &Rc<Self>) {
-        self.refresh_catalog();
+        self.refresh_catalog(false, false);
         let weak = Rc::downgrade(self);
-        glib::timeout_add_seconds_local(6 * 3600, move || {
+        glib::timeout_add_seconds_local(3600, move || {
             let Some(l) = weak.upgrade() else { return glib::ControlFlow::Break };
-            l.refresh_catalog();
+            l.refresh_catalog(false, false);
             glib::ControlFlow::Continue
         });
     }
@@ -3734,4 +3765,19 @@ fn arguments_form(command: &backslash_core::manifest::CommandDef) -> FormView {
 fn title_case(s: &str) -> String {
     let mut c = s.chars();
     c.next().map(|f| f.to_uppercase().collect::<String>() + c.as_str()).unwrap_or_default()
+}
+
+/// The first line of an error, for a toast.
+fn first_line(e: &str) -> &str {
+    e.lines().next().unwrap_or(e)
+}
+
+/// "5 minutes ago", "3 hours ago", "2 days ago".
+fn ago(d: Duration) -> String {
+    let (n, unit) = match d.as_secs() {
+        s if s < 3600 => ((s / 60).max(1), "minute"),
+        s if s < 86_400 => (s / 3600, "hour"),
+        s => (s / 86_400, "day"),
+    };
+    format!("{n} {unit}{} ago", if n == 1 { "" } else { "s" })
 }
