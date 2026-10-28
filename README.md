@@ -127,8 +127,8 @@ make && sudo make install          # or: make install PREFIX=~/.local
 ```
 
 `make dist` builds the release files in `dist/` (it needs
-[nfpm](https://nfpm.goreleaser.com) for the `.deb` and `.rpm`). Pushing a tag
-such as `v0.3.0` builds them for x86_64 and aarch64 and publishes a release.
+[nfpm](https://nfpm.goreleaser.com) for the `.deb` and `.rpm`). Releases are
+made by CI, see [Releasing](CONTRIBUTING.md#releasing).
 </details>
 
 Why no Flatpak? A launcher has to start other apps, read the list of

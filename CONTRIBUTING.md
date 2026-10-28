@@ -34,3 +34,31 @@ Protocol changes must update `protocol.rs`, `sdk/`, and `docs/PROTOCOL.md` toget
 - Keep them focused; describe the user-visible change.
 - `make check` must pass (format, clippy, tests, Deno lint and type check).
 - New behavior in `backslash-core` comes with a test.
+
+## Releasing
+
+One click: **Actions → Release → Run workflow**, type the version (`0.4.0`),
+**Run**. The workflow:
+
+1. commits the version (Cargo, AppStream, PKGBUILD) and tags it `v0.4.0`;
+2. builds the `.deb`, `.rpm` and tarball for x86_64 and aarch64;
+3. publishes the GitHub release with notes generated from the merged pull requests;
+4. publishes the `backslash` package on the AUR;
+5. opens a pull request bringing the new version to `main` (merge it).
+
+Pushing a `v0.4.0` tag, or creating the release on GitHub, does the same.
+`packaging/set-version.sh 0.4.0` changes the version locally.
+
+### AUR setup (once)
+
+1. Create an account on [aur.archlinux.org](https://aur.archlinux.org/register).
+2. Make a key for CI: `ssh-keygen -t ed25519 -f aur -N "" -C backslash-ci`.
+3. Paste `aur.pub` in *My Account → SSH Public Key* on the AUR.
+4. Paste the content of `aur` (the private key) in the repository's
+   *Settings → Secrets and variables → Actions → New repository secret*,
+   named `AUR_SSH_PRIVATE_KEY`. Then delete both files.
+5. Allow *Settings → Actions → General → Allow GitHub Actions to create and
+   approve pull requests*, for the version pull request.
+
+The first release after this creates the `backslash` package on the AUR.
+Without the secret, the AUR step only checks the package and says so.

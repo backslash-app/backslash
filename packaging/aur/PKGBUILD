@@ -1,6 +1,6 @@
 # Maintainer: Steven Persia <persia.steven8@gmail.com>
-# Builds the tagged release from source. Copy to the `backslash` AUR repository
-# and run `makepkg --printsrcinfo > .SRCINFO` after changing pkgver.
+# Builds the tagged release from source. The release workflow publishes it to
+# the AUR with the right version and checksum (packaging/aur/publish.sh).
 pkgname=backslash
 pkgver=0.3.0
 pkgrel=1
