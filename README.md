@@ -94,11 +94,11 @@ Open **Browse Extensions** (or `backslash search`, `backslash install github`).
 The [registry](https://github.com/backslash-app/plugins) lists extensions that
 live in their authors' repositories, each pinned to a reviewed commit with a
 checksum: you see exactly what an extension may do before installing, and
-Backslash refuses any file that differs from what was reviewed. First-party
-extensions: GitHub, Linear, Todoist, AI (Claude, OpenAI, Mistral, Groq,
-OpenRouter, Ollama), Media Controls, Browser, Code Projects, Network & Devices,
-Timers, Ports, Packages (apt/dnf/pacman/zypper/Flathub), Services (systemd),
-Containers (Docker/Podman), Emoji & Symbols.
+Backslash refuses any file that differs from what was reviewed. There are 50
+first-party extensions: GitHub, GitLab, Linear, Jira, Sentry, Todoist, Notion,
+Calendar, Obsidian, Spotify, Home Assistant, AI, Weather, Screenshot and text
+from screen, Color Picker, System Monitor, Passwords, Dev Utils, SSH, Kubernetes
+and more ([the full list](https://github.com/backslash-app/plugins#first-party-extensions)).
 
 ## Install
 
