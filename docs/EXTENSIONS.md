@@ -341,10 +341,66 @@ The launcher merges the `imports` of your `deno.json` with `@backslash/api`,
 which always points at the SDK shipped with the installed launcher, so an
 extension can never run against a mismatched API.
 
+## Python
+
+Extensions can be written in Python 3 with the SDK that ships with the
+launcher (standard library only, nothing to install):
+
+```sh
+backslash new weather --python
+```
+
+```toml
+[runtime]
+kind = "python"          # commands are commands/<name>.py
+```
+
+```python
+from backslash import Action, Copy, Item, List, refresh, storage
+
+def items(ctx):
+    seen = storage.get("seen", 0)
+    return [
+        Item("react", subtitle="A JavaScript library", icon="bs-package", tags=[f"seen {seen}"],
+             detail={"markdown": "A library for building user interfaces."},
+             actions=[Copy("react"), Action("Mark Seen", mark_seen)]),
+    ]
+
+def mark_seen(ctx):
+    storage.set("seen", storage.get("seen", 0) + 1)
+    return refresh()
+
+command = List(items, placeholder="Filter packages…")
+```
+
+A module defines `command`: a view (`List`, `Detail`, `Form`) or a function
+of the context returning one. A function returning anything else is a
+command without a view: the string is flashed and the launcher closes.
+
+- `List(items)` (a list, or a function of `ctx`), or `List(search=fn)` where
+  `fn(query, ctx)` runs on each keystroke; check `ctx.cancelled` (an
+  `Event`) in long searches. Also `placeholder`, `filter`, `status`,
+  `layout="grid"`, `columns`, `empty`, `actions`.
+- `Item(title, subtitle=, icon=, tags=, accessories=, detail=, actions=)`, or
+  plain dicts with the keys of the TypeScript `Item`. `meta.text(…)`,
+  `meta.link(…)`, `meta.progress(…)` build detail lines.
+- `Detail(markdown, metadata=, stats=, actions=)`; `markdown` may be a
+  generator yielding the text so far, to stream it.
+- `Form([field.text("title", "Title", required=True), field.dropdown(…)], submit)`.
+- Actions: `Open(url)`, `Copy(text)`, `Paste(text)`, `Action(title, fn)`,
+  `Submenu(title, actions)`, with `shortcut=`, `confirm=`, `section=`…
+  Return a view or `close()`, `pop()`, `refresh()`, `replace(view)`.
+- Services: `storage`, `clipboard`, `toast`, `open_external`,
+  `update_command_metadata`, `oauth`. Generators can be `async`, and
+  functions `async def`.
+
+`print()` goes to the log. Your own modules next to `commands/` can be
+imported. Python extensions run in the bubblewrap sandbox described below.
+
 ## Other languages
 
-The SDK is a convenience. Any program speaking the protocol over
-stdin/stdout works, see [PROTOCOL.md](PROTOCOL.md):
+Any program speaking the protocol over stdin/stdout works, see
+[PROTOCOL.md](PROTOCOL.md):
 
 ```toml
 [runtime]

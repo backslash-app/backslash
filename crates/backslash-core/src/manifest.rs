@@ -57,6 +57,19 @@ pub enum Runtime {
     /// Any executable speaking the protocol on stdin/stdout, run in a
     /// bubblewrap sandbox (see [`crate::sandbox`]).
     Exec { command: Vec<String> },
+    /// Python 3 modules using the SDK shipped with the launcher
+    /// (`sdk/python`), run in a bubblewrap sandbox.
+    Python,
+}
+
+impl Runtime {
+    /// Extension of command files when the manifest names none.
+    pub fn default_extension(&self) -> &'static str {
+        match self {
+            Self::Python => "py",
+            Self::Deno | Self::Exec { .. } => "ts",
+        }
+    }
 }
 
 /// Capabilities an extension asks for. Anything not listed is denied.
@@ -137,7 +150,7 @@ pub struct CommandDef {
     #[serde(default)]
     pub mode: CommandMode,
     /// Source file, relative to the extension directory. Defaults to
-    /// `commands/<name>.ts`.
+    /// `commands/<name>.ts` (`.py` for the Python runtime).
     #[serde(default)]
     pub entry: Option<PathBuf>,
     #[serde(default, rename = "arguments")]
@@ -145,8 +158,10 @@ pub struct CommandDef {
 }
 
 impl CommandDef {
-    pub fn entry_path(&self) -> PathBuf {
-        self.entry.clone().unwrap_or_else(|| PathBuf::from(format!("commands/{}.ts", self.name)))
+    pub fn entry_path(&self, runtime: &Runtime) -> PathBuf {
+        self.entry
+            .clone()
+            .unwrap_or_else(|| PathBuf::from(format!("commands/{}.{}", self.name, runtime.default_extension())))
     }
 }
 
@@ -254,9 +269,8 @@ impl Manifest {
             if !seen.insert(&command.name) {
                 bail!("duplicate command `{}`", command.name);
             }
-            if command.entry_path().is_absolute()
-                || command.entry_path().components().any(|c| matches!(c, std::path::Component::ParentDir))
-            {
+            let entry = command.entry_path(&self.runtime);
+            if entry.is_absolute() || entry.components().any(|c| matches!(c, std::path::Component::ParentDir)) {
                 bail!("command `{}`: entry must stay inside the extension", command.name);
             }
         }
@@ -318,7 +332,8 @@ mod tests {
         let m: Manifest = toml::from_str(NPM).unwrap();
         m.validate().unwrap();
         assert_eq!(m.runtime, Runtime::Deno);
-        assert_eq!(m.commands[0].entry_path(), PathBuf::from("commands/search.ts"));
+        assert_eq!(m.commands[0].entry_path(&m.runtime), PathBuf::from("commands/search.ts"));
+        assert_eq!(m.commands[0].entry_path(&Runtime::Python), PathBuf::from("commands/search.py"));
         assert_eq!(m.commands[1].mode, CommandMode::NoView);
         let level = &m.commands[1].arguments[0];
         assert_eq!(level.kind, ArgumentKind::Number);

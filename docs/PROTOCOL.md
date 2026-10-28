@@ -5,14 +5,17 @@ The launcher starts one process per running command and talks
 object per line** on stdin (launcher → extension) and stdout (extension →
 launcher). Stderr is the extension's log.
 
-The TypeScript SDK (`sdk/runtime.ts`) implements this for you. This document
+The TypeScript SDK (`sdk/runtime.ts`) and the Python SDK
+(`sdk/python/runtime.py`) implement this for you. This document
 is for other languages and for contributors. The Rust types live in
 `crates/backslash-core/src/protocol.rs`.
 
 ## Lifecycle
 
 1. The launcher spawns the process (Deno: `deno run [permissions] sdk/runtime.ts <entry>`;
-   exec runtime: `<command...> <entry>`), working directory = extension folder.
+   Python: `python3 -I -u sdk/python/runtime.py <entry>`; exec runtime:
+   `<command...> <entry>`, both inside bubblewrap), working directory =
+   extension folder.
 2. It sends `start`; the reply is an **effect** (usually `push` with the first view).
 3. While the view is open it sends `search` and `action` requests.
 4. When the user leaves the command (Escape to the root, or the window hides),
@@ -146,7 +149,7 @@ Colors (`iconTint`, `color`) are `red`, `orange`, `yellow`, `green`, `teal`,
 { "type": "close", "message": "Copied" }   // message optional
 ```
 
-## Minimal extension in Python
+## Minimal extension without an SDK (Python)
 
 ```python
 import json, sys
