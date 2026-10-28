@@ -59,7 +59,7 @@ interface Session {
   args: Record<string, unknown>;
   preferences: Record<string, unknown>;
   query: string;
-  launchType: Context["launchType"];
+  launchType: NonNullable<Context["launchType"]>;
 }
 
 let session: Session = { command: "", args: {}, preferences: {}, query: "", launchType: "userInitiated" };
