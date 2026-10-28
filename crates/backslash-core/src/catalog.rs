@@ -7,6 +7,12 @@
 //! and the permissions it asks for. Installing fetches that exact commit and
 //! refuses anything that does not match: the registry is a curated, reviewed
 //! index, not a host, so authors keep their code and reviews stay small.
+//!
+//! The registry's CI signs every state of `main` it checked, as a commit on
+//! the `signed` branch, with a key whose public half ships with Backslash
+//! ([`DEFAULT_SIGNERS`]). The launcher only reads a copy whose signature
+//! checks out and that is not older than the last one it accepted, so a
+//! mirror or a network in the middle can neither forge nor roll back entries.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -18,9 +24,15 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::manifest::{Manifest, MANIFEST_FILE};
+use crate::signature::{self, PublicKey};
 use crate::{approvals, paths, store};
 
 pub const DEFAULT_REGISTRY: &str = "https://github.com/backslash-app/plugins";
+/// Keys trusted to sign the registry (`ssh-ed25519 …` lines). While empty,
+/// the registry is read from `main` without a signature check.
+pub const DEFAULT_SIGNERS: &[&str] = &[];
+/// The branch holding the signed states of the registry.
+pub const SIGNED_BRANCH: &str = "signed";
 const INSTALL_RECORD: &str = ".backslash-install.json";
 
 /// One extension listed in the registry.
@@ -61,6 +73,9 @@ pub struct Locations {
     pub cache: PathBuf,
     /// Git URL of the registry.
     pub registry: String,
+    /// Keys the registry must be signed with (`ssh-ed25519 …` lines); none
+    /// means the registry is not checked.
+    pub signers: Vec<String>,
 }
 
 impl Locations {
@@ -69,12 +84,32 @@ impl Locations {
             extensions: paths::data_dir().join("extensions"),
             cache: paths::cache_dir(),
             registry: std::env::var("BACKSLASH_REGISTRY").unwrap_or_else(|_| config.registry.clone()),
+            signers: config
+                .registry_signers
+                .clone()
+                .unwrap_or_else(|| DEFAULT_SIGNERS.iter().map(|s| s.to_string()).collect()),
         }
     }
 
     fn registry_dir(&self) -> PathBuf {
         self.cache.join("registry")
     }
+
+    /// The commit and committer time of the last signed registry accepted.
+    fn verified_path(&self) -> PathBuf {
+        self.cache.join("registry-verified")
+    }
+
+    fn trusted_keys(&self) -> Result<Vec<PublicKey>> {
+        self.signers.iter().map(|line| PublicKey::parse(line).context("invalid registry signer")).collect()
+    }
+}
+
+/// What [`Locations::verified_path`] holds.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+struct Verified {
+    commit: String,
+    time: i64,
 }
 
 /// How an installed extension was obtained, saved next to it.
@@ -94,6 +129,11 @@ pub struct InstallRecord {
 }
 
 fn git(args: &[&str], cwd: Option<&Path>) -> Result<String> {
+    Ok(git_raw(args, cwd)?.trim().to_string())
+}
+
+/// [`git`] with the output exactly as printed (signed objects are bytes).
+fn git_raw(args: &[&str], cwd: Option<&Path>) -> Result<String> {
     let mut cmd = Command::new("git");
     cmd.args(args).env("GIT_TERMINAL_PROMPT", "0").env("GIT_ASKPASS", "true");
     if let Some(dir) = cwd {
@@ -103,14 +143,22 @@ fn git(args: &[&str], cwd: Option<&Path>) -> Result<String> {
     if !out.status.success() {
         bail!("git {}: {}", args.first().unwrap_or(&""), String::from_utf8_lossy(&out.stderr).trim());
     }
-    Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
+    Ok(String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
 // ---------------------------------------------------------------------------
 // Registry
 
-/// Entries of the local registry clone (empty before the first [`sync`]).
+/// Entries of the local registry clone (empty before the first [`sync`], and
+/// while the copy is not one whose signature was checked).
 pub fn entries(loc: &Locations) -> Vec<Entry> {
+    if !loc.signers.is_empty() {
+        let verified: Option<Verified> = store::read_json(&loc.verified_path());
+        let head = head_commit(&loc.registry_dir());
+        if verified.is_none_or(|v| Some(v.commit) != head) {
+            return Vec::new();
+        }
+    }
     let dir = loc.registry_dir().join("registry");
     let Ok(files) = std::fs::read_dir(&dir) else { return Vec::new() };
     let mut entries: Vec<Entry> = files
@@ -176,19 +224,65 @@ impl SyncReport {
     }
 }
 
+/// The commit checked out in a git folder, read from the files (this runs
+/// for every listing of the store, a `git` process each time would show).
+fn head_commit(dir: &Path) -> Option<String> {
+    let git_dir = dir.join(".git");
+    let head = std::fs::read_to_string(git_dir.join("HEAD")).ok()?;
+    let head = head.trim();
+    let Some(reference) = head.strip_prefix("ref: ") else { return Some(head.to_string()) };
+    if let Ok(commit) = std::fs::read_to_string(git_dir.join(reference)) {
+        return Some(commit.trim().to_string());
+    }
+    let packed = std::fs::read_to_string(git_dir.join("packed-refs")).ok()?;
+    packed.lines().find_map(|l| l.strip_suffix(reference).map(|c| c.trim().to_string()))
+}
+
+/// Checks the signature of `commit` in the git folder `dir`, and that it is
+/// not older than the registry accepted last time (a replayed old state).
+fn verify_registry(loc: &Locations, dir: &Path, commit: &str) -> Result<Verified> {
+    let raw = git_raw(&["cat-file", "commit", commit], Some(dir))?;
+    let verified = signature::verify_commit(&raw, &loc.trusted_keys()?)
+        .with_context(|| format!("the registry at {} is not signed by Backslash", loc.registry))?;
+    let last: Option<Verified> = store::read_json(&loc.verified_path());
+    if let Some(last) = last.filter(|l| verified.time < l.time) {
+        bail!(
+            "the registry at {} is older than the one already seen ({} < {}): refusing to go back",
+            loc.registry,
+            verified.time,
+            last.time
+        );
+    }
+    Ok(Verified { commit: git(&["rev-parse", commit], Some(dir))?, time: verified.time })
+}
+
 /// Brings the local registry copy to the latest commit of the registry (a
 /// shallow clone: fetch, then reset to what was fetched). When the copy can't
 /// be updated in place, it is cloned again. Errors are returned, never
 /// swallowed: the caller decides whether the old copy is still worth showing.
+/// With signers, the `signed` branch is followed and checked before use.
 pub fn sync(loc: &Locations) -> Result<SyncReport> {
     let before: BTreeMap<String, String> = entries(loc).into_iter().map(|e| (e.id, e.commit)).collect();
     let dir = loc.registry_dir();
-    let updated = dir.join(".git").is_dir()
-        && git(&["remote", "get-url", "origin"], Some(&dir)).is_ok_and(|remote| remote == loc.registry)
-        // When it fails, a fresh clone below either fixes the copy or reports the error.
-        && update_in_place(&dir).is_ok();
+    let mut verified = None;
+    let in_place = dir.join(".git").is_dir()
+        && git(&["remote", "get-url", "origin"], Some(&dir)).is_ok_and(|remote| remote == loc.registry);
+    // When it fails, a fresh clone below either fixes the copy or reports the
+    // error. A refused signature is final: a new clone would get the same.
+    let updated = in_place
+        && match update_in_place(loc, &dir) {
+            Ok(v) => {
+                verified = v;
+                true
+            }
+            Err(e) if is_refusal(&e) => return Err(e),
+            Err(_) => false,
+        };
     if !updated {
-        clone_fresh(loc)?;
+        verified = clone_fresh(loc)?;
+    }
+    if let Some(verified) = verified {
+        store::write_json(&loc.verified_path(), &verified)?;
     }
     stamp(&dir);
     let after = entries(loc);
@@ -203,31 +297,61 @@ pub fn sync(loc: &Locations) -> Result<SyncReport> {
     })
 }
 
-/// Fetches the remote's latest commit and moves the copy onto it.
-fn update_in_place(dir: &Path) -> Result<()> {
-    git(&["fetch", "--quiet", "--depth", "1", "origin", "HEAD"], Some(dir))?;
+/// Marks errors that a new clone would not fix (a bad signature).
+#[derive(Debug)]
+struct Refused;
+
+impl std::fmt::Display for Refused {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("refused")
+    }
+}
+
+impl std::error::Error for Refused {}
+
+fn is_refusal(e: &anyhow::Error) -> bool {
+    e.chain().any(|c| c.is::<Refused>())
+}
+
+/// Fetches the remote's latest commit (of the signed branch with signers),
+/// checks it, and moves the copy onto it.
+fn update_in_place(loc: &Locations, dir: &Path) -> Result<Option<Verified>> {
+    let reference = if loc.signers.is_empty() { "HEAD" } else { SIGNED_BRANCH };
+    git(&["fetch", "--quiet", "--depth", "1", "origin", reference], Some(dir))?;
     let fetched = git(&["rev-parse", "FETCH_HEAD"], Some(dir))?;
+    let verified = if loc.signers.is_empty() {
+        None
+    } else {
+        Some(verify_registry(loc, dir, &fetched).map_err(|e| e.context(Refused))?)
+    };
     git(&["reset", "--quiet", "--hard", &fetched], Some(dir))?;
     git(&["clean", "--quiet", "-fd"], Some(dir))?;
     if git(&["rev-parse", "HEAD"], Some(dir))? != fetched {
         bail!("the registry copy did not move to the fetched commit");
     }
-    Ok(())
+    Ok(verified)
 }
 
-/// Clones the registry next to the copy, then swaps them, so a failed clone
-/// leaves the old copy in place.
-fn clone_fresh(loc: &Locations) -> Result<()> {
+/// Clones the registry next to the copy, checks it, then swaps them, so a
+/// failed or refused clone leaves the old copy in place.
+fn clone_fresh(loc: &Locations) -> Result<Option<Verified>> {
     std::fs::create_dir_all(&loc.cache)?;
     let tmp = tempfile::Builder::new().prefix("registry-").tempdir_in(&loc.cache)?;
     let target = tmp.path().join("clone");
-    git(&["clone", "--quiet", "--depth", "1", &loc.registry, &target.to_string_lossy()], None)?;
+    let target_s = target.to_string_lossy();
+    let mut args = vec!["clone", "--quiet", "--depth", "1"];
+    if !loc.signers.is_empty() {
+        args.extend(["--branch", SIGNED_BRANCH]);
+    }
+    args.extend([loc.registry.as_str(), &target_s]);
+    git(&args, None)?;
+    let verified = if loc.signers.is_empty() { None } else { Some(verify_registry(loc, &target, "HEAD")?) };
     let dir = loc.registry_dir();
     if dir.exists() {
         std::fs::remove_dir_all(&dir)?;
     }
     std::fs::rename(&target, &dir)?;
-    Ok(())
+    Ok(verified)
 }
 
 fn stamp(dir: &Path) {
@@ -596,6 +720,7 @@ mod tests {
             extensions: root.path().join("extensions"),
             cache: root.path().join("cache"),
             registry: registry.to_string_lossy().to_string(),
+            signers: Vec::new(),
         };
         World { _root: root, loc, author, registry }
     }
@@ -676,6 +801,70 @@ mod tests {
         let gone = Locations { registry: w.loc.registry.clone() + "-missing", ..w.loc.clone() };
         assert!(sync(&gone).is_err());
         assert_eq!(entries(&w.loc).len(), 1);
+    }
+
+    /// Publishes the registry's current `main` as a commit on `signed`,
+    /// signed with `key`, committed at `time` (what the registry's CI does).
+    fn sign_registry(w: &World, key: &ed25519_dalek::SigningKey, time: i64) {
+        let out = |args: &[&str]| {
+            let o = Command::new("git").args(args).current_dir(&w.registry).output().unwrap();
+            assert!(o.status.success(), "git {args:?}: {}", String::from_utf8_lossy(&o.stderr));
+            String::from_utf8_lossy(&o.stdout).trim().to_string()
+        };
+        let tree = out(&["rev-parse", "main^{tree}"]);
+        let raw = format!("tree {tree}\nauthor CI <ci@x> {time} +0000\ncommitter CI <ci@x> {time} +0000\n\nRegistry\n");
+        let signed = signature::sign_commit(&raw, key);
+        let path = w.registry.join(".git/signed-commit");
+        std::fs::write(&path, signed).unwrap();
+        let id = out(&["hash-object", "-t", "commit", "-w", &path.to_string_lossy()]);
+        out(&["update-ref", "refs/heads/signed", &id]);
+    }
+
+    #[test]
+    fn signed_registry() {
+        let w = world();
+        let entry = publish_entry(&w.loc, &w.author.join("ext")).unwrap();
+        add_entry(&w, &entry);
+        let ours = ed25519_dalek::SigningKey::from_bytes(&[1; 32]);
+        let theirs = ed25519_dalek::SigningKey::from_bytes(&[2; 32]);
+        let loc = Locations { signers: vec![signature::public_line(&ours, "registry")], ..w.loc.clone() };
+
+        // A copy read without checks is not trusted once signers are set.
+        sync(&w.loc).unwrap();
+        assert_eq!(entries(&w.loc).len(), 1);
+        assert!(entries(&loc).is_empty());
+
+        // No signed branch yet: an error, nothing shown.
+        assert!(sync(&loc).is_err());
+        assert!(entries(&loc).is_empty());
+
+        sign_registry(&w, &ours, 2_000);
+        assert_eq!(sync(&loc).unwrap().total, 1);
+        assert_eq!(entries(&loc), vec![entry.clone()]);
+
+        // Signed by another key: refused, the checked copy stays.
+        std::fs::write(
+            w.registry.join("registry/evil.toml"),
+            toml::to_string(&Entry { id: "evil".into(), ..entry.clone() }).unwrap(),
+        )
+        .unwrap();
+        sh(&w.registry, &["add", "."]);
+        sh(&w.registry, &["commit", "-qm", "evil"]);
+        sign_registry(&w, &theirs, 3_000);
+        assert!(format!("{:#}", sync(&loc).unwrap_err()).contains("not signed by Backslash"));
+        assert_eq!(entries(&loc), vec![entry.clone()]);
+        // Even from scratch.
+        std::fs::remove_dir_all(loc.registry_dir()).unwrap();
+        assert!(sync(&loc).is_err());
+        assert!(entries(&loc).is_empty());
+
+        // An older state, even properly signed, is a replay.
+        sign_registry(&w, &ours, 1_000);
+        assert!(format!("{:#}", sync(&loc).unwrap_err()).contains("refusing to go back"));
+
+        sign_registry(&w, &ours, 4_000);
+        assert_eq!(sync(&loc).unwrap().total, 2);
+        assert_eq!(entries(&loc).len(), 2);
     }
 
     #[test]

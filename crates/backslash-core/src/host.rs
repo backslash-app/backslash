@@ -146,6 +146,11 @@ pub fn deno_binary() -> PathBuf {
     crate::runtime::binary()
 }
 
+/// Python for the Python runtime: `$BACKSLASH_PYTHON`, else `python3`.
+pub fn python_binary() -> PathBuf {
+    std::env::var_os("BACKSLASH_PYTHON").map(PathBuf::from).unwrap_or_else(|| "python3".into())
+}
+
 fn join_paths(paths: &[PathBuf]) -> String {
     paths.iter().map(|p| p.to_string_lossy().into_owned()).collect::<Vec<_>>().join(",")
 }
@@ -154,7 +159,7 @@ fn join_paths(paths: &[PathBuf]) -> String {
 /// flags, so the sandbox is enforced by the runtime, not by good manners.
 pub fn launch_for(ext: &Extension, command: &CommandDef, sdk: &Path) -> Result<Launch> {
     let dir = ext.dir.canonicalize().with_context(|| format!("{} is missing", ext.dir.display()))?;
-    let entry = dir.join(command.entry_path());
+    let entry = dir.join(command.entry_path(&ext.manifest.runtime));
     if !entry.is_file() {
         anyhow::bail!("{}: entry {} not found", ext.manifest.extension.id, entry.display());
     }
@@ -164,7 +169,20 @@ pub fn launch_for(ext: &Extension, command: &CommandDef, sdk: &Path) -> Result<L
             let program = if program.contains('/') { dir.join(program) } else { PathBuf::from(program) };
             let mut args = rest.to_vec();
             args.push(entry.to_string_lossy().into_owned());
-            Ok(Launch { program, args, cwd: dir })
+            crate::sandbox::wrap(Launch { program, args, cwd: dir }, &ext.manifest.permissions, &[])
+        }
+        Runtime::Python => {
+            // -I: no user site-packages or PYTHON* variables; the runtime puts
+            // the SDK and the extension's folder on the module path itself.
+            let sdk = sdk.join("python");
+            let args = vec![
+                "-I".into(),
+                "-u".into(),
+                sdk.join("runtime.py").to_string_lossy().into_owned(),
+                entry.to_string_lossy().into_owned(),
+            ];
+            let launch = Launch { program: python_binary(), args, cwd: dir };
+            crate::sandbox::wrap(launch, &ext.manifest.permissions, &[sdk])
         }
         Runtime::Deno => {
             let perms = &ext.manifest.permissions;

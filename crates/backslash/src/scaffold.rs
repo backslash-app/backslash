@@ -5,7 +5,8 @@ use std::path::Path;
 use anyhow::{bail, Result};
 use backslash_core::paths;
 
-pub fn create(id: &str, parent: Option<&Path>) -> Result<()> {
+/// `python`: an extension using the Python SDK instead of TypeScript.
+pub fn create(id: &str, parent: Option<&Path>, python: bool) -> Result<()> {
     if id.is_empty() || !id.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-') {
         bail!("extension id must match [a-z0-9-]+");
     }
@@ -28,7 +29,7 @@ author = ""
 icon = "applications-other"
 license = "MIT"
 
-# Everything not listed here is denied. Examples:
+{runtime}# Everything not listed here is denied. Examples:
 #   net = ["api.github.com"]   run = ["git"]   read = ["~/Documents"]
 [permissions]
 
@@ -36,9 +37,16 @@ license = "MIT"
 name = "hello"
 title = "Hello from {title}"
 keywords = ["{id}"]
-"#
+"#,
+            runtime = if python { "[runtime]\nkind = \"python\"\n\n" } else { "" },
         ),
     )?;
+
+    if python {
+        std::fs::write(dir.join("commands/hello.py"), PYTHON_HELLO)?;
+        std::fs::write(dir.join(".gitignore"), "__pycache__\n")?;
+        return done(&dir, id);
+    }
 
     std::fs::write(
         dir.join("commands/hello.ts"),
@@ -80,7 +88,36 @@ export default list({
         format!("{{\n  \"imports\": {{\n    \"@backslash/api\": \"{}/mod.ts\"\n  }}\n}}\n", sdk.display()),
     )?;
     std::fs::write(dir.join(".gitignore"), "node_modules\n")?;
+    done(&dir, id)
+}
 
+const PYTHON_HELLO: &str = r##"from backslash import Action, Copy, Detail, Item, List, close, toast
+
+
+def say_hi(ctx):
+    toast("Hi!", style="success")
+    return close()
+
+
+command = List(
+    placeholder="Search greetings…",
+    items=[
+        Item(
+            "Hello, Linux",
+            subtitle="Press Enter to see details",
+            icon="👋",
+            tags=["new"],
+            actions=[
+                Action("Show Details", lambda ctx: Detail("# Hello!\n\nEdit `commands/hello.py`, then reopen this command.")),
+                Copy("Hello, Linux"),
+            ],
+        ),
+        Item("Say Hi", icon="💬", actions=[Action("Say Hi", say_hi)]),
+    ],
+)
+"##;
+
+fn done(dir: &Path, id: &str) -> Result<()> {
     println!("Created {}", dir.display());
     println!();
     println!("  cd {}", dir.display());

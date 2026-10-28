@@ -36,6 +36,11 @@ export interface Context<Args = Record<string, unknown>, Prefs = Record<string, 
   signal: AbortSignal;
   /** The chip picked in the list's `filter`, if it has one. */
   filter?: string;
+  /**
+   * `"background"` when the command runs on its `interval` or refreshes its
+   * tray menu by itself, `"userInitiated"` otherwise.
+   */
+  launchType: "userInitiated" | "background";
 }
 
 type Awaitable<T> = T | Promise<T>;
@@ -407,8 +412,51 @@ export function run<Args = Record<string, unknown>>(fn: (ctx: Context<Args>) => 
   return { [KIND]: "run", run: fn as RunSpec["run"] };
 }
 
+// ---------------------------------------------------------------------------
+// Tray menus
+
+/** A line of a tray menu. */
+export interface MenuBarItem {
+  /** Stable id (default: the title); a click runs the command again and finds the item by it. */
+  id?: string;
+  title: string;
+  subtitle?: string;
+  icon?: Icon;
+  /** Items sharing a section are grouped under a header. */
+  section?: string;
+  /** `false` greys it out. */
+  enabled?: boolean;
+  /** Runs when the item is clicked: `open`, `copy` or `action`. */
+  action?: Action;
+  /** A submenu. */
+  items?: MenuBarItem[];
+}
+
+export interface MenuBarOptions {
+  /** Text next to the icon, where the tray shows one (GNOME with AppIndicator, Ubuntu). */
+  title?: string;
+  /** Defaults to the command's icon. */
+  icon?: Icon;
+  tooltip?: string;
+  items: MenuBarItem[] | ((ctx: Context) => Awaitable<MenuBarItem[]>);
+}
+
+export interface MenuBarSpec extends MenuBarOptions {
+  readonly [KIND]: "menu";
+}
+
+/**
+ * What a `mode = "menu-bar"` command shows: an icon in the system tray with a
+ * menu. Backslash runs the command when it starts, every `interval`, and
+ * when the user opens it from the search; clicking an item runs it again
+ * and calls the item's action.
+ */
+export function menuBar(options: MenuBarOptions): MenuBarSpec {
+  return { ...options, [KIND]: "menu" };
+}
+
 /** What a command module may export by default. */
-export type Command = View | RunSpec | ((ctx: Context) => Awaitable<View>);
+export type Command = View | RunSpec | MenuBarSpec | ((ctx: Context) => Awaitable<View | MenuBarSpec>);
 
 // ---------------------------------------------------------------------------
 // Actions

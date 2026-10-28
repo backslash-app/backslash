@@ -31,6 +31,7 @@ overrides:
       - wl-clipboard
       - fd-find
       - libsecret-tools
+      - bubblewrap
     suggests:
       - libgtk4-layer-shell0
       - wmctrl
@@ -43,5 +44,6 @@ overrides:
       - fd-find
       - libsecret
       - gtk4-layer-shell
+      - bubblewrap
     suggests:
       - wmctrl

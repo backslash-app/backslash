@@ -8,6 +8,7 @@
 //! are implemented here.
 
 mod appupdate;
+mod background;
 mod model;
 mod rows;
 mod settings;
@@ -27,7 +28,7 @@ use std::time::Duration;
 use backslash_core::config::{Config, Reopen};
 use backslash_core::host::{Incoming, RpcError, Session};
 use backslash_core::manifest::Runtime;
-use backslash_core::protocol::{self as proto, Effect, FieldKind, Filtering, FormView, View};
+use backslash_core::protocol::{self as proto, Effect, FieldKind, Filtering, FormView, LaunchType, View};
 use backslash_core::registry::{CommandEntry, Registry};
 use backslash_core::scripts::{self, Mode as ScriptMode, Script};
 use backslash_core::search::{Ranker, Usage};
@@ -202,6 +203,8 @@ pub(super) struct State {
     hidden_at: Option<std::time::Instant>,
     /// A new version of Backslash itself.
     app_update: appupdate::AppUpdate,
+    /// Commands running on their own: intervals and tray menus.
+    background: background::Background,
 }
 
 /// Subtitles set by commands with `updateCommandMetadata`, kept on disk.
@@ -274,6 +277,8 @@ pub struct Launcher {
     actions_entry: gtk::Entry,
     actions_context: gtk::Label,
     popover_list: gtk::ListBox,
+    /// Scrolls the action panel's list (long lists, submenus).
+    popover_scroll: gtk::ScrolledWindow,
     /// Actions shown in the panel (after filtering), in list order.
     popover_actions: RefCell<Vec<UiAction>>,
     /// Open submenus: title and actions of each level, the top one shown.
@@ -573,6 +578,7 @@ impl Launcher {
             actions_entry,
             actions_context,
             popover_list,
+            popover_scroll,
             popover_actions: RefCell::default(),
             menu_levels: RefCell::default(),
             state: RefCell::new(State {
@@ -608,6 +614,7 @@ impl Launcher {
                 early_updates: Vec::new(),
                 hidden_at: None,
                 app_update: Default::default(),
+                background: Default::default(),
                 gnome_helper_needed: window_backend.is_none()
                     && backslash_core::system::windows::is_gnome()
                     && std::env::var_os("WAYLAND_DISPLAY").is_some(),
@@ -710,6 +717,7 @@ impl Launcher {
     /// Background services, started once the application is registered.
     fn start_services(self: &Rc<Self>) {
         self.watch_dev_dir();
+        self.start_background();
         // Pictures (avatars, favicons) arrive after the rows: redraw them.
         let weak = Rc::downgrade(self);
         crate::images::on_ready(move || {
@@ -1126,7 +1134,8 @@ impl Launcher {
                 FrameKind::Root => ("Backslash".to_string(), "list"),
                 FrameKind::Builtin(b) => (b.title().to_string(), "list"),
                 FrameKind::Extension { view: View::List(_), title, .. } => (title.clone(), "list"),
-                FrameKind::Extension { view: View::Detail(_), title, .. } => (title.clone(), "detail"),
+                // Menus go to the tray and are never pushed; shown empty if one were.
+                FrameKind::Extension { view: View::Detail(_) | View::Menu(_), title, .. } => (title.clone(), "detail"),
                 FrameKind::Extension { view: View::Form(_), title, .. } => (title.clone(), "form"),
                 FrameKind::Form { form, .. } => (form.title.clone().unwrap_or_default(), "form"),
                 FrameKind::Approval { .. } => ("Permissions".to_string(), "detail"),
@@ -1169,6 +1178,7 @@ impl Launcher {
                     View::List(l) => l.title.clone(),
                     View::Detail(d) => d.title.clone(),
                     View::Form(f) => f.title.clone(),
+                    View::Menu(m) => m.title.clone(),
                 };
                 let parent = frames.len().checked_sub(2).map(|i| &frames[i].kind);
                 let text = match (parent, view_title) {
@@ -1717,7 +1727,9 @@ impl Launcher {
             let from = |actions: &[proto::Action]| actions.iter().map(UiAction::from_proto).collect::<Vec<_>>();
             match &s.frames.last().unwrap().kind {
                 FrameKind::Extension { view: View::Detail(d), .. } => return from(&d.actions),
-                FrameKind::Extension { view: View::Form(_), .. } | FrameKind::Form { .. } => return Vec::new(),
+                FrameKind::Extension { view: View::Form(_) | View::Menu(_), .. } | FrameKind::Form { .. } => {
+                    return Vec::new()
+                }
                 FrameKind::ConfirmInstall { id } => {
                     return vec![
                         UiAction::new("Install", Op::InstallEntry(id.clone())).icon("bs-check"),
@@ -1948,14 +1960,7 @@ impl Launcher {
 
     /// Keeps the selected row visible (rows are not focusable, so GTK won't do it).
     fn scroll_to(&self, row: &gtk::ListBoxRow) {
-        let Some(bounds) = row.compute_bounds(&self.list) else { return };
-        let adj = self.scroller.vadjustment();
-        let (top, bottom) = (bounds.y() as f64, (bounds.y() + bounds.height()) as f64);
-        if top < adj.value() {
-            adj.set_value(top - 6.0);
-        } else if bottom > adj.value() + adj.page_size() {
-            adj.set_value(bottom - adj.page_size() + 6.0);
-        }
+        scroll_into_view(row, &self.list, &self.scroller);
     }
 
     fn on_key(self: &Rc<Self>, key: gdk::Key, mods: gdk::ModifierType) -> glib::Propagation {
@@ -2115,8 +2120,9 @@ impl Launcher {
         let select = |i: i32| {
             if let Some(row) = self.popover_list.row_at_index(i.clamp(0, actions.len() as i32 - 1)) {
                 self.popover_list.select_row(Some(&row));
-                row.grab_focus();
-                self.actions_entry.grab_focus_without_selecting();
+                // The focus stays in the search field, so the scrolled window
+                // doesn't follow the selection by itself.
+                scroll_into_view(&row, &self.popover_list, &self.popover_scroll);
             }
         };
         match key {
@@ -2318,6 +2324,7 @@ impl Launcher {
         if let Some(first) = self.popover_list.row_at_index(0) {
             self.popover_list.select_row(Some(&first));
         }
+        self.popover_scroll.vadjustment().set_value(0.0);
     }
 
     fn on_actions_query_changed(&self) {
@@ -2622,6 +2629,8 @@ impl Launcher {
             Started((Session, backslash_core::host::Pending), String, Map<String, Value>),
             Push(FrameKind),
             Failed(String),
+            /// A tray menu: refreshed rather than opened.
+            Tray,
         }
         let prepared = {
             let s = self.state.borrow();
@@ -2640,6 +2649,8 @@ impl Launcher {
                             purpose: FormPurpose::Preferences { extension_id: ext_id, then_run: Some(id.into()) },
                             form: settings::preferences_form(manifest, &s.config),
                         })
+                    } else if command.mode == backslash_core::manifest::CommandMode::MenuBar {
+                        Prepared::Tray
                     } else if arguments.is_none() && !command.arguments.is_empty() {
                         Prepared::Push(FrameKind::Form {
                             purpose: FormPurpose::Arguments { command_id: id.into() },
@@ -2647,7 +2658,7 @@ impl Launcher {
                         })
                     } else {
                         let arguments = arguments.unwrap_or_default();
-                        match runner::start(ext, command, &s.config, arguments.clone(), "") {
+                        match runner::start(ext, command, &s.config, arguments.clone(), "", LaunchType::UserInitiated) {
                             Ok(started) => Prepared::Started(started, command.title.clone(), arguments),
                             Err(e) => Prepared::Failed(format!("{e:#}")),
                         }
@@ -2659,6 +2670,10 @@ impl Launcher {
             Prepared::Started(started, title, arguments) => (started, title, arguments),
             Prepared::Failed(e) => return self.fail(e),
             Prepared::Push(kind) => return self.push(kind),
+            Prepared::Tray => {
+                self.run_in_background(id);
+                return self.flash_and_hide("Shown in the system tray");
+            }
         };
 
         let session = Rc::new(session);
@@ -3642,6 +3657,27 @@ fn reveal(path: &std::path::Path) {
 // ---------------------------------------------------------------------------
 // Helpers
 
+/// Scrolls `scroller` just enough for `row` of `list` to be visible. The first
+/// row scrolls to the very top, to show its section header.
+fn scroll_into_view(row: &gtk::ListBoxRow, list: &gtk::ListBox, scroller: &gtk::ScrolledWindow) {
+    let adj = scroller.vadjustment();
+    if row.index() == 0 {
+        adj.set_value(0.0);
+        return;
+    }
+    let Some(bounds) = row.compute_bounds(list) else { return };
+    let (mut top, bottom) = (bounds.y() as f64, (bounds.y() + bounds.height()) as f64);
+    // A section's first row comes with its header: show both.
+    if let Some(header) = row.header().and_then(|h| h.compute_bounds(list)) {
+        top = top.min(header.y() as f64);
+    }
+    if top < adj.value() {
+        adj.set_value(top - 6.0);
+    } else if bottom > adj.value() + adj.page_size() {
+        adj.set_value(bottom - adj.page_size() + 6.0);
+    }
+}
+
 fn view_id(view: &View) -> Option<String> {
     view_id_ref(view).map(str::to_owned)
 }
@@ -3651,6 +3687,7 @@ fn view_id_ref(view: &View) -> Option<&str> {
         View::List(v) => v.id.as_deref(),
         View::Detail(v) => v.id.as_deref(),
         View::Form(v) => v.id.as_deref(),
+        View::Menu(v) => v.id.as_deref(),
     }
 }
 

@@ -29,18 +29,19 @@ the CLI and two bundled extensions. Next steps, roughly in order.
 - [x] Registry: a git index of extensions pinned by commit hash and checksum,
       `backslash install/update/uninstall/search/publish`, store view.
 - [x] Update badge on Browse Extensions (registry checked every 6 hours), Update All.
-- [ ] Signed registry commits, so a compromised mirror cannot serve entries.
+- [x] Signed registry commits, so a compromised mirror cannot serve entries
+      (needs the registry key: see CONTRIBUTING).
 - [x] Grid layout for lists (emoji, images).
 - [x] Rich preview panel for list items: stats, tags, people, links, progress.
 - [x] List filters, footer status, command subtitles, action sections and submenus.
 - [x] Backslash's own icon set, drawn in the theme colors.
-- [ ] Menu-bar/tray items.
-- [ ] Background commands on an interval.
+- [x] Menu-bar/tray items.
+- [x] Background commands on an interval.
 - [x] OAuth helper (PKCE, loopback redirect, refresh, tokens in the keyring).
 - [x] Hot reload in `backslash dev` (watch files, re-run the open command).
-- [ ] Sandbox exec-runtime extensions with bubblewrap.
+- [x] Sandbox exec-runtime extensions with bubblewrap.
 - [x] Script commands: any executable with a few comment lines, in any language.
-- [ ] Python SDK.
+- [x] Python SDK.
 
 ## Quality
 - [x] Welcome checklist on first launch, with the real state of each step on this desktop.

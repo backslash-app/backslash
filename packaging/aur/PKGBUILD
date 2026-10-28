@@ -1,4 +1,4 @@
-# Maintainer: Steven Persia <persia.steven8@gmail.com>
+# Maintainer: Backslash <contact@getbackslash.com>
 # Builds the tagged release from source. The release workflow publishes it to
 # the AUR with the right version and checksum (packaging/aur/publish.sh).
 pkgname=backslash
@@ -16,6 +16,7 @@ optdepends=(
   'libsecret: keep extension secrets in the keyring'
   'gtk4-layer-shell: overlay window on wlroots compositors'
   'wmctrl: window switcher on X11'
+  'bubblewrap: sandbox for Python and other non-TypeScript extensions'
 )
 source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
 sha256sums=('78854e8aff3b433273985e4d80f56e183f6e76a58fe9c07c7a6c6496735b12a8')

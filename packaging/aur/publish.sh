@@ -37,6 +37,6 @@ if git diff --cached --quiet; then
   echo "The AUR already has backslash $version"
   exit 0
 fi
-git -c user.name="Steven Persia" -c user.email="persia.steven8@gmail.com" commit -qm "Update to $version"
+git -c user.name="Backslash" -c user.email="contact@getbackslash.com" commit -qm "Update to $version"
 git push -q origin HEAD:master
 echo "Published backslash $version to the AUR"

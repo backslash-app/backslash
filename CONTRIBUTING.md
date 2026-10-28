@@ -51,7 +51,9 @@ Pushing a `v0.4.0` tag, or creating the release on GitHub, does the same.
 
 ### AUR setup (once)
 
-1. Create an account on [aur.archlinux.org](https://aur.archlinux.org/register).
+1. Create an account on [aur.archlinux.org](https://aur.archlinux.org/register)
+   with the project address, `contact@getbackslash.com` (the `PKGBUILD`
+   names it as maintainer and the AUR commits are made under it).
 2. Make a key for CI: `ssh-keygen -t ed25519 -f aur -N "" -C backslash-ci`.
 3. Paste `aur.pub` in *My Account → SSH Public Key* on the AUR.
 4. Paste the content of `aur` (the private key) in the repository's
@@ -62,3 +64,22 @@ Pushing a `v0.4.0` tag, or creating the release on GitHub, does the same.
 
 The first release after this creates the `backslash` package on the AUR.
 Without the secret, the AUR step only checks the package and says so.
+
+### Registry signing key (once)
+
+Backslash reads the extension registry only from commits signed by the
+registry key, which the CI of
+[backslash-app/plugins](https://github.com/backslash-app/plugins) makes on its
+`signed` branch each time `main` passes the checks.
+
+1. Make the key: `ssh-keygen -t ed25519 -f registry -N "" -C backslash-registry`.
+2. In backslash-app/plugins, add the content of `registry` (the private key) as
+   the Actions secret `REGISTRY_SIGNING_KEY`, then re-run the last *Check*
+   workflow on `main`: the `signed` branch appears.
+3. Here, add the line of `registry.pub` to `DEFAULT_SIGNERS` in
+   `crates/backslash-core/src/catalog.rs` and release. Keep the private key
+   offline (a password manager), then delete both files.
+
+To replace the key, add the new public key next to the old one, release, then
+change the secret, and remove the old key in a later release. Until
+`DEFAULT_SIGNERS` holds a key, the registry is read from `main` unchecked.

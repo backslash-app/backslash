@@ -62,6 +62,10 @@ pub struct Config {
     pub hidden_apps: Vec<String>,
     /// Git URL of the extension registry.
     pub registry: String,
+    /// Keys the registry must be signed with, as `ssh-ed25519 …` lines. Unset:
+    /// Backslash's own keys. `[]` turns the check off (a registry of your own).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub registry_signers: Option<Vec<String>>,
     pub clipboard: ClipboardConfig,
     pub extensions: BTreeMap<String, ExtensionConfig>,
     pub quicklinks: Vec<Quicklink>,
@@ -87,6 +91,7 @@ impl Default for Config {
             layer_shell: true,
             hidden_apps: Vec::new(),
             registry: crate::catalog::DEFAULT_REGISTRY.into(),
+            registry_signers: None,
             clipboard: ClipboardConfig::default(),
             extensions: BTreeMap::new(),
             quicklinks: Vec::new(),

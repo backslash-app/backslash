@@ -21,11 +21,11 @@ pub enum Event {
 
 const ITEM_PATH: &str = "/StatusNotifierItem";
 const MENU_PATH: &str = "/MenuBar";
-const WATCHER: &str = "org.kde.StatusNotifierWatcher";
+pub(crate) const WATCHER: &str = "org.kde.StatusNotifierWatcher";
 const ICON_NAME: &str = "app.backslash.Backslash";
 const ICON_PNG: &[u8] = include_bytes!("../../../data/icons/backslash.png");
 
-const ITEM_XML: &str = r#"<node>
+pub(crate) const ITEM_XML: &str = r#"<node>
   <interface name="org.kde.StatusNotifierItem">
     <property name="Category" type="s" access="read"/>
     <property name="Id" type="s" access="read"/>
@@ -55,7 +55,7 @@ const ITEM_XML: &str = r#"<node>
   </interface>
 </node>"#;
 
-const MENU_XML: &str = r#"<node>
+pub(crate) const MENU_XML: &str = r#"<node>
   <interface name="com.canonical.dbusmenu">
     <property name="Version" type="u" access="read"/>
     <property name="TextDirection" type="s" access="read"/>
@@ -365,11 +365,11 @@ fn menu_property(name: &str) -> glib::Variant {
     }
 }
 
-fn interface(xml: &str, name: &str) -> Option<gio::DBusInterfaceInfo> {
+pub(crate) fn interface(xml: &str, name: &str) -> Option<gio::DBusInterfaceInfo> {
     gio::DBusNodeInfo::for_xml(xml).ok()?.lookup_interface(name)
 }
 
-fn register_with_watcher(bus: &gio::DBusConnection, service: &str) {
+pub(crate) fn register_with_watcher(bus: &gio::DBusConnection, service: &str) {
     bus.call(
         Some(WATCHER),
         "/StatusNotifierWatcher",

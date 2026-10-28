@@ -115,7 +115,8 @@ pub fn run(id: &str, query: &str, raw_args: &[String], json_out: bool, yes: bool
         raw.insert(k.to_string(), v.into());
     }
     let arguments = runner::parse_arguments(command, &raw).map_err(|e| anyhow!(e))?;
-    let (session, pending) = runner::start(ext, command, &config, arguments, query)?;
+    let (session, pending) =
+        runner::start(ext, command, &config, arguments, query, backslash_core::protocol::LaunchType::UserInitiated)?;
     let effect: Effect = serde_json::from_value(wait(&session, pending)?)?;
 
     let view = match effect {
@@ -183,8 +184,25 @@ pub fn run(id: &str, query: &str, raw_args: &[String], json_out: bool, yes: bool
         View::Form(form) => {
             bail!("{id} shows a form ({} fields); open it in the launcher", form.fields.len())
         }
+        View::Menu(menu) => {
+            println!("{}", menu.title.as_deref().or(menu.tooltip.as_deref()).unwrap_or(&command.title));
+            print_menu(&menu.items, 1);
+        }
     }
     Ok(())
+}
+
+fn print_menu(items: &[backslash_core::protocol::MenuItem], depth: usize) {
+    let mut section = None;
+    for item in items {
+        if item.section.is_some() && item.section != section {
+            section = item.section.clone();
+            println!("{}{}", "  ".repeat(depth), section.as_deref().unwrap_or_default().to_uppercase());
+        }
+        let subtitle = item.subtitle.as_deref().map(|s| format!("  — {s}")).unwrap_or_default();
+        println!("{}{}{subtitle}", "  ".repeat(depth), item.title);
+        print_menu(&item.items, depth + 1);
+    }
 }
 
 /// Same consent as in the launcher: ask on a terminal, or require `--yes`.
@@ -221,8 +239,8 @@ pub fn list() -> Result<()> {
         let state = if config.is_enabled(&m.extension.id) { "" } else { " (disabled)" };
         println!("{} {} — {}{state}", m.extension.id, m.extension.version, m.extension.title);
         println!("  {}", ext.dir.display());
-        if matches!(m.runtime, backslash_core::manifest::Runtime::Exec { .. }) {
-            println!("  ! Not sandboxed: runs as a regular program");
+        if m.runtime != backslash_core::manifest::Runtime::Deno {
+            println!("  ! Sandboxed by bubblewrap: any program, and any website if it asks for one");
         }
         for p in m.permissions.describe() {
             println!("  ! {p}");
@@ -266,6 +284,10 @@ pub fn doctor() -> Result<()> {
     );
     let sdk = paths::sdk_dir();
     println!("[{}] SDK: {}", ok(sdk.join("mod.ts").exists()), sdk.display());
+    match backslash_core::sandbox::bwrap() {
+        Some(bwrap) => println!("[ok  ] Sandbox for Python and exec extensions: {}", bwrap.display()),
+        None => println!("[info] Sandbox for Python and exec extensions: install bubblewrap to run them"),
+    }
 
     let session = std::env::var("XDG_SESSION_TYPE").unwrap_or_else(|_| "unknown".into());
     let desktop = std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_else(|_| "unknown".into());

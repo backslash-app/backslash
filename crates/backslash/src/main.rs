@@ -19,6 +19,7 @@ mod portal;
 mod scaffold;
 mod theme;
 mod tray;
+mod tray_items;
 
 use std::path::PathBuf;
 
@@ -67,6 +68,9 @@ enum Cmd {
         /// Parent directory (default: current directory).
         #[arg(long)]
         dir: Option<PathBuf>,
+        /// Write it in Python rather than TypeScript.
+        #[arg(long)]
+        python: bool,
     },
     /// Open the launcher with an extension loaded from a directory and show its logs.
     Dev {
@@ -144,7 +148,7 @@ fn run(args: Args) -> anyhow::Result<()> {
             cli::run(&id, query.as_deref().unwrap_or(""), &args, json, yes)
         }
         Some(Cmd::List) => cli::list(),
-        Some(Cmd::New { name, dir }) => scaffold::create(&name, dir.as_deref()),
+        Some(Cmd::New { name, dir, python }) => scaffold::create(&name, dir.as_deref(), python),
         Some(Cmd::Doctor) => cli::doctor(),
         Some(Cmd::Install { target, rev, path, yes }) => catalog_cli::install(&target, rev, path, yes),
         Some(Cmd::Uninstall { id }) => catalog_cli::uninstall(&id),

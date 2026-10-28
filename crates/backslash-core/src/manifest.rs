@@ -54,9 +54,22 @@ pub enum Runtime {
     /// declared permissions enforced by Deno itself.
     #[default]
     Deno,
-    /// Any executable speaking the protocol on stdin/stdout. Not sandboxed:
-    /// the install screen says so.
+    /// Any executable speaking the protocol on stdin/stdout, run in a
+    /// bubblewrap sandbox (see [`crate::sandbox`]).
     Exec { command: Vec<String> },
+    /// Python 3 modules using the SDK shipped with the launcher
+    /// (`sdk/python`), run in a bubblewrap sandbox.
+    Python,
+}
+
+impl Runtime {
+    /// Extension of command files when the manifest names none.
+    pub fn default_extension(&self) -> &'static str {
+        match self {
+            Self::Python => "py",
+            Self::Deno | Self::Exec { .. } => "ts",
+        }
+    }
 }
 
 /// Capabilities an extension asks for. Anything not listed is denied.
@@ -121,6 +134,9 @@ pub enum CommandMode {
     View,
     /// Runs, optionally shows a message, and closes the launcher.
     NoView,
+    /// Shows an icon and a menu in the system tray (a `menu` view),
+    /// refreshed when Backslash starts and every `interval`.
+    MenuBar,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -137,16 +153,53 @@ pub struct CommandDef {
     #[serde(default)]
     pub mode: CommandMode,
     /// Source file, relative to the extension directory. Defaults to
-    /// `commands/<name>.ts`.
+    /// `commands/<name>.ts` (`.py` for the Python runtime).
     #[serde(default)]
     pub entry: Option<PathBuf>,
     #[serde(default, rename = "arguments")]
     pub arguments: Vec<Argument>,
+    /// `no-view` and `menu-bar` commands: run in the background this often
+    /// (`"30m"`, `"1h"`, `"1d"`; at least a minute).
+    #[serde(default)]
+    pub interval: Option<String>,
+}
+
+/// Parses `"90s"`, `"10m"`, `"2h"` or `"1d"`.
+pub fn parse_interval(text: &str) -> Option<std::time::Duration> {
+    let text = text.trim();
+    let split = text.find(|c: char| !c.is_ascii_digit())?;
+    let (number, unit) = text.split_at(split);
+    let n: u64 = number.parse().ok()?;
+    let seconds = match unit.trim() {
+        "s" => n,
+        "m" => n * 60,
+        "h" => n * 3600,
+        "d" => n * 86400,
+        _ => return None,
+    };
+    Some(std::time::Duration::from_secs(seconds))
 }
 
 impl CommandDef {
-    pub fn entry_path(&self) -> PathBuf {
-        self.entry.clone().unwrap_or_else(|| PathBuf::from(format!("commands/{}.ts", self.name)))
+    /// How often the command runs in the background, if it does.
+    pub fn interval(&self) -> Option<std::time::Duration> {
+        self.interval.as_deref().and_then(parse_interval)
+    }
+
+    /// "every 10 minutes", for the permission prompt.
+    pub fn interval_text(&self) -> Option<String> {
+        let secs = self.interval()?.as_secs();
+        let (n, unit) = [(86400, "day"), (3600, "hour"), (60, "minute"), (1, "second")]
+            .into_iter()
+            .find(|(size, _)| secs % size == 0)
+            .map(|(size, unit)| (secs / size, unit))?;
+        Some(if n == 1 { format!("every {unit}") } else { format!("every {n} {unit}s") })
+    }
+
+    pub fn entry_path(&self, runtime: &Runtime) -> PathBuf {
+        self.entry
+            .clone()
+            .unwrap_or_else(|| PathBuf::from(format!("commands/{}.{}", self.name, runtime.default_extension())))
     }
 }
 
@@ -254,9 +307,20 @@ impl Manifest {
             if !seen.insert(&command.name) {
                 bail!("duplicate command `{}`", command.name);
             }
-            if command.entry_path().is_absolute()
-                || command.entry_path().components().any(|c| matches!(c, std::path::Component::ParentDir))
-            {
+            if let Some(text) = &command.interval {
+                if !matches!(command.mode, CommandMode::NoView | CommandMode::MenuBar) {
+                    bail!("command `{}`: only no-view and menu-bar commands run on an interval", command.name);
+                }
+                match parse_interval(text) {
+                    Some(d) if d.as_secs() >= 60 => {}
+                    Some(_) => bail!("command `{}`: the interval must be at least a minute", command.name),
+                    None => {
+                        bail!("command `{}`: interval `{text}` is not like \"30m\", \"2h\" or \"1d\"", command.name)
+                    }
+                }
+            }
+            let entry = command.entry_path(&self.runtime);
+            if entry.is_absolute() || entry.components().any(|c| matches!(c, std::path::Component::ParentDir)) {
                 bail!("command `{}`: entry must stay inside the extension", command.name);
             }
         }
@@ -318,7 +382,8 @@ mod tests {
         let m: Manifest = toml::from_str(NPM).unwrap();
         m.validate().unwrap();
         assert_eq!(m.runtime, Runtime::Deno);
-        assert_eq!(m.commands[0].entry_path(), PathBuf::from("commands/search.ts"));
+        assert_eq!(m.commands[0].entry_path(&m.runtime), PathBuf::from("commands/search.ts"));
+        assert_eq!(m.commands[0].entry_path(&Runtime::Python), PathBuf::from("commands/search.py"));
         assert_eq!(m.commands[1].mode, CommandMode::NoView);
         let level = &m.commands[1].arguments[0];
         assert_eq!(level.kind, ArgumentKind::Number);
@@ -337,6 +402,26 @@ mod tests {
 
         let escape = NPM.replace("name = \"search\"", "name = \"search\"\nentry = \"../../etc/passwd\"");
         assert!(toml::from_str::<Manifest>(&escape).unwrap().validate().is_err());
+    }
+
+    #[test]
+    fn intervals() {
+        assert_eq!(parse_interval("10m"), Some(std::time::Duration::from_secs(600)));
+        assert_eq!(parse_interval("1d").unwrap().as_secs(), 86400);
+        assert_eq!(parse_interval("ten minutes"), None);
+        let with = |mode: &str, interval: &str| {
+            NPM.replace(
+                "name = \"search\"",
+                &format!("name = \"search\"\nmode = \"{mode}\"\ninterval = \"{interval}\""),
+            )
+        };
+        let m: Manifest = toml::from_str(&with("menu-bar", "90m")).unwrap();
+        m.validate().unwrap();
+        assert_eq!(m.commands[0].mode, CommandMode::MenuBar);
+        assert_eq!(m.commands[0].interval_text().as_deref(), Some("every 90 minutes"));
+        assert!(toml::from_str::<Manifest>(&with("view", "1h")).unwrap().validate().is_err());
+        assert!(toml::from_str::<Manifest>(&with("no-view", "10s")).unwrap().validate().is_err());
+        assert!(toml::from_str::<Manifest>(&with("no-view", "soon")).unwrap().validate().is_err());
     }
 
     #[test]

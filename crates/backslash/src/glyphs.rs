@@ -288,6 +288,29 @@ fn parsed(name: &str) -> Vec<(Kind, gsk::Path)> {
     })
 }
 
+/// Draws the `bs-…` icon `name` in a `side`×`side` square at the origin.
+pub fn draw(snapshot: &gtk::Snapshot, name: &str, side: f32, color: &gtk::gdk::RGBA) {
+    let faint = gtk::gdk::RGBA::new(color.red(), color.green(), color.blue(), color.alpha() * 0.3);
+    let scale = side / 24.0;
+    snapshot.save();
+    snapshot.scale(scale, scale);
+    // At least one device pixel wide, so tiny icons stay visible.
+    let stroke = gsk::Stroke::new((2.0f32).max(1.0 / scale));
+    stroke.set_line_cap(gsk::LineCap::Round);
+    stroke.set_line_join(gsk::LineJoin::Round);
+    let dashed = stroke.clone();
+    dashed.set_dash(&[3.1, 2.75]);
+    for (kind, path) in parsed(name) {
+        match kind {
+            Stroke => snapshot.append_stroke(&path, &stroke, color),
+            Dashed => snapshot.append_stroke(&path, &dashed, color),
+            Fill => snapshot.append_fill(&path, gsk::FillRule::EvenOdd, color),
+            Faint => snapshot.append_fill(&path, gsk::FillRule::EvenOdd, &faint),
+        }
+    }
+    snapshot.restore();
+}
+
 mod imp {
     use super::*;
 
@@ -323,26 +346,9 @@ mod imp {
             if side <= 0.0 {
                 return;
             }
-            let color = widget.color();
-            let faint = gtk::gdk::RGBA::new(color.red(), color.green(), color.blue(), color.alpha() * 0.3);
-            let scale = side / 24.0;
             snapshot.save();
             snapshot.translate(&gtk::graphene::Point::new((w - side) / 2.0, (h - side) / 2.0));
-            snapshot.scale(scale, scale);
-            // At least one device pixel wide, so tiny icons stay visible.
-            let stroke = gsk::Stroke::new((2.0f32).max(1.0 / scale));
-            stroke.set_line_cap(gsk::LineCap::Round);
-            stroke.set_line_join(gsk::LineJoin::Round);
-            let dashed = stroke.clone();
-            dashed.set_dash(&[3.1, 2.75]);
-            for (kind, path) in parsed(&self.name.borrow()) {
-                match kind {
-                    Stroke => snapshot.append_stroke(&path, &stroke, &color),
-                    Dashed => snapshot.append_stroke(&path, &dashed, &color),
-                    Fill => snapshot.append_fill(&path, gsk::FillRule::EvenOdd, &color),
-                    Faint => snapshot.append_fill(&path, gsk::FillRule::EvenOdd, &faint),
-                }
-            }
+            draw(snapshot, &self.name.borrow(), side, &widget.color());
             snapshot.restore();
         }
     }
