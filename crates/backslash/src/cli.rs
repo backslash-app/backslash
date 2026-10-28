@@ -55,6 +55,8 @@ fn serve(session: &Session, msg: Incoming) {
                     Ok(Value::Null)
                 }
                 "oauth/token" | "oauth/signOut" => oauth(session, &method, &params),
+                // Shown in the launcher's root search only: nothing to do here.
+                "command/metadata" => Ok(Value::Null),
                 _ => Err(RpcError::new(RpcError::METHOD_NOT_FOUND, format!("{method} is not available in the CLI"))),
             };
             session.respond(id, result);

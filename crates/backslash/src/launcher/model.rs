@@ -65,6 +65,9 @@ pub enum Op {
     Copy(String),
     /// Pastes into the app that had the focus, or copies when that is not possible.
     Paste(String),
+    /// Like `Copy` and `Paste`, for secrets clipboard managers must not keep.
+    CopyConcealed(String),
+    PasteConcealed(String),
     /// Pastes (`true`) or copies a snippet after expanding its placeholders.
     Snippet(String, bool),
     Open(String),
@@ -160,8 +163,10 @@ impl UiAction {
     pub fn from_proto(a: &proto::Action) -> Self {
         let op = match &a.kind {
             ActionKind::Open { target } => Op::Open(target.clone()),
-            ActionKind::Copy { text } => Op::Copy(text.clone()),
-            ActionKind::Paste { text } => Op::Paste(text.clone()),
+            ActionKind::Copy { text, concealed: false } => Op::Copy(text.clone()),
+            ActionKind::Copy { text, concealed: true } => Op::CopyConcealed(text.clone()),
+            ActionKind::Paste { text, concealed: false } => Op::Paste(text.clone()),
+            ActionKind::Paste { text, concealed: true } => Op::PasteConcealed(text.clone()),
             ActionKind::Callback => Op::Callback(a.id.clone()),
             ActionKind::Submenu { lazy: true, .. } => Op::LazySubmenu(a.id.clone()),
             ActionKind::Submenu { actions, .. } => Op::Submenu(actions.iter().map(Self::from_proto).collect()),

@@ -409,6 +409,11 @@ interface ActionOptions {
   confirm?: string;
   /** Groups actions under a header in the action panel (Ctrl+K). */
   section?: string;
+  /**
+   * `copy` and `paste` only: the text is a secret (a password, a code).
+   * Clipboard histories, Backslash's included, don't record it.
+   */
+  concealed?: boolean;
 }
 
 export type Action =
@@ -525,14 +530,15 @@ export const field = {
 // Launcher services
 
 export const clipboard = {
-  write: async (text: string): Promise<void> => {
-    await rpc().request("clipboard/write", { text });
+  /** With `concealed`, clipboard histories don't record the text (passwords, codes). */
+  write: async (text: string, options: { concealed?: boolean } = {}): Promise<void> => {
+    await rpc().request("clipboard/write", { text, concealed: options.concealed ?? false });
   },
   /** Requires `clipboard-read = true` in `[permissions]`. */
   read: async (): Promise<string> => String(await rpc().request("clipboard/read") ?? ""),
   /** Pastes into the app the user was in and closes the launcher (copies where it can't). */
-  paste: async (text: string): Promise<void> => {
-    await rpc().request("clipboard/paste", { text });
+  paste: async (text: string, options: { concealed?: boolean } = {}): Promise<void> => {
+    await rpc().request("clipboard/paste", { text, concealed: options.concealed ?? false });
   },
 };
 
