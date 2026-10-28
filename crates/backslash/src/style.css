@@ -135,6 +135,45 @@ window.launcher {
   background-color: @bs_selected;
 }
 
+/* Skeleton: the shape of a list while a command loads. Desktops with
+ * animations turned off show it still. */
+
+@keyframes bone-pulse {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0.45;
+  }
+}
+
+.skeleton-rows {
+  padding: 2px 8px 8px;
+}
+
+.skeleton-row {
+  padding: 0 10px;
+  min-height: 40px;
+}
+
+.compact .skeleton-row {
+  min-height: 32px;
+}
+
+.bone {
+  background-color: @bs_surface;
+  border-radius: 5px;
+  animation: bone-pulse 900ms ease-in-out infinite alternate;
+}
+
+.bone-icon {
+  border-radius: 7px;
+}
+
+.bone-tile {
+  border-radius: 10px;
+}
+
 .section-header {
   color: @bs_faint;
   font-size: 11.5px;

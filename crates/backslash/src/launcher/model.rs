@@ -363,6 +363,12 @@ pub enum FrameKind {
         title: String,
         launched: Rc<Launched>,
     },
+    /// A command started but its first view hasn't come yet: a skeleton of
+    /// rows, so a slow command (a server to ask) doesn't look stuck.
+    Loading {
+        session: Rc<Session>,
+        title: String,
+    },
     /// A form handled by the launcher.
     Form {
         purpose: FormPurpose,

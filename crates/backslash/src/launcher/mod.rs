@@ -51,6 +51,11 @@ use crate::{autostart, clipboard, hotkey, layer, markdown, paste, theme};
 
 pub use self::rows::now;
 
+/// How long a command may take to show its first screen before a skeleton
+/// stands in for it: short enough to feel immediate, long enough that quick
+/// commands never flash it.
+const SKELETON_AFTER: Duration = Duration::from_millis(120);
+
 pub struct Options {
     pub hidden: bool,
     pub dev_dir: Option<PathBuf>,
@@ -252,6 +257,7 @@ pub struct Launcher {
     pages: gtk::Stack,
     list: gtk::ListBox,
     scroller: gtk::ScrolledWindow,
+    skeleton_list: gtk::Box,
     preview: gtk::Box,
     /// Grid layout of extension lists: cells in row order, and the selected one.
     grid_scroller: gtk::ScrolledWindow,
@@ -400,6 +406,20 @@ impl Launcher {
         empty.append(&empty_title);
         empty.append(&empty_subtitle);
         pages.add_named(&empty, Some("empty"));
+        // While a command loads: the list page's shape, greyed out.
+        let skeleton_list = widgets::skeleton_rows();
+        let skeleton_page = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+        skeleton_page.append(&skeleton_list);
+        skeleton_page.append(&divider());
+        skeleton_page.append(&widgets::skeleton_preview());
+        // Cut to the window's height, never growing it (the small size has room for fewer rows).
+        let skeleton_clip = gtk::ScrolledWindow::builder()
+            .hscrollbar_policy(gtk::PolicyType::Never)
+            .vscrollbar_policy(gtk::PolicyType::External)
+            .child(&skeleton_page)
+            .build();
+        skeleton_clip.set_can_focus(false);
+        pages.add_named(&skeleton_clip, Some("skeleton"));
 
         let detail_row = gtk::Box::new(gtk::Orientation::Horizontal, 0);
         let detail = gtk::Label::new(None);
@@ -551,6 +571,7 @@ impl Launcher {
             pages,
             list,
             scroller,
+            skeleton_list,
             preview,
             grid_scroller,
             grid_box,
@@ -1122,6 +1143,7 @@ impl Launcher {
         // The window is not resizable: it takes the panel's size, plus room for the shadow.
         self.panel.set_size_request(width - 28, height - 28);
         self.scroller.set_width_request(list);
+        self.skeleton_list.set_width_request(list);
         self.window.set_default_size(width, height);
     }
 
@@ -1143,6 +1165,7 @@ impl Launcher {
                 // Menus go to the tray and are never pushed; shown empty if one were.
                 FrameKind::Extension { view: View::Detail(_) | View::Menu(_), title, .. } => (title.clone(), "detail"),
                 FrameKind::Extension { view: View::Form(_), title, .. } => (title.clone(), "form"),
+                FrameKind::Loading { title, .. } => (title.clone(), "skeleton"),
                 FrameKind::Form { form, .. } => (form.title.clone().unwrap_or_default(), "form"),
                 FrameKind::Approval { .. } => ("Permissions".to_string(), "detail"),
                 FrameKind::ConfirmInstall { .. } => ("Extensions".to_string(), "detail"),
@@ -1161,6 +1184,7 @@ impl Launcher {
         match page {
             "list" => self.render_list(),
             "detail" => self.render_detail(),
+            "skeleton" => self.render_skeleton(),
             _ => self.render_form(),
         }
         self.update_footer();
@@ -1196,6 +1220,12 @@ impl Launcher {
                     (Some(FrameKind::Extension { session: p, .. }), _) if Rc::ptr_eq(p, session) => title.clone(),
                     _ => format!("{}  ›  {title}", ext.map_or(session.extension_id.as_str(), |e| e.title.as_str())),
                 };
+                (icon.map(|i| (i, Some(tint_for(&session.extension_id)))), text)
+            }
+            FrameKind::Loading { session, title } => {
+                let ext = s.registry.find(&session.extension_id).map(|e| &e.manifest.extension);
+                let icon = ext.map(|e| e.icon.clone().unwrap_or_else(|| "bs-package".into()));
+                let text = format!("{}  ›  {title}", ext.map_or(session.extension_id.as_str(), |e| e.title.as_str()));
                 (icon.map(|i| (i, Some(tint_for(&session.extension_id)))), text)
             }
             FrameKind::Builtin(b) => (None, b.title().to_string()),
@@ -1419,7 +1449,14 @@ impl Launcher {
         let empty_rows = rows.is_empty();
         self.state.borrow_mut().rows = rows;
 
-        if empty_rows {
+        let streaming = matches!(
+            &self.state.borrow().frames.last().unwrap().kind,
+            FrameKind::Extension { view: View::List(l), .. } if l.loading
+        );
+        if empty_rows && streaming && query.is_empty() {
+            // Its empty state would be wrong until the items come.
+            self.pages.set_visible_child_name("skeleton");
+        } else if empty_rows {
             let loading = self.spinner.is_spinning();
             let (title, subtitle) = match empty {
                 Some(e) if query.is_empty() => (e.title, e.description.unwrap_or_default()),
@@ -1555,6 +1592,15 @@ impl Launcher {
             return;
         };
         widgets::fill_preview(&self.preview, &row.preview());
+    }
+
+    /// Placeholder rows while a command loads its first view.
+    fn render_skeleton(&self) {
+        self.spinner.set_spinning(true);
+        self.entry.set_editable(false);
+        self.entry.set_placeholder_text(Some("Loading…"));
+        self.state.borrow_mut().rows.clear();
+        self.pages.set_visible_child_name("skeleton");
     }
 
     fn render_detail(&self) {
@@ -1733,9 +1779,9 @@ impl Launcher {
             let from = |actions: &[proto::Action]| actions.iter().map(UiAction::from_proto).collect::<Vec<_>>();
             match &s.frames.last().unwrap().kind {
                 FrameKind::Extension { view: View::Detail(d), .. } => return from(&d.actions),
-                FrameKind::Extension { view: View::Form(_) | View::Menu(_), .. } | FrameKind::Form { .. } => {
-                    return Vec::new()
-                }
+                FrameKind::Extension { view: View::Form(_) | View::Menu(_), .. }
+                | FrameKind::Form { .. }
+                | FrameKind::Loading { .. } => return Vec::new(),
                 FrameKind::ConfirmInstall { id } => {
                     return vec![
                         UiAction::new("Install", Op::InstallEntry(id.clone())).icon("bs-check"),
@@ -2689,23 +2735,56 @@ impl Launcher {
         let launched = Rc::new(Launched { command_id: id.to_string(), arguments });
         self.listen(&session);
         self.spinner.set_spinning(true);
+        // A command that answers at once opens straight away; a slower one
+        // (a server to ask, a program to run) shows a skeleton meanwhile.
+        let replied = Rc::new(Cell::new(false));
+        let skeleton = Rc::new(Cell::new(false));
+        {
+            let (weak, replied, skeleton) = (Rc::downgrade(self), replied.clone(), skeleton.clone());
+            let (session, title) = (session.clone(), title.clone());
+            glib::timeout_add_local_once(SKELETON_AFTER, move || {
+                let Some(l) = weak.upgrade() else { return };
+                if replied.get() || !l.window.is_visible() {
+                    return;
+                }
+                skeleton.set(true);
+                l.push(FrameKind::Loading { session, title });
+            });
+        }
         let weak = Rc::downgrade(self);
         glib::spawn_future_local(async move {
             let reply = pending.get().await;
+            replied.set(true);
             let Some(l) = weak.upgrade() else { return };
             l.spinner.set_spinning(false);
+            // Gone back from the skeleton, or closed the launcher: not wanted anymore.
+            let shown = skeleton.get();
+            if shown && !l.is_loading(&session) {
+                return;
+            }
             match reply
                 .and_then(|v| serde_json::from_value::<Effect>(v).map_err(|e| RpcError::new(-32700, e.to_string())))
             {
                 Ok(Effect::Push { view } | Effect::Replace { view }) => {
-                    l.push(FrameKind::Extension { session, view, title, launched });
+                    let kind = FrameKind::Extension { session, view, title, launched };
+                    if shown {
+                        l.replace_loading(kind);
+                    } else {
+                        l.push(kind);
+                    }
                 }
                 Ok(Effect::Close { message }) => match message {
                     Some(m) => l.flash_and_hide(&m),
                     None => l.hide(),
                 },
+                Ok(_) if shown => l.pop(),
                 Ok(_) => {}
-                Err(e) => l.fail(format!("{title}: {e}")),
+                Err(e) => {
+                    if shown {
+                        l.pop();
+                    }
+                    l.fail(format!("{title}: {e}"));
+                }
             }
         });
     }
@@ -2962,6 +3041,29 @@ impl Launcher {
             let top = s.frames.last_mut().unwrap();
             top.query = query;
             top.selected = selected;
+        }
+        self.enter(kind);
+    }
+
+    /// Swaps the skeleton of `session`'s command for its first screen. The
+    /// screen below keeps the search and selection saved when it was left.
+    fn replace_loading(self: &Rc<Self>, kind: FrameKind) {
+        self.state.borrow_mut().frames.pop();
+        self.enter(kind);
+    }
+
+    /// Whether the skeleton of `session`'s command is the current screen.
+    fn is_loading(&self, session: &Rc<Session>) -> bool {
+        matches!(
+            self.state.borrow().frames.last().map(|f| &f.kind),
+            Some(FrameKind::Loading { session: s, .. }) if Rc::ptr_eq(s, session)
+        )
+    }
+
+    /// Shows `kind` on top, the screen below having saved its state.
+    fn enter(self: &Rc<Self>, kind: FrameKind) {
+        {
+            let mut s = self.state.borrow_mut();
             s.frames.push(Frame { kind, query: String::new(), selected: None });
             s.confirm = None;
             s.selected_key = None;
