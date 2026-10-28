@@ -33,6 +33,8 @@ version = "0.1.0"
 author = "you"
 icon = "folder-remote"              # icon theme name, absolute path or emoji
 license = "MIT"
+categories = ["developer"]          # in the store: developer, system, network,
+                                    # productivity, media or everyday
 
 # Everything not listed is denied (enforced by Deno). `backslash list` shows it.
 [permissions]

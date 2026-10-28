@@ -1,7 +1,7 @@
 //! The extension store: browsing the registry, installing, updating.
 
 use backslash_core::catalog::{self, Entry, Locations};
-use backslash_core::protocol::{Accessory, MetadataEntry, Tag};
+use backslash_core::protocol::{Accessory, DropdownOption, ListFilter, MetadataEntry, Tag};
 
 use super::model::{tint_for, Op, Preview, Row, UiAction};
 use super::State;
@@ -17,6 +17,30 @@ pub struct CatalogState {
     pub error: Option<String>,
     /// Installed extensions with a newer reviewed version.
     pub updates: Vec<String>,
+    /// The chip picked: [`ALL`], [`INSTALLED`] or a category id. Kept while
+    /// Backslash runs.
+    pub filter: String,
+}
+
+pub const ALL: &str = "all";
+pub const INSTALLED: &str = "installed";
+
+/// The store's chips: everything, what is installed, then each category.
+pub fn filter(s: &State) -> ListFilter {
+    let option = |value: &str, title: &str| DropdownOption { value: value.into(), title: title.into() };
+    let mut options = vec![option(ALL, "All"), option(INSTALLED, "Installed")];
+    options.extend(catalog::CATEGORIES.iter().map(|(id, title)| option(id, title)));
+    let value = if s.catalog.filter.is_empty() { ALL.to_string() } else { s.catalog.filter.clone() };
+    ListFilter { options, value }
+}
+
+/// Whether an entry shows under the picked chip.
+fn shown(filter: &str, entry: &Entry, status: &Status) -> bool {
+    match filter {
+        "" | ALL => true,
+        INSTALLED => matches!(status, Status::Installed | Status::Update),
+        category => entry.categories.iter().any(|c| c == category),
+    }
 }
 
 /// Ids of installed registry extensions whose entry moved to another commit.
@@ -60,11 +84,14 @@ pub fn rows(s: &State) -> Vec<Row> {
         .catalog
         .entries
         .iter()
-        .map(|e| {
+        .filter_map(|e| {
             let status = match status(&loc, e) {
                 Status::Available if previous.contains(&e.id) => Status::Previous,
                 other => other,
             };
+            if !shown(&s.catalog.filter, e, &status) {
+                return None;
+            }
             let busy = s.catalog.busy.as_deref() == Some(e.id.as_str());
             let (order, section, tag, color) = match status {
                 Status::Update => (0, "Updates", "Update", "orange"),
@@ -129,7 +156,7 @@ pub fn rows(s: &State) -> Vec<Row> {
                 }),
                 ..Default::default()
             };
-            (order, row)
+            Some((order, row))
         })
         .collect();
     rows.sort_by_key(|(order, r)| (*order, r.title.to_lowercase()));
@@ -165,6 +192,7 @@ fn entry_metadata(e: &Entry, status: &Status) -> Vec<MetadataEntry> {
             },
         },
         line("Version", e.version.clone()),
+        line("Category", categories(e)),
         line("Author", if e.author.is_empty() { "Unknown".into() } else { e.author.clone() }),
         MetadataEntry {
             label: "Commands".into(),
@@ -190,6 +218,16 @@ fn entry_metadata(e: &Entry, status: &Status) -> Vec<MetadataEntry> {
     });
     lines.push(line("Reviewed", e.commit.chars().take(12).collect()));
     lines
+}
+
+/// "Developer, System", or "Other" for an entry without known categories.
+fn categories(e: &Entry) -> String {
+    let titles: Vec<&str> = e.categories.iter().filter_map(|c| catalog::category_title(c)).collect();
+    if titles.is_empty() {
+        "Other".into()
+    } else {
+        titles.join(", ")
+    }
 }
 
 fn permissions(e: &Entry) -> Vec<String> {

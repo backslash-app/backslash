@@ -28,6 +28,8 @@ version = "0.1.0"
 author = ""
 icon = "applications-other"
 license = "MIT"
+# Where the store lists it: developer, system, network, productivity, media or everyday
+categories = ["productivity"]
 
 {runtime}# Everything not listed here is denied. Examples:
 #   net = ["api.github.com"]   run = ["git"]   read = ["~/Documents"]

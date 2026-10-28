@@ -6,6 +6,7 @@ description = "Search packages on the npm registry"
 author = "Backslash"
 icon = "bs-package"
 license = "MIT"
+categories = ["developer"]
 
 [permissions]
 net = ["registry.npmjs.org"]

@@ -63,6 +63,26 @@ pub struct Entry {
     /// Command titles, for the store.
     #[serde(default)]
     pub commands: Vec<String>,
+    /// Ids from [`CATEGORIES`], for the store's filters. Not part of what was
+    /// reviewed: a registry can set them without moving the commit.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub categories: Vec<String>,
+}
+
+/// The store's categories, as (id, title). Few and broad, so that they fit
+/// as chips and every extension finds one.
+pub const CATEGORIES: [(&str, &str); 6] = [
+    ("developer", "Developer"),
+    ("system", "System"),
+    ("network", "Network"),
+    ("productivity", "Productivity"),
+    ("media", "Media"),
+    ("everyday", "Everyday"),
+];
+
+/// The title of a category id, if it is one.
+pub fn category_title(id: &str) -> Option<&'static str> {
+    CATEGORIES.iter().find(|(c, _)| *c == id).map(|(_, title)| *title)
 }
 
 /// Where things live; explicit so tests (and packagers) can redirect it.
@@ -660,6 +680,7 @@ pub fn publish_entry(loc: &Locations, dir: &Path) -> Result<Entry> {
         checksum: fetched.checksum.clone(),
         permissions: approvals::requested(m),
         commands: m.commands.iter().map(|c| c.title.clone()).collect(),
+        categories: m.extension.categories.clone(),
     })
 }
 

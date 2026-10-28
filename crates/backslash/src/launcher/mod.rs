@@ -1260,10 +1260,7 @@ impl Launcher {
         while let Some(child) = self.filters.first_child() {
             self.filters.remove(&child);
         }
-        let filter = match &self.state.borrow().frames.last().unwrap().kind {
-            FrameKind::Extension { view: View::List(l), .. } => l.filter.clone(),
-            _ => None,
-        };
+        let filter = self.current_filter();
         let Some(filter) = filter.filter(|f| f.options.len() > 1) else {
             self.filters.set_visible(false);
             self.filters_divider.set_visible(false);
@@ -1293,12 +1290,20 @@ impl Launcher {
         self.filters_divider.set_visible(true);
     }
 
+    /// The chips of the current screen: an extension list's filter, or the
+    /// store's categories.
+    fn current_filter(&self) -> Option<proto::ListFilter> {
+        let s = self.state.borrow();
+        match &s.frames.last().unwrap().kind {
+            FrameKind::Extension { view: View::List(l), .. } => l.filter.clone(),
+            FrameKind::Builtin(Builtin::Store) => Some(store::filter(&s)),
+            _ => None,
+        }
+    }
+
     /// Tab in a list with a filter: the next chip.
     fn cycle_list_filter(self: &Rc<Self>, delta: i32) -> bool {
-        let filter = match &self.state.borrow().frames.last().unwrap().kind {
-            FrameKind::Extension { view: View::List(l), .. } => l.filter.clone(),
-            _ => None,
-        };
+        let filter = self.current_filter();
         let Some(filter) = filter.filter(|f| f.options.len() > 1) else { return false };
         let i = filter.options.iter().position(|o| o.value == filter.value).unwrap_or(0) as i32;
         let next = (i + delta).rem_euclid(filter.options.len() as i32) as usize;
@@ -1308,6 +1313,17 @@ impl Launcher {
 
     /// Asks the extension for the list with another filter value.
     fn pick_filter(self: &Rc<Self>, value: &str) {
+        if matches!(self.state.borrow().frames.last().unwrap().kind, FrameKind::Builtin(Builtin::Store)) {
+            {
+                let mut s = self.state.borrow_mut();
+                s.catalog.filter = value.to_string();
+                s.selected_key = None;
+            }
+            self.update_filters();
+            self.render_list();
+            self.update_footer();
+            return;
+        }
         let (session, view_id) = {
             let s = self.state.borrow();
             match &s.frames.last().unwrap().kind {

@@ -358,14 +358,21 @@ fn metadata_value(m: &MetadataEntry) -> gtk::Widget {
         flow.set_row_spacing(4);
         flow.set_max_children_per_line(8);
         flow.set_hexpand(true);
+        // Pills hug their text: no stretching to the line's width or height.
+        flow.set_halign(gtk::Align::Start);
+        flow.set_valign(gtk::Align::Center);
         for t in &m.tags {
             let tag = label(&t.text, "tag");
+            tag.set_halign(gtk::Align::Start);
+            tag.set_valign(gtk::Align::Center);
             if let Some(c) = &t.color {
                 tag.add_css_class(&format!("accent-{}", icons::css_name(c)));
             }
             flow.append(&tag);
             if let Some(child) = flow.last_child() {
                 child.set_focusable(false);
+                child.set_halign(gtk::Align::Start);
+                child.set_valign(gtk::Align::Center);
             }
         }
         b.append(&flow);

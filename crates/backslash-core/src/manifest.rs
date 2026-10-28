@@ -40,6 +40,9 @@ pub struct ExtensionMeta {
     pub icon: Option<String>,
     #[serde(default)]
     pub license: Option<String>,
+    /// Where the store lists it: ids of `catalog::CATEGORIES`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub categories: Vec<String>,
 }
 
 fn default_version() -> String {
@@ -301,6 +304,12 @@ impl Manifest {
 
     pub fn validate(&self) -> Result<()> {
         validate_id("extension id", &self.extension.id)?;
+        for category in &self.extension.categories {
+            if crate::catalog::category_title(category).is_none() {
+                let known: Vec<&str> = crate::catalog::CATEGORIES.iter().map(|(id, _)| *id).collect();
+                bail!("unknown category `{category}`: use one of {}", known.join(", "));
+            }
+        }
         let mut seen = std::collections::HashSet::new();
         for command in &self.commands {
             validate_id("command name", &command.name)?;
@@ -402,6 +411,16 @@ mod tests {
 
         let escape = NPM.replace("name = \"search\"", "name = \"search\"\nentry = \"../../etc/passwd\"");
         assert!(toml::from_str::<Manifest>(&escape).unwrap().validate().is_err());
+    }
+
+    #[test]
+    fn categories_are_from_the_store_list() {
+        let with = |c: &str| NPM.replace("id = \"npm\"", &format!("id = \"npm\"\ncategories = [{c}]"));
+        let m = toml::from_str::<Manifest>(&with("\"developer\", \"network\"")).unwrap();
+        m.validate().unwrap();
+        assert_eq!(m.extension.categories, ["developer", "network"]);
+        let err = toml::from_str::<Manifest>(&with("\"devtools\"")).unwrap().validate().unwrap_err();
+        assert!(err.to_string().contains("unknown category `devtools`"), "{err}");
     }
 
     #[test]
