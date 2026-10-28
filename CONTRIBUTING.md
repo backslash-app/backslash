@@ -62,13 +62,23 @@ Pushing a `v0.4.0` tag, or creating the release on GitHub, does the same.
 4. Paste the content of `aur` (the private key) in the repository's
    *Settings → Secrets and variables → Actions → New repository secret*,
    named `AUR_SSH_PRIVATE_KEY`. Then delete both files.
-5. Let the release workflow bring the version back to `main` on its own:
-   - *Settings → Actions → General → Workflow permissions*: check **Allow
-     GitHub Actions to create and approve pull requests**;
+5. Let the release workflow bring the version back to `main` on its own,
+   with a small GitHub App that `main`'s ruleset lets merge pull requests
+   (GitHub Actions itself can't be added to the bypass list):
+   - *Organization settings → Developer settings → GitHub Apps → New GitHub
+     App*: name it `backslash-release`, any homepage URL, uncheck
+     *Webhook → Active*, and give it the repository permissions **Contents:
+     Read and write** and **Pull requests: Read and write**. Create it.
+   - On its page: note the *App ID*, *Generate a private key* (a `.pem`
+     file downloads), then *Install App* on the `backslash` repository.
+   - In the repository's *Settings → Secrets and variables → Actions*: add
+     the variable `RELEASE_APP_ID` (the App ID) and the secret
+     `RELEASE_APP_PRIVATE_KEY` (the content of the `.pem`), then delete the
+     file.
    - *Settings → Rules → Rulesets →* the ruleset of `main` *→ Bypass list →
-     Add bypass*: **GitHub Actions**, then set it to **For pull requests only**
-     (it may merge its version pull request without a review, never push to
-     `main` directly).
+     Add bypass*: the `backslash-release` app, set to **For pull requests
+     only** (it may merge its version pull request without a review, never
+     push to `main` directly).
 
 The first release after this creates the `backslash` package on the AUR.
 Without the secret, the AUR step only checks the package and says so.
