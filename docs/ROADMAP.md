@@ -31,8 +31,7 @@ the CLI and two bundled extensions. Next steps, roughly in order.
 - [x] Registry: a git index of extensions pinned by commit hash and checksum,
       `backslash install/update/uninstall/search/publish`, store view.
 - [x] Update badge on Browse Extensions (registry checked every 6 hours), Update All.
-- [x] Signed registry commits, so a compromised mirror cannot serve entries
-      (needs the registry key: see CONTRIBUTING).
+- [x] Signed registry commits, so a compromised mirror cannot serve entries.
 - [x] Grid layout for lists (emoji, images).
 - [x] Rich preview panel for list items: stats, tags, people, links, progress.
 - [x] List filters, footer status, command subtitles, action sections and submenus.

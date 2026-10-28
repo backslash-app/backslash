@@ -99,5 +99,6 @@ registry key, which the CI of
    offline (a password manager), then delete both files.
 
 To replace the key, add the new public key next to the old one, release, then
-change the secret, and remove the old key in a later release. Until
-`DEFAULT_SIGNERS` holds a key, the registry is read from `main` unchecked.
+change the secret, and remove the old key in a later release. The key is in
+place: launchers only read the `signed` branch, so a `main` that fails the
+checks (or a missing secret) leaves them on the last signed registry.

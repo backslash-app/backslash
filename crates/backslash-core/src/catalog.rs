@@ -28,9 +28,10 @@ use crate::signature::{self, PublicKey};
 use crate::{approvals, paths, store};
 
 pub const DEFAULT_REGISTRY: &str = "https://github.com/backslash-app/plugins";
-/// Keys trusted to sign the registry (`ssh-ed25519 …` lines). While empty,
-/// the registry is read from `main` without a signature check.
-pub const DEFAULT_SIGNERS: &[&str] = &[];
+/// Keys trusted to sign the registry (`ssh-ed25519 …` lines). Empty would
+/// read the registry from `main` without a signature check.
+pub const DEFAULT_SIGNERS: &[&str] =
+    &["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICBBu8uHjxXWbBq7By56t6oRH2gosrkkoQwcMcp1kAzh backslash-registry"];
 /// The branch holding the signed states of the registry.
 pub const SIGNED_BRANCH: &str = "signed";
 const INSTALL_RECORD: &str = ".backslash-install.json";
