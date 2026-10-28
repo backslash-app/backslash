@@ -2,7 +2,7 @@
 # Builds the tagged release from source. The release workflow publishes it to
 # the AUR with the right version and checksum (packaging/aur/publish.sh).
 pkgname=backslash
-pkgver=0.5.5
+pkgver=0.6.0
 pkgrel=1
 pkgdesc="A fast, extensible launcher for Linux"
 arch=('x86_64' 'aarch64')
@@ -19,7 +19,7 @@ optdepends=(
   'bubblewrap: sandbox for Python and other non-TypeScript extensions'
 )
 source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
-sha256sums=('ea8915dba7bfc63ac1a117ecc85d4501e2b790bc2799fe3a1f4e9984cd25a8a2')
+sha256sums=('964eb1027d7041e81159e6faf0237e82c38d938189b1a198abf64b3093764902')
 
 prepare() {
   cd "$pkgname-$pkgver"
