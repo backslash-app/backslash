@@ -77,7 +77,25 @@ Missing one? An extension is a TOML file and a TypeScript file, and
 ## Install
 
 Backslash needs GTK 4.14 or newer (Ubuntu 24.04+, Debian 13+, Fedora 40+, Arch,
-openSUSE Tumbleweed…). Get the package for your system from the
+openSUSE Tumbleweed…).
+
+**Debian, Ubuntu**, with updates from `apt`:
+
+```sh
+sudo install -d -m 0755 /etc/apt/keyrings
+curl -fsSL https://backslash-app.github.io/backslash/key.asc | sudo gpg --dearmor -o /etc/apt/keyrings/backslash.gpg
+echo "deb [signed-by=/etc/apt/keyrings/backslash.gpg] https://backslash-app.github.io/backslash/apt stable main" | sudo tee /etc/apt/sources.list.d/backslash.list
+sudo apt update && sudo apt install backslash
+```
+
+**Fedora**, with updates from `dnf`:
+
+```sh
+sudo curl -fsSLo /etc/yum.repos.d/backslash.repo https://backslash-app.github.io/backslash/rpm/backslash.repo
+sudo dnf install backslash
+```
+
+Or get the package for your system from the
 [latest release](https://github.com/backslash-app/backslash/releases/latest):
 
 | Distribution | Command |

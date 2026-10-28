@@ -80,7 +80,7 @@ Each release also publishes signed apt and dnf repositories on GitHub Pages
 3. *Settings → Pages → Build and deployment → Source*: **GitHub Actions**.
 
 The next release publishes `https://backslash-app.github.io/backslash/`,
-whose page shows the commands for apt and dnf (then add them to the README).
+whose page shows the commands for apt and dnf (the README has them too).
 Without the secret, the step says so and publishes nothing.
 
 ### Registry signing key (once)

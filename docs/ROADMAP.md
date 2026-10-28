@@ -11,7 +11,8 @@ the CLI and two bundled extensions. Next steps, roughly in order.
 - [x] Launch at login toggle from the launcher.
 - [x] Packages: `.deb`, `.rpm` and tarball built on tags, AUR `PKGBUILD`, Deno downloaded on demand.
 - [x] Nix flake, and signed apt/dnf repositories built with each release.
-- [ ] Publish them: the AUR account, the repository key and GitHub Pages (see CONTRIBUTING).
+- [x] apt and dnf repositories published on GitHub Pages.
+- [ ] Publish to the AUR (account registration is paused on the AUR's side).
 
 ## Built-in features
 - [x] Clipboard history with pins and images, pasted straight into the app you were in.

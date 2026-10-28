@@ -66,11 +66,12 @@ cat > "$out/index.html" <<EOF
 <title>Backslash packages</title>
 <h1>Backslash packages</h1>
 <p>Debian, Ubuntu and derivatives:</p>
-<pre>curl -fsSL $url/key.asc | sudo gpg --dearmor -o /etc/apt/keyrings/backslash.gpg
+<pre>sudo install -d -m 0755 /etc/apt/keyrings
+curl -fsSL $url/key.asc | sudo gpg --dearmor -o /etc/apt/keyrings/backslash.gpg
 echo "deb [signed-by=/etc/apt/keyrings/backslash.gpg] $url/apt stable main" | sudo tee /etc/apt/sources.list.d/backslash.list
 sudo apt update &amp;&amp; sudo apt install backslash</pre>
 <p>Fedora and derivatives:</p>
-<pre>sudo dnf config-manager addrepo --from-repofile=$url/rpm/backslash.repo
+<pre>sudo curl -fsSLo /etc/yum.repos.d/backslash.repo $url/rpm/backslash.repo
 sudo dnf install backslash</pre>
 <p><a href="https://github.com/backslash-app/backslash">github.com/backslash-app/backslash</a></p>
 EOF
