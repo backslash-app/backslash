@@ -18,6 +18,7 @@ pub mod runtime;
 pub mod scripts;
 pub mod search;
 pub mod secrets;
+pub mod selfupdate;
 pub mod store;
 pub mod system;
 pub mod units;

@@ -111,6 +111,13 @@ pub enum Op {
     InstallRuntime,
     /// Opens the settings window.
     OpenSettings,
+    /// Shows the "Update Backslash" screen (checking first if needed).
+    OpenAppUpdate,
+    CheckAppUpdate,
+    /// Downloads and installs the new version, then restarts.
+    InstallAppUpdate,
+    /// Quits Backslash (the tray menu).
+    Quit,
     Back,
     /// Opens more actions in the action panel.
     Submenu(Vec<UiAction>),
@@ -375,6 +382,8 @@ pub enum FrameKind {
         result: Option<Result<String, String>>,
         list: bool,
     },
+    /// "Backslash 0.5.0 is available", or that it is up to date.
+    AppUpdate,
     /// "This extension needs Deno": shown when the runtime is missing.
     InstallRuntime {
         command_id: String,

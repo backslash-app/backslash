@@ -70,6 +70,10 @@ pub struct Config {
     pub aliases: BTreeMap<String, String>,
     /// Root search item key → global shortcut that opens it.
     pub hotkeys: BTreeMap<String, String>,
+    /// Look for new versions of Backslash on GitHub (at start, then every few hours).
+    pub check_updates: bool,
+    /// Show an icon in the system tray while Backslash runs.
+    pub tray: bool,
 }
 
 impl Default for Config {
@@ -89,6 +93,8 @@ impl Default for Config {
             snippets: Vec::new(),
             aliases: BTreeMap::new(),
             hotkeys: BTreeMap::new(),
+            check_updates: true,
+            tray: true,
         }
     }
 }

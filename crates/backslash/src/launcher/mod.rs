@@ -7,6 +7,7 @@
 //! `backslash_core::host`); built-in views (clipboard, files, windows, theme)
 //! are implemented here.
 
+mod appupdate;
 mod model;
 mod rows;
 mod settings;
@@ -199,6 +200,8 @@ pub(super) struct State {
     early_updates: Vec<(Rc<Session>, View)>,
     /// When the window last hid, to know whether to restore it as it was.
     hidden_at: Option<std::time::Instant>,
+    /// A new version of Backslash itself.
+    app_update: appupdate::AppUpdate,
 }
 
 /// Subtitles set by commands with `updateCommandMetadata`, kept on disk.
@@ -261,6 +264,8 @@ pub struct Launcher {
     metadata: gtk::Box,
     form_box: gtk::Box,
     context: gtk::Label,
+    /// "Backslash 0.5.0 is available", after the context line.
+    update_pill: gtk::Button,
     toast: gtk::Label,
     primary: gtk::Label,
     primary_key: gtk::Box,
@@ -444,7 +449,9 @@ impl Launcher {
         toast.set_visible(false);
         let left = gtk::Box::new(gtk::Orientation::Horizontal, 0);
         left.set_hexpand(true);
+        let update_pill = appupdate::pill();
         left.append(&context);
+        left.append(&update_pill);
         left.append(&toast);
         let primary = label("", "primary");
         let primary_key = key_hint("", "↵");
@@ -557,6 +564,7 @@ impl Launcher {
             metadata,
             form_box,
             context,
+            update_pill,
             toast,
             primary,
             primary_key,
@@ -599,6 +607,7 @@ impl Launcher {
                 command_meta: CommandMeta::load(),
                 early_updates: Vec::new(),
                 hidden_at: None,
+                app_update: Default::default(),
                 gnome_helper_needed: window_backend.is_none()
                     && backslash_core::system::windows::is_gnome()
                     && std::env::var_os("WAYLAND_DISPLAY").is_some(),
@@ -713,6 +722,8 @@ impl Launcher {
         self.bind_shortcuts();
         if self.dev_dir.is_none() {
             self.watch_updates();
+            self.watch_app_updates();
+            self.start_tray();
         }
         if clipboard_enabled {
             let weak = Rc::downgrade(self);
@@ -808,6 +819,9 @@ impl Launcher {
 
         let back = with(|l| l.pop());
         self.back.connect_clicked(move |_| back());
+
+        let update = with(|l| l.open_app_update());
+        self.update_pill.connect_clicked(move |_| update());
 
         let weak = Rc::downgrade(self);
         self.list.connect_row_activated(move |_, row| {
@@ -1118,6 +1132,7 @@ impl Launcher {
                 FrameKind::Approval { .. } => ("Permissions".to_string(), "detail"),
                 FrameKind::ConfirmInstall { .. } => ("Extensions".to_string(), "detail"),
                 FrameKind::InstallRuntime { .. } => ("Runtime".to_string(), "detail"),
+                FrameKind::AppUpdate => ("Update".to_string(), "detail"),
                 FrameKind::Script { title, list, .. } => (title.clone(), if *list { "list" } else { "detail" }),
             };
             (s.frames.len(), title, page)
@@ -1134,6 +1149,7 @@ impl Launcher {
             _ => self.render_form(),
         }
         self.update_footer();
+        self.refresh_update_pill();
     }
 
     /// "Linear › My Issues", or "My Issues › ENG-142" one level deeper.
@@ -1175,6 +1191,7 @@ impl Launcher {
             }
             FrameKind::ConfirmInstall { .. } => (None, "Extensions  ›  Install".into()),
             FrameKind::InstallRuntime { .. } => (None, "Runtime".into()),
+            FrameKind::AppUpdate => (Some(("bs-download".to_string(), Some("blue"))), "Backslash  ›  Update".into()),
             FrameKind::Script { title, .. } => {
                 (Some(("bs-terminal".to_string(), Some("green"))), format!("Scripts  ›  {title}"))
             }
@@ -1518,9 +1535,15 @@ impl Launcher {
     }
 
     fn render_detail(&self) {
+        let at_update = matches!(self.state.borrow().frames.last().map(|f| &f.kind), Some(FrameKind::AppUpdate));
+        let update_detail = at_update.then(|| self.app_update_detail());
         let s = self.state.borrow();
         let approval;
         let d = match s.frames.last().map(|f| &f.kind) {
+            Some(FrameKind::AppUpdate) => match &update_detail {
+                Some(d) => d,
+                None => return,
+            },
             Some(FrameKind::Extension { view: View::Detail(d), .. }) => d,
             Some(FrameKind::ConfirmInstall { id }) => {
                 let loc = backslash_core::catalog::Locations::user(&s.config);
@@ -1679,6 +1702,9 @@ impl Launcher {
 
     /// Actions for the current context: the selected row, or the view itself.
     fn current_actions(&self) -> Vec<UiAction> {
+        if matches!(self.state.borrow().frames.last().map(|f| &f.kind), Some(FrameKind::AppUpdate)) {
+            return self.app_update_actions();
+        }
         let view_actions = {
             let s = self.state.borrow();
             let from = |actions: &[proto::Action]| actions.iter().map(UiAction::from_proto).collect::<Vec<_>>();
@@ -1731,7 +1757,7 @@ impl Launcher {
                     ]
                 }
                 FrameKind::Extension { view: View::List(l), .. } => from(&l.actions),
-                FrameKind::Root | FrameKind::Builtin(_) => Vec::new(),
+                FrameKind::Root | FrameKind::Builtin(_) | FrameKind::AppUpdate => Vec::new(),
             }
         };
         let mut actions = self.selected_row().map(|r| r.actions).unwrap_or_default();
@@ -1789,16 +1815,19 @@ impl Launcher {
         // The toast takes the place of the context line for a while.
         self.toast.set_visible(true);
         self.context.set_visible(false);
+        self.update_pill.set_visible(false);
         // Only the latest toast clears it (removing a timer that already
         // fired would panic, so none is removed).
         let serial = self.state.borrow().toast_serial.clone();
         serial.set(serial.get() + 1);
-        let (toast, context, mine) = (self.toast.clone(), self.context.clone(), serial.get());
+        let (toast, context, pill, mine) =
+            (self.toast.clone(), self.context.clone(), self.update_pill.clone(), serial.get());
         glib::timeout_add_local_once(Duration::from_millis(3500), move || {
             if serial.get() == mine {
                 toast.set_text("");
                 toast.set_visible(false);
                 context.set_visible(true);
+                pill.set_visible(pill.has_css_class("available"));
             }
         });
     }
@@ -2529,6 +2558,10 @@ impl Launcher {
                 self.show_toast("You're all set. Type to search", proto::ToastStyle::Success);
             }
             Op::InstallRuntime => self.install_runtime(),
+            Op::OpenAppUpdate => self.open_app_update(),
+            Op::CheckAppUpdate => self.check_app_update(true),
+            Op::InstallAppUpdate => self.install_app_update(),
+            Op::Quit => self.quit(),
             Op::UninstallEntry(id) => {
                 let loc = backslash_core::catalog::Locations::user(&self.state.borrow().config);
                 match backslash_core::catalog::uninstall(&loc, &id) {
