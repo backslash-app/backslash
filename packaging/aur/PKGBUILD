@@ -1,4 +1,4 @@
-# Maintainer: Steven Persia <persia.steven8@gmail.com>
+# Maintainer: Backslash <contact@getbackslash.com>
 # Builds the tagged release from source. The release workflow publishes it to
 # the AUR with the right version and checksum (packaging/aur/publish.sh).
 pkgname=backslash

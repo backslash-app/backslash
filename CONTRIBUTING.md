@@ -51,7 +51,9 @@ Pushing a `v0.4.0` tag, or creating the release on GitHub, does the same.
 
 ### AUR setup (once)
 
-1. Create an account on [aur.archlinux.org](https://aur.archlinux.org/register).
+1. Create an account on [aur.archlinux.org](https://aur.archlinux.org/register)
+   with the project address, `contact@getbackslash.com` (the `PKGBUILD`
+   names it as maintainer and the AUR commits are made under it).
 2. Make a key for CI: `ssh-keygen -t ed25519 -f aur -N "" -C backslash-ci`.
 3. Paste `aur.pub` in *My Account → SSH Public Key* on the AUR.
 4. Paste the content of `aur` (the private key) in the repository's
