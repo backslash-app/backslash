@@ -31,6 +31,7 @@ install:
 	cp -r extensions/. $(SHARE)/backslash/extensions/
 	install -Dm644 data/app.backslash.Backslash.desktop $(SHARE)/applications/app.backslash.Backslash.desktop
 	install -Dm644 data/icons/backslash.png $(SHARE)/icons/hicolor/512x512/apps/app.backslash.Backslash.png
+	install -Dm644 data/icons/backslash.svg $(SHARE)/icons/hicolor/scalable/apps/app.backslash.Backslash.svg
 	install -Dm644 data/app.backslash.Backslash.metainfo.xml $(SHARE)/metainfo/app.backslash.Backslash.metainfo.xml
 
 uninstall:
@@ -38,6 +39,7 @@ uninstall:
 	rm -rf $(SHARE)/backslash
 	rm -f $(SHARE)/applications/app.backslash.Backslash.desktop
 	rm -f $(SHARE)/icons/hicolor/512x512/apps/app.backslash.Backslash.png
+	rm -f $(SHARE)/icons/hicolor/scalable/apps/app.backslash.Backslash.svg
 	rm -f $(SHARE)/metainfo/app.backslash.Backslash.metainfo.xml
 
 # Release files. The tarball unpacks into any prefix: `tar -xzf … -C ~/.local`.

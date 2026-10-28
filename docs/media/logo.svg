@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <clipPath id="sq"><rect x="40" y="40" width="944" height="944" rx="216"/></clipPath>
+    <radialGradient id="g1" cx="0.80" cy="0.06" r="0.85">
+      <stop offset="0" stop-color="#ff5ad9"/><stop offset="0.22" stop-color="#e81cff"/>
+      <stop offset="0.46" stop-color="#7a22d6"/><stop offset="0.72" stop-color="#2a1550" stop-opacity="0.6"/><stop offset="1" stop-color="#120f1c" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="g2" cx="0.05" cy="1" r="0.7">
+      <stop offset="0" stop-color="#3b1d8f" stop-opacity="0.55"/><stop offset="1" stop-color="#120f1c" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="bar" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff"/><stop offset="1" stop-color="#ffd6f6"/></linearGradient>
+    <filter id="grain"><feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" stitchTiles="stitch"/><feColorMatrix values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 0.09 0"/></filter>
+    <filter id="soft" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="18"/></filter>
+  </defs>
+  <g clip-path="url(#sq)">
+    <rect width="1024" height="1024" fill="#120f1c"/>
+    <rect width="1024" height="1024" fill="url(#g1)"/>
+    <rect width="1024" height="1024" fill="url(#g2)"/>
+    <rect width="1024" height="1024" filter="url(#grain)"/>
+    <g transform="translate(512 512) scale(0.86) translate(-512 -505)">
+      <g filter="url(#soft)" opacity="0.32"><rect x="450" y="192" width="124" height="640" rx="62" fill="url(#bar)" transform="rotate(-20 512 512)"/></g>
+      <rect x="450" y="192" width="124" height="640" rx="62" fill="url(#bar)" transform="rotate(-20 512 512)"/>
+    </g>
+  </g>
+  <rect x="40.5" y="40.5" width="943" height="943" rx="215.5" fill="none" stroke="#fff" stroke-opacity="0.10"/>
+</svg>
