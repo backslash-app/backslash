@@ -106,6 +106,65 @@ pub fn row_widget(row: &Row) -> gtk::ListBoxRow {
     widget
 }
 
+/// A grey placeholder shape, pulsing while something loads.
+fn bone(width: i32, height: i32) -> gtk::Box {
+    let b = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    b.add_css_class("bone");
+    b.set_size_request(width, height);
+    b.set_hexpand(false);
+    b.set_halign(gtk::Align::Start);
+    b.set_valign(gtk::Align::Center);
+    b
+}
+
+/// Rows shaped like results (icon, title, a short accessory), with varied
+/// lengths so they read as a list about to appear rather than a pattern.
+pub fn skeleton_rows() -> gtk::Box {
+    const WIDTHS: [(i32, i32); 9] =
+        [(210, 44), (160, 0), (240, 56), (130, 36), (190, 0), (225, 48), (150, 0), (200, 40), (170, 0)];
+    let rows = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    rows.add_css_class("skeleton-rows");
+    for (title, accessory) in WIDTHS {
+        let row = gtk::Box::new(gtk::Orientation::Horizontal, 10);
+        row.add_css_class("skeleton-row");
+        let icon = bone(24, 24);
+        icon.add_css_class("bone-icon");
+        row.append(&icon);
+        let text = bone(title, 10);
+        text.set_hexpand(true);
+        row.append(&text);
+        if accessory > 0 {
+            row.append(&bone(accessory, 10));
+        }
+        rows.append(&row);
+    }
+    rows
+}
+
+/// The preview panel's shape: a tile, a title, and a few lines of text.
+pub fn skeleton_preview() -> gtk::Box {
+    let preview = gtk::Box::new(gtk::Orientation::Vertical, 16);
+    preview.add_css_class("preview");
+    preview.set_hexpand(true);
+    preview.set_vexpand(true);
+    let head = gtk::Box::new(gtk::Orientation::Horizontal, 12);
+    let tile = bone(40, 40);
+    tile.add_css_class("bone-tile");
+    head.append(&tile);
+    let names = gtk::Box::new(gtk::Orientation::Vertical, 8);
+    names.set_valign(gtk::Align::Center);
+    names.append(&bone(150, 12));
+    names.append(&bone(90, 9));
+    head.append(&names);
+    preview.append(&head);
+    let lines = gtk::Box::new(gtk::Orientation::Vertical, 10);
+    for width in [230, 200, 215, 120] {
+        lines.append(&bone(width, 9));
+    }
+    preview.append(&lines);
+    preview
+}
+
 fn clear(container: &gtk::Box) {
     while let Some(child) = container.first_child() {
         container.remove(&child);
@@ -299,14 +358,21 @@ fn metadata_value(m: &MetadataEntry) -> gtk::Widget {
         flow.set_row_spacing(4);
         flow.set_max_children_per_line(8);
         flow.set_hexpand(true);
+        // Pills hug their text: no stretching to the line's width or height.
+        flow.set_halign(gtk::Align::Start);
+        flow.set_valign(gtk::Align::Center);
         for t in &m.tags {
             let tag = label(&t.text, "tag");
+            tag.set_halign(gtk::Align::Start);
+            tag.set_valign(gtk::Align::Center);
             if let Some(c) = &t.color {
                 tag.add_css_class(&format!("accent-{}", icons::css_name(c)));
             }
             flow.append(&tag);
             if let Some(child) = flow.last_child() {
                 child.set_focusable(false);
+                child.set_halign(gtk::Align::Start);
+                child.set_valign(gtk::Align::Center);
             }
         }
         b.append(&flow);

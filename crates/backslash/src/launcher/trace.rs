@@ -39,6 +39,7 @@ impl Launcher {
             "visible": self.window.is_visible(),
             "size": [self.panel.width(), self.panel.height()],
             "depth": s.frames.len(),
+            "page": self.pages.visible_child_name().map(|n| n.to_string()),
             "context": self.context.text().to_string(),
             "query": self.entry.text().to_string(),
             "rows": s.rows.iter().map(|r| r.title.clone()).collect::<Vec<_>>(),

@@ -6,6 +6,7 @@ description = "Power, volume and processes"
 author = "Backslash"
 icon = "bs-settings"
 license = "MIT"
+categories = ["system"]
 
 [permissions]
 run = ["systemctl", "loginctl", "wpctl", "pactl", "ps", "kill"]

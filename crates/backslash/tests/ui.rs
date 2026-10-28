@@ -215,6 +215,73 @@ fn action_panel_scrolls_with_the_keyboard() {
     });
 }
 
+/// An extension with one command whose items take `delay_ms` to load.
+fn slow_extension(delay_ms: u32) -> tempfile::TempDir {
+    let extensions = tempfile::tempdir().unwrap();
+    let ext = extensions.path().join("slow");
+    std::fs::create_dir_all(ext.join("commands")).unwrap();
+    std::fs::write(
+        ext.join("backslash.toml"),
+        "[extension]\nid = \"slow\"\ntitle = \"Slow\"\n[[commands]]\nname = \"media\"\ntitle = \"Slow Media\"\n",
+    )
+    .unwrap();
+    std::fs::write(
+        ext.join("commands/media.ts"),
+        format!(
+            "import {{ list }} from \"@backslash/api\";\n\
+             export default list({{\n\
+               items: async () => {{\n\
+                 await new Promise((r) => setTimeout(r, {delay_ms}));\n\
+                 return [{{ title: \"Movie\" }}, {{ title: \"Show\" }}];\n\
+               }},\n\
+             }});\n"
+        ),
+    )
+    .unwrap();
+    extensions
+}
+
+/// A command that takes a while shows a skeleton of its list, not the
+/// screen it was started from.
+#[test]
+fn slow_commands_show_a_skeleton_until_their_items_come() {
+    if !enabled() || Command::new("deno").arg("--version").output().is_err() {
+        return;
+    }
+    let extensions = slow_extension(1500);
+    let ui = Ui::start("", Some(extensions.path()));
+    ui.type_text("slow media");
+    ui.wait_for("the command", |s| rows(s).first().is_some_and(|r| r == "Slow Media"));
+    ui.key("Return");
+    let state = ui.wait_for("the skeleton", |s| s["page"] == "skeleton");
+    assert_eq!(state["depth"], 2, "{state:#}");
+    assert_eq!(state["context"], "Slow Media");
+    ui.wait_for("the items", |s| s["depth"] == 2 && s["page"] == "list" && rows(s) == ["Movie", "Show"]);
+    // Back to the search it was started from.
+    ui.key("Escape");
+    ui.wait_for("the root search", |s| s["depth"] == 1 && s["query"] == "slow media");
+}
+
+/// Going back from the skeleton gives up on the command: its view doesn't
+/// open later on its own.
+#[test]
+fn leaving_the_skeleton_drops_the_command() {
+    if !enabled() || Command::new("deno").arg("--version").output().is_err() {
+        return;
+    }
+    let extensions = slow_extension(1500);
+    let ui = Ui::start("", Some(extensions.path()));
+    ui.type_text("slow media");
+    ui.wait_for("the command", |s| rows(s).first().is_some_and(|r| r == "Slow Media"));
+    ui.key("Return");
+    ui.wait_for("the skeleton", |s| s["page"] == "skeleton");
+    ui.key("Escape");
+    ui.wait_for("the root search", |s| s["depth"] == 1);
+    std::thread::sleep(Duration::from_millis(2500));
+    let state = ui.state();
+    assert_eq!(state["depth"], 1, "the view opened after leaving: {state:#}");
+}
+
 /// A 3×2 red PNG.
 const RED_PNG: &[u8] = &[
     0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00,
