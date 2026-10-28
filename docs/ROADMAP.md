@@ -13,7 +13,7 @@ the CLI and two bundled extensions. Next steps, roughly in order.
 - [ ] Submit to the AUR, Nix flake, apt/dnf repositories so updates come with the system.
 
 ## Built-in features
-- [x] Clipboard history with pins, pasted straight into the app you were in (images still to do).
+- [x] Clipboard history with pins and images, pasted straight into the app you were in.
 - [x] File search with recents and previews.
 - [x] Window switcher for Hyprland, Sway, niri, KDE Plasma, GNOME and X11.
 - [x] Unit and currency conversions.

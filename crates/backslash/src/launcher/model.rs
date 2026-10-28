@@ -76,6 +76,8 @@ pub enum Op {
     FillQuery(String),
     OpenBuiltin(Builtin),
     ClipCopy(u64),
+    /// Pastes a history entry (text or image).
+    ClipPaste(u64),
     ClipDelete(u64),
     ClipPin(u64),
     ClipClear,

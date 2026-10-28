@@ -214,3 +214,37 @@ fn action_panel_scrolls_with_the_keyboard() {
         s["actions"]["selected"] == 0 && s["actions"]["scroll"]["value"] == 0.0
     });
 }
+
+/// A 3×2 red PNG.
+const RED_PNG: &[u8] = &[
+    0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00,
+    0x03, 0x00, 0x00, 0x00, 0x02, 0x08, 0x02, 0x00, 0x00, 0x00, 0x12, 0x16, 0xf1, 0x4d, 0x00, 0x00, 0x00, 0x10, 0x49,
+    0x44, 0x41, 0x54, 0x78, 0x9c, 0x63, 0xf8, 0xcf, 0xc0, 0x00, 0x41, 0x0c, 0x70, 0x16, 0x00, 0x41, 0xd2, 0x05, 0xfb,
+    0x87, 0xf0, 0xb9, 0x48, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
+];
+
+#[test]
+fn copied_images_show_in_the_history() {
+    if !enabled() || Command::new("xclip").arg("-version").output().is_err() {
+        return;
+    }
+    let ui = Ui::start("", None);
+    let png = ui.dir.path().join("red.png");
+    std::fs::write(&png, RED_PNG).unwrap();
+    // xclip keeps serving the selection until something else takes it.
+    let mut xclip = Command::new("xclip")
+        .args(["-selection", "clipboard", "-t", "image/png", "-i"])
+        .arg(&png)
+        .env("DISPLAY", &ui.display)
+        .spawn()
+        .unwrap();
+    ui.type_text("clipboard history");
+    ui.wait_for("the command", |s| rows(s).first().is_some_and(|r| r == "Clipboard History"));
+    ui.key("Return");
+    let state = ui.wait_for("the image", |s| s["depth"] == 2 && rows(s).first().is_some_and(|r| r == "Image 3×2"));
+    assert_eq!(rows(&state).len(), 1, "the image only, not its bytes as text: {state:#}");
+    let stored = std::fs::read_dir(ui.dir.path().join("state/backslash/clipboard-images")).unwrap().count();
+    assert_eq!(stored, 1);
+    let _ = xclip.kill();
+    let _ = xclip.wait();
+}
