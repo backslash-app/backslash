@@ -1,6 +1,7 @@
-//! Styling: one layout stylesheet using named colors, two palettes (light and
-//! dark, each with an accent) swapped at runtime, the user's override, and the desktop's color
-//! scheme, followed live when the theme is "system".
+//! Styling: one layout stylesheet using named colors, palettes (light and
+//! dark, plus named themes such as Nord or Dracula) swapped at runtime with an
+//! accent, the user's override, and the desktop's color scheme, followed live
+//! when the theme is "system".
 
 use backslash_core::config::{Accent, Config, Density, Theme};
 use gtk::prelude::*;
@@ -25,6 +26,10 @@ struct Palette {
     colors: [(&'static str, &'static str); 9],
     /// Background opacity of colored pills.
     pill: f32,
+    /// The theme's own accent (`Accent::Theme`).
+    accent: &'static str,
+    /// Text on that accent.
+    on_accent: &'static str,
 }
 
 const NAMES: [&str; 9] = ["red", "orange", "yellow", "green", "blue", "purple", "teal", "pink", "gray"];
@@ -51,6 +56,8 @@ const LIGHT: Palette = Palette {
         ("gray", "#6b6b75"),
     ],
     pill: 0.10,
+    accent: "#5359e0",
+    on_accent: "#ffffff",
 };
 
 const DARK: Palette = Palette {
@@ -75,12 +82,111 @@ const DARK: Palette = Palette {
         ("gray", "#8e8e98"),
     ],
     pill: 0.15,
+    accent: "#8b93ff",
+    on_accent: "#101015",
 };
 
-/// The accent of each preset, for light and dark backgrounds.
+/// A dark named theme: its base colors, then red, orange, yellow, green,
+/// blue, purple, teal, pink and gray.
+const fn dark(base: [&'static str; 6], colors: [&'static str; 9], accent: &'static str) -> Palette {
+    named(base, colors, accent, true)
+}
+
+const fn light(base: [&'static str; 6], colors: [&'static str; 9], accent: &'static str) -> Palette {
+    named(base, colors, accent, false)
+}
+
+const fn named(base: [&'static str; 6], c: [&'static str; 9], accent: &'static str, dark: bool) -> Palette {
+    Palette {
+        bg: base[0],
+        panel: base[1],
+        raise: base[2],
+        line: if dark { "rgba(255, 255, 255, 0.08)" } else { "rgba(0, 0, 0, 0.08)" },
+        fg: base[3],
+        dim: base[4],
+        faint: base[5],
+        shadow: if dark { "rgba(0, 0, 0, 0.55)" } else { "rgba(20, 22, 40, 0.20)" },
+        selection: if dark { 0.18 } else { 0.12 },
+        colors: [
+            ("red", c[0]),
+            ("orange", c[1]),
+            ("yellow", c[2]),
+            ("green", c[3]),
+            ("blue", c[4]),
+            ("purple", c[5]),
+            ("teal", c[6]),
+            ("pink", c[7]),
+            ("gray", c[8]),
+        ],
+        pill: if dark { 0.16 } else { 0.12 },
+        accent,
+        on_accent: if dark { "#101015" } else { "#ffffff" },
+    }
+}
+
+const NORD: Palette = dark(
+    ["#2e3440", "#2b303b", "#3b4252", "#eceff4", "#c2c9d6", "#8f9ab0"],
+    ["#bf616a", "#d08770", "#ebcb8b", "#a3be8c", "#81a1c1", "#b48ead", "#8fbcbb", "#c895b5", "#8f9ab0"],
+    "#88c0d0",
+);
+const DRACULA: Palette = dark(
+    ["#282a36", "#21222c", "#343746", "#f8f8f2", "#c5c6d6", "#8c93b8"],
+    ["#ff5555", "#ffb86c", "#f1fa8c", "#50fa7b", "#82aaff", "#bd93f9", "#8be9fd", "#ff79c6", "#8c93b8"],
+    "#bd93f9",
+);
+const MOCHA: Palette = dark(
+    ["#1e1e2e", "#181825", "#313244", "#cdd6f4", "#bac2de", "#9399b2"],
+    ["#f38ba8", "#fab387", "#f9e2af", "#a6e3a1", "#89b4fa", "#cba6f7", "#94e2d5", "#f5c2e7", "#9399b2"],
+    "#cba6f7",
+);
+const LATTE: Palette = light(
+    ["#eff1f5", "#e6e9ef", "#dce0e8", "#4c4f69", "#5c5f77", "#6c6f85"],
+    ["#d20f39", "#fe640b", "#df8e1d", "#40a02b", "#1e66f5", "#8839ef", "#179299", "#ea76cb", "#7c7f93"],
+    "#8839ef",
+);
+const GRUVBOX: Palette = dark(
+    ["#282828", "#1d2021", "#3c3836", "#ebdbb2", "#d5c4a1", "#a89984"],
+    ["#fb4934", "#fe8019", "#fabd2f", "#b8bb26", "#83a598", "#d3869b", "#8ec07c", "#d3869b", "#a89984"],
+    "#fabd2f",
+);
+const SOLARIZED: Palette = light(
+    ["#fdf6e3", "#eee8d5", "#e6dfc8", "#073642", "#586e75", "#657b83"],
+    ["#dc322f", "#cb4b16", "#b58900", "#859900", "#268bd2", "#6c71c4", "#2aa198", "#d33682", "#839496"],
+    "#268bd2",
+);
+const TOKYO: Palette = dark(
+    ["#1a1b26", "#16161e", "#292e42", "#c0caf5", "#a9b1d6", "#7f86a8"],
+    ["#f7768e", "#ff9e64", "#e0af68", "#9ece6a", "#7aa2f7", "#bb9af7", "#73daca", "#ff8fc6", "#7f86a8"],
+    "#7aa2f7",
+);
+
+/// The palette of a theme (System resolved to light or dark).
+fn palette(theme: Theme, system_dark: bool) -> &'static Palette {
+    match theme {
+        Theme::System if system_dark => &DARK,
+        Theme::System | Theme::Light => &LIGHT,
+        Theme::Dark => &DARK,
+        Theme::Nord => &NORD,
+        Theme::Dracula => &DRACULA,
+        Theme::CatppuccinMocha => &MOCHA,
+        Theme::CatppuccinLatte => &LATTE,
+        Theme::Gruvbox => &GRUVBOX,
+        Theme::SolarizedLight => &SOLARIZED,
+        Theme::TokyoNight => &TOKYO,
+    }
+}
+
+/// The background, text and accent of a theme, for previews in the settings.
+pub fn swatch(theme: Theme) -> (&'static str, &'static str, &'static str) {
+    let p = palette(theme, false);
+    (p.bg, p.fg, p.accent)
+}
+
+/// The accent of each preset, for light and dark backgrounds
+/// (`Accent::Theme` is resolved by the palette).
 fn accent_colors(accent: Accent) -> (&'static str, &'static str) {
     match accent {
-        Accent::Indigo => ("#5359e0", "#8b93ff"),
+        Accent::Indigo | Accent::Theme => ("#5359e0", "#8b93ff"),
         Accent::Blue => ("#0969da", "#58a6ff"),
         Accent::Green => ("#1a7f37", "#3fb950"),
         Accent::Orange => ("#bc4c00", "#f0883e"),
@@ -96,12 +202,17 @@ fn with_alpha(hex: &str, alpha: f32) -> String {
     format!("rgba({}, {}, {}, {alpha})", c(0), c(2), c(4))
 }
 
-/// The `@define-color` lines for an appearance and accent.
-fn palette_css(dark: bool, accent: Accent) -> String {
-    let p = if dark { &DARK } else { &LIGHT };
-    let (light_accent, dark_accent) = accent_colors(accent);
-    let accent = if dark { dark_accent } else { light_accent };
-    let on_accent = if dark && accent != "#c6c6cf" { "#101015" } else { "#ffffff" };
+/// The `@define-color` lines for a theme and accent.
+fn palette_css(theme: Theme, system_dark: bool, accent: Accent) -> String {
+    let p = palette(theme, system_dark);
+    let dark = theme.is_dark().unwrap_or(system_dark);
+    let (accent, on_accent) = if accent == Accent::Theme {
+        (p.accent, p.on_accent)
+    } else {
+        let (light_accent, dark_accent) = accent_colors(accent);
+        let accent = if dark { dark_accent } else { light_accent };
+        (accent, if dark && accent != "#c6c6cf" { "#101015" } else { "#ffffff" })
+    };
     let mut css = format!(
         "@define-color bs_bg {};\n@define-color bs_preview_bg {};\n@define-color bs_surface {};\n\
          @define-color bs_border {};\n@define-color bs_divider {};\n@define-color bs_fg {};\n\
@@ -150,7 +261,7 @@ pub struct Styles {
 impl Styles {
     pub fn install(display: &gdk::Display) -> Self {
         let palette = gtk::CssProvider::new();
-        palette.load_from_string(&palette_css(false, Accent::default()));
+        palette.load_from_string(&palette_css(Theme::Light, false, Accent::default()));
         gtk::style_context_add_provider_for_display(display, &palette, gtk::STYLE_PROVIDER_PRIORITY_APPLICATION);
 
         let layout = gtk::CssProvider::new();
@@ -172,12 +283,9 @@ impl Styles {
     /// Applies the appearance (resolving "system"), accent and density to
     /// the palette and to `windows`.
     pub fn apply(&self, config: &Config, windows: &[&gtk::Widget]) {
-        let dark = match config.theme {
-            Theme::Light => false,
-            Theme::Dark => true,
-            Theme::System => system_prefers_dark(),
-        };
-        self.palette.load_from_string(&palette_css(dark, config.accent));
+        let system_dark = config.theme == Theme::System && system_prefers_dark();
+        let dark = config.theme.is_dark().unwrap_or(system_dark);
+        self.palette.load_from_string(&palette_css(config.theme, system_dark, config.accent));
         for window in windows {
             window.remove_css_class(if dark { "light" } else { "dark" });
             window.add_css_class(if dark { "dark" } else { "light" });
@@ -248,4 +356,30 @@ pub fn watch_system(on_change: impl Fn() + 'static) {
         );
         std::mem::forget(bus);
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_theme_defines_every_color() {
+        for theme in Theme::ALL {
+            for accent in Accent::ALL {
+                let css = palette_css(theme, true, accent);
+                for name in NAMES {
+                    assert!(css.contains(&format!("@define-color bs_{name} #")), "{theme:?} {name}");
+                }
+                assert!(css.contains("@define-color bs_accent #"), "{theme:?} {accent:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn theme_accent_follows_the_theme() {
+        assert!(palette_css(Theme::Dracula, false, Accent::Theme).contains("bs_accent #bd93f9"));
+        assert!(palette_css(Theme::Dracula, false, Accent::Blue).contains("bs_accent #58a6ff"));
+        assert!(palette_css(Theme::SolarizedLight, true, Accent::Blue).contains("bs_accent #0969da"));
+        assert!(palette_css(Theme::System, true, Accent::Theme).contains("bs_bg #141417"));
+    }
 }

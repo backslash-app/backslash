@@ -6,7 +6,7 @@ use std::cell::Cell;
 use std::rc::Rc;
 
 use backslash_core::catalog::{self, Locations};
-use backslash_core::config::{Accent, Density, Quicklink, Reopen, Snippet, Theme};
+use backslash_core::config::{Accent, Density, Quicklink, Reopen, Snippet, Theme, WindowSize};
 use backslash_core::manifest::PreferenceKind;
 use backslash_core::{paths, runtime, secrets};
 use gtk::prelude::*;
@@ -81,6 +81,62 @@ fn switch(active: bool, on_change: impl Fn(bool) + 'static) -> gtk::Widget {
 }
 
 /// Buttons side by side, one active.
+/// A tile per theme, painted in its colors.
+fn theme_picker(current: Theme, on_pick: impl Fn(Theme) + 'static) -> gtk::Widget {
+    let flow = gtk::FlowBox::new();
+    flow.add_css_class("theme-picker");
+    flow.set_selection_mode(gtk::SelectionMode::None);
+    flow.set_max_children_per_line(5);
+    flow.set_min_children_per_line(5);
+    flow.set_homogeneous(true);
+    flow.set_column_spacing(10);
+    flow.set_row_spacing(10);
+    let on_pick = Rc::new(on_pick);
+    let tiles: Rc<std::cell::RefCell<Vec<gtk::Button>>> = Rc::default();
+    for theme in Theme::ALL {
+        let (bg, fg, accent) = crate::theme::swatch(theme);
+        let background = if theme == Theme::System {
+            "linear-gradient(135deg, #ffffff 50%, #141417 50%)".to_string()
+        } else {
+            bg.to_string()
+        };
+        let content = gtk::Box::new(gtk::Orientation::Vertical, 6);
+        let bar = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+        bar.add_css_class("theme-accent");
+        bar.set_halign(gtk::Align::Start);
+        content.append(&bar);
+        let name = gtk::Label::new(Some(theme.name()));
+        name.set_xalign(0.0);
+        content.append(&name);
+        let tile = gtk::Button::builder().child(&content).css_classes(["theme-tile"]).build();
+        tile.update_property(&[gtk::accessible::Property::Label(theme.name())]);
+        let provider = gtk::CssProvider::new();
+        let label = if theme == Theme::System { "#17171c" } else { fg };
+        provider.load_from_string(&format!(
+            "button {{ background: {background}; color: {label}; }} box.theme-accent {{ background: {accent}; }}"
+        ));
+        #[allow(deprecated)]
+        {
+            tile.style_context().add_provider(&provider, gtk::STYLE_PROVIDER_PRIORITY_APPLICATION + 1);
+            bar.style_context().add_provider(&provider, gtk::STYLE_PROVIDER_PRIORITY_APPLICATION + 1);
+        }
+        if theme == current {
+            tile.add_css_class("active");
+        }
+        let (on_pick, all) = (on_pick.clone(), tiles.clone());
+        tile.connect_clicked(move |me| {
+            for t in all.borrow().iter() {
+                t.remove_css_class("active");
+            }
+            me.add_css_class("active");
+            on_pick(theme);
+        });
+        tiles.borrow_mut().push(tile.clone());
+        flow.insert(&tile, -1);
+    }
+    flow.upcast()
+}
+
 fn segmented(options: &[&str], active: usize, on_pick: impl Fn(usize) + 'static) -> gtk::Widget {
     let b = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     b.add_css_class("segmented");
@@ -413,20 +469,12 @@ impl Launcher {
 
         page.append(&heading("Appearance"));
         let weak = Rc::downgrade(self);
-        let theme = segmented(
-            &["System", "Light", "Dark"],
-            match config.theme {
-                Theme::System => 0,
-                Theme::Light => 1,
-                Theme::Dark => 2,
-            },
-            move |i| {
-                if let Some(l) = weak.upgrade() {
-                    l.update_config(|c| c.theme = [Theme::System, Theme::Light, Theme::Dark][i]);
-                    l.apply_style();
-                }
-            },
-        );
+        let theme = theme_picker(config.theme, move |theme| {
+            if let Some(l) = weak.upgrade() {
+                l.update_config(|c| c.theme = theme);
+                l.apply_style();
+            }
+        });
         let accents = gtk::Box::new(gtk::Orientation::Horizontal, 8);
         let dots: Rc<std::cell::RefCell<Vec<gtk::Button>>> = Rc::default();
         for accent in Accent::ALL {
@@ -435,6 +483,8 @@ impl Launcher {
             dot.set_tooltip_text(Some(accent.name()));
             dot.update_property(&[gtk::accessible::Property::Label(accent.name())]);
             let color = match accent {
+                // Two tones: whatever the theme brings.
+                Accent::Theme => "linear-gradient(135deg, #8b93ff 0%, #f778ba 50%, #3fb950 100%)",
                 Accent::Indigo => "#7178f0",
                 Accent::Blue => "#3b82f6",
                 Accent::Green => "#22a06b",
@@ -471,10 +521,24 @@ impl Launcher {
                     l.apply_style();
                 }
             });
+        let weak = Rc::downgrade(self);
+        let sizes: Vec<&str> = WindowSize::ALL.iter().map(|s| s.name()).collect();
+        let current = WindowSize::ALL.iter().position(|s| *s == config.window_size).unwrap_or(1);
+        let size = segmented(&sizes, current, move |i| {
+            if let Some(l) = weak.upgrade() {
+                l.update_config(|c| c.window_size = WindowSize::ALL[i]);
+                l.apply_style();
+            }
+        });
+        page.append(&card(&[card_row("Theme", None, None), theme]));
         page.append(&card(&[
-            card_row("Theme", None, Some(&theme)),
-            card_row("Accent color", Some("Selection, keys and links"), Some(&accents.upcast())),
+            card_row(
+                "Accent color",
+                Some("Selection, keys and links; the first one is the theme's"),
+                Some(&accents.upcast()),
+            ),
             card_row("Density", Some("Compact fits a third more rows"), Some(&density)),
+            card_row("Window size", None, Some(&size)),
         ]));
         scrolled(&page).upcast()
     }

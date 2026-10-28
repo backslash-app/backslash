@@ -125,6 +125,41 @@ jobs:
           AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
         run: packaging/aur/publish.sh "${{ needs.version.outputs.version }}"
 
+  # The apt and dnf repositories, published on GitHub Pages. Needs the
+  # REPO_SIGNING_KEY secret and Pages set to "GitHub Actions" (CONTRIBUTING.md).
+  repos:
+    needs: [version, release]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: v${{ needs.version.outputs.version }}
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Install the repository tools
+        run: sudo apt-get update && sudo apt-get install -y apt-utils createrepo-c rpm gnupg
+      - name: Build the repositories
+        id: build
+        env:
+          REPO_SIGNING_KEY: ${{ secrets.REPO_SIGNING_KEY }}
+        run: |
+          packaging/repo/build.sh dist site "https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}"
+          if [ -f site/index.html ]; then echo "publish=true" >> "$GITHUB_OUTPUT"; fi
+      - uses: actions/upload-pages-artifact@v3
+        if: steps.build.outputs.publish == 'true'
+        with:
+          path: site
+      - uses: actions/deploy-pages@v4
+        if: steps.build.outputs.publish == 'true'
+
   # main only takes reviewed pull requests, so the new version comes back as one.
   bump:
     needs: [version, release]

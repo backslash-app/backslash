@@ -737,6 +737,33 @@ window.bs-settings {
   border-color: @bs_fg;
 }
 
+.theme-picker {
+  margin: 0 14px 14px;
+}
+
+.theme-tile {
+  min-height: 52px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 2px solid @bs_border;
+  box-shadow: none;
+}
+
+.theme-tile.active {
+  border-color: @bs_accent;
+}
+
+.theme-tile label {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.theme-accent {
+  min-height: 6px;
+  min-width: 28px;
+  border-radius: 3px;
+}
+
 .shortcut-capture {
   font-family: "JetBrains Mono", "DejaVu Sans Mono", monospace;
   font-size: 12px;

@@ -784,21 +784,13 @@ pub fn builtin_rows(s: &mut State, builtin: Builtin, query: &str) -> Vec<Row> {
                 .entries()
                 .into_iter()
                 .map(|e| {
+                    if e.image.is_some() {
+                        return image_clip(s, e, today);
+                    }
                     let kind = clip_kind(&e.text);
                     let lines = e.text.lines().count().max(1);
                     let chars = e.text.chars().count();
-                    let pin_title = if e.pinned { "Unpin" } else { "Pin" };
-                    let section = if e.pinned {
-                        "Pinned"
-                    } else if e.time >= today {
-                        "Today"
-                    } else if e.time >= day_start(1) {
-                        "Yesterday"
-                    } else if e.time >= day_start(6) {
-                        "This Week"
-                    } else {
-                        "Older"
-                    };
+                    let section = clip_section(e, today);
                     let mut metadata = vec![
                         proto::MetadataEntry {
                             label: "Type".into(),
@@ -828,7 +820,7 @@ pub fn builtin_rows(s: &mut State, builtin: Builtin, query: &str) -> Vec<Row> {
                         }
                     }
                     let mut actions: Vec<UiAction> = [
-                        s.paste.map(|_| UiAction::new("Paste", Op::Paste(e.text.clone())).icon("bs-paste")),
+                        s.paste.map(|_| UiAction::new("Paste", Op::ClipPaste(e.id)).icon("bs-paste")),
                         Some(UiAction::new("Copy to Clipboard", Op::ClipCopy(e.id)).icon("bs-copy")),
                     ]
                     .into_iter()
@@ -838,19 +830,7 @@ pub fn builtin_rows(s: &mut State, builtin: Builtin, query: &str) -> Vec<Row> {
                         actions
                             .push(UiAction::new("Open Link", Op::Open(e.text.trim().to_string())).icon("bs-external"));
                     }
-                    actions.extend([
-                        UiAction::new(pin_title, Op::ClipPin(e.id)).icon("bs-pin").shortcut("<Ctrl><Shift>p"),
-                        UiAction::new("Delete", Op::ClipDelete(e.id))
-                            .icon("bs-trash")
-                            .shortcut("<Ctrl>d")
-                            .destructive()
-                            .section("Manage"),
-                        UiAction::new("Clear History", Op::ClipClear)
-                            .icon("bs-trash")
-                            .destructive()
-                            .section("Manage")
-                            .confirm("Delete all unpinned entries?"),
-                    ]);
+                    actions.extend(clip_manage_actions(e));
                     let (icon, color) = match &kind {
                         ClipKind::Color(c) => (format!("color:{c}"), None),
                         k => (
@@ -976,30 +956,36 @@ pub fn builtin_rows(s: &mut State, builtin: Builtin, query: &str) -> Vec<Row> {
         }
         Builtin::Theme => {
             let current = s.config.theme;
-            let entries = [
-                (Theme::System, "System", "Follow the desktop's light or dark preference", "bs-monitor"),
-                (Theme::Light, "Light", "Bright and calm", "bs-sun"),
-                (Theme::Dark, "Dark", "Easy on the eyes at night", "bs-moon"),
-            ]
-            .into_iter()
-            .map(|(theme, title, about, icon)| {
-                let row = Row {
-                    key: format!("theme:{title}"),
-                    title: title.into(),
-                    subtitle: Some(about.into()),
-                    icon: Some(Icon::Spec(icon.into())),
-                    tint: Some("yellow"),
-                    accessories: if theme == current {
-                        vec![Accessory { tag: Some("Current".into()), ..Default::default() }]
-                    } else {
-                        Vec::new()
-                    },
-                    actions: vec![UiAction::new("Use Theme", Op::SetTheme(theme)).icon("bs-check")],
-                    ..Default::default()
-                };
-                (entry(title, &[]), row)
-            })
-            .collect();
+            let entries = Theme::ALL
+                .into_iter()
+                .map(|theme| {
+                    let (about, icon) = match theme {
+                        Theme::System => ("Follow the desktop's light or dark preference", "bs-monitor"),
+                        Theme::Light => ("Bright and calm", "bs-sun"),
+                        Theme::Dark => ("Easy on the eyes at night", "bs-moon"),
+                        t if t.is_dark() == Some(false) => ("A light theme", "bs-palette"),
+                        _ => ("A dark theme", "bs-palette"),
+                    };
+                    (theme, theme.name(), about, icon)
+                })
+                .map(|(theme, title, about, icon)| {
+                    let row = Row {
+                        key: format!("theme:{title}"),
+                        title: title.into(),
+                        subtitle: Some(about.into()),
+                        icon: Some(Icon::Spec(icon.into())),
+                        tint: Some("yellow"),
+                        accessories: if theme == current {
+                            vec![Accessory { tag: Some("Current".into()), ..Default::default() }]
+                        } else {
+                            Vec::new()
+                        },
+                        actions: vec![UiAction::new("Use Theme", Op::SetTheme(theme)).icon("bs-check")],
+                        ..Default::default()
+                    };
+                    (entry(title, &[]), row)
+                })
+                .collect();
             ranked_rows(&mut s.ranker, query, entries)
         }
     }
@@ -1100,6 +1086,94 @@ pub fn clip_kind(text: &str) -> ClipKind {
 }
 
 /// Start of the day `days` days ago, local time, in seconds.
+/// Where a clipboard entry is listed.
+fn clip_section(e: &clipboard::ClipEntry, today: u64) -> &'static str {
+    if e.pinned {
+        "Pinned"
+    } else if e.time >= today {
+        "Today"
+    } else if e.time >= day_start(1) {
+        "Yesterday"
+    } else if e.time >= day_start(6) {
+        "This Week"
+    } else {
+        "Older"
+    }
+}
+
+/// The actions every clipboard entry has: pin, delete, clear.
+fn clip_manage_actions(e: &clipboard::ClipEntry) -> [UiAction; 3] {
+    [
+        UiAction::new(if e.pinned { "Unpin" } else { "Pin" }, Op::ClipPin(e.id))
+            .icon("bs-pin")
+            .shortcut("<Ctrl><Shift>p"),
+        UiAction::new("Delete", Op::ClipDelete(e.id))
+            .icon("bs-trash")
+            .shortcut("<Ctrl>d")
+            .destructive()
+            .section("Manage"),
+        UiAction::new("Clear History", Op::ClipClear)
+            .icon("bs-trash")
+            .destructive()
+            .section("Manage")
+            .confirm("Delete all unpinned entries?"),
+    ]
+}
+
+/// A copied image: a thumbnail, the picture in the preview.
+fn image_clip(s: &State, e: &clipboard::ClipEntry, today: u64) -> (Entry, Row) {
+    let info = e.image.as_ref().expect("an image entry");
+    let path = s.clipboard.image_path(e);
+    let title = format!("Image {}×{}", info.width, info.height);
+    let size = if info.bytes >= 1024 * 1024 {
+        format!("{:.1} MB", info.bytes as f64 / (1024.0 * 1024.0))
+    } else {
+        format!("{} KB", info.bytes.div_ceil(1024))
+    };
+    let mut actions: Vec<UiAction> = [
+        s.paste.map(|_| UiAction::new("Paste", Op::ClipPaste(e.id)).icon("bs-paste")),
+        Some(UiAction::new("Copy to Clipboard", Op::ClipCopy(e.id)).icon("bs-copy")),
+        path.clone().map(|p| UiAction::new("Show in Folder", Op::Reveal(p)).icon("bs-folder")),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+    actions.extend(clip_manage_actions(e));
+    let icon = path.as_ref().map(|p| Icon::Spec(p.display().to_string())).unwrap_or(Icon::Spec("bs-image".into()));
+    let row = Row {
+        key: format!("clip:{}", e.id),
+        title: title.clone(),
+        icon: Some(icon.clone()),
+        accessories: vec![Accessory { text: Some(short_ago(e.time)), ..Default::default() }],
+        section: Some(clip_section(e, today).into()),
+        actions,
+        preview: Some(Preview {
+            icon: Some(icon),
+            title: "Image".into(),
+            subtitle: Some(when(e.time)),
+            picture: path,
+            metadata: vec![
+                proto::MetadataEntry {
+                    label: "Type".into(),
+                    value: "Image".into(),
+                    icon: Some("bs-image".into()),
+                    ..Default::default()
+                },
+                proto::MetadataEntry { label: "Copied".into(), value: when(e.time), ..Default::default() },
+                proto::MetadataEntry {
+                    label: "Size".into(),
+                    value: format!("{} × {} · {size}", info.width, info.height),
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
+    let entry = Entry { key: row.key.clone(), title, keywords: vec!["image".into(), "picture".into()], subtitle: None };
+    (entry, row)
+}
+
 fn day_start(days: i64) -> u64 {
     gtk::glib::DateTime::now_local()
         .ok()

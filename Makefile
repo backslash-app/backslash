@@ -11,7 +11,7 @@ VERSION ?= $(shell sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
 ARCH ?= $(shell uname -m)
 DEB_ARCH := $(if $(filter aarch64,$(ARCH)),arm64,amd64)
 
-.PHONY: all check install uninstall dist
+.PHONY: all check ui-test install uninstall dist
 
 all:
 	cargo build --release --locked
@@ -24,6 +24,10 @@ check:
 	deno lint
 	deno check sdk/*.ts extensions/*/commands/*.ts crates/backslash-core/tests/fixtures/*/commands/*.ts
 	python3 -m py_compile sdk/python/*.py crates/backslash-core/tests/fixtures/pydemo/commands/*.py
+
+# The real window in a virtual display; needs Xvfb, xdotool and dbus-run-session.
+ui-test:
+	BACKSLASH_UI_TESTS=1 cargo test -p backslash --test ui
 
 install:
 	install -Dm755 target/release/backslash $(DESTDIR)$(PREFIX)/bin/backslash

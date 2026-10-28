@@ -88,7 +88,8 @@ Built in:
 
 - **Calculator and conversions**: `12*(3+4)`, `5 km in miles`, `72 f to c`,
   `2 GiB en MB`, `20 € en $` (European Central Bank rates, cached).
-- **Clipboard History**: searchable, with pins; Enter pastes into the app you
+- **Clipboard History**: text and images (screenshots, "Copy Image"), searchable,
+  with pins; Enter pastes into the app you
   were in (xdotool on X11, the desktop's permission once on GNOME and KDE,
   `wtype` on Sway/Hyprland/niri). Recorded in the background on
   wlroots compositors, KDE and Hyprland (install `wl-clipboard`) and on X11; on
@@ -139,9 +140,11 @@ also edit them by hand or keep them in your dotfiles.
 `~/.config/backslash/config.toml`:
 
 ```toml
-theme = "system"          # "light", "dark" or "system"
-accent = "indigo"         # "blue", "green", "orange", "pink" or "graphite"
+theme = "system"          # "light", "dark", "nord", "dracula", "catppuccin-mocha", "catppuccin-latte",
+                          # "gruvbox", "solarized-light", "tokyo-night"
+accent = "theme"          # the theme's own, or "indigo", "blue", "green", "orange", "pink", "graphite"
 density = "comfortable"   # or "compact"
+window_size = "medium"    # "small" or "large"
 hotkey = "Super+Space"
 tray = true               # the icon in the system tray
 check_updates = true      # look for new versions of Backslash

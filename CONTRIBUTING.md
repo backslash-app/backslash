@@ -12,7 +12,8 @@ Thanks for helping! Questions and ideas are welcome on
 cargo run                                    # the launcher, using ./sdk and your installed extensions
 BACKSLASH_EXTENSIONS_PATH=$PWD/extensions cargo run   # with the bundled extensions
 cargo run -- run npm/search react            # CLI
-make check                                   # everything CI runs
+make check                                   # what CI runs, but the UI tests
+make ui-test                                 # the window in Xvfb, driven by xdotool
 ```
 
 `backslash dev <dir>` runs a separate instance (`app.backslash.Backslash.Devel`)
@@ -33,7 +34,9 @@ Protocol changes must update `protocol.rs`, `sdk/`, and `docs/PROTOCOL.md` toget
 
 - Keep them focused; describe the user-visible change.
 - `make check` must pass (format, clippy, tests, Deno lint and type check).
-- New behavior in `backslash-core` comes with a test.
+- New behavior in `backslash-core` comes with a test. Keyboard and window
+  behavior can be tested in `crates/backslash/tests/ui.rs`: the launcher
+  writes what it shows to `BACKSLASH_UI_TRACE` as JSON.
 
 ## Releasing
 
@@ -64,6 +67,21 @@ Pushing a `v0.4.0` tag, or creating the release on GitHub, does the same.
 
 The first release after this creates the `backslash` package on the AUR.
 Without the secret, the AUR step only checks the package and says so.
+
+### apt and dnf repositories (once)
+
+Each release also publishes signed apt and dnf repositories on GitHub Pages
+(`packaging/repo/build.sh`), so updates come with the system's.
+
+1. Make a signing key without a passphrase:
+   `GNUPGHOME=$(mktemp -d) sh -c 'gpg --batch --passphrase "" --quick-gen-key "Backslash Packages <contact@getbackslash.com>" ed25519 sign never && gpg --armor --export-secret-keys' > repo-key.asc`
+2. Add the content of `repo-key.asc` as the Actions secret `REPO_SIGNING_KEY`,
+   keep a copy offline, and delete the file.
+3. *Settings → Pages → Build and deployment → Source*: **GitHub Actions**.
+
+The next release publishes `https://backslash-app.github.io/backslash/`,
+whose page shows the commands for apt and dnf (then add them to the README).
+Without the secret, the step says so and publishes nothing.
 
 ### Registry signing key (once)
 

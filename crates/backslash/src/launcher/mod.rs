@@ -15,6 +15,7 @@ mod settings;
 mod settings_window;
 mod signin;
 mod store;
+mod trace;
 mod welcome;
 mod widgets;
 
@@ -56,10 +57,6 @@ pub struct Options {
     /// Root search item to open instead of showing the window (`backslash open`).
     pub open: Option<String>,
 }
-
-const WIDTH: i32 = 860;
-const HEIGHT: i32 = 540;
-const LIST_WIDTH: i32 = 450;
 
 pub fn run(options: Options) -> anyhow::Result<()> {
     layer::reexec_if_needed(Config::load().layer_shell);
@@ -237,6 +234,8 @@ impl CommandMeta {
 
 pub struct Launcher {
     window: gtk::ApplicationWindow,
+    /// The rounded panel inside the window, sized by `window_size`.
+    panel: gtk::Box,
     styles: Styles,
     layer_shell: bool,
     entry: gtk::Entry,
@@ -304,8 +303,8 @@ impl Launcher {
         let window = gtk::ApplicationWindow::builder()
             .application(app)
             .title("Backslash")
-            .default_width(WIDTH)
-            .default_height(HEIGHT)
+            .default_width(860)
+            .default_height(540)
             .resizable(false)
             .decorated(false)
             .build();
@@ -315,7 +314,6 @@ impl Launcher {
         let panel = gtk::Box::new(gtk::Orientation::Vertical, 0);
         panel.add_css_class("panel");
         panel.set_overflow(gtk::Overflow::Hidden);
-        panel.set_size_request(WIDTH - 28, HEIGHT - 28);
 
         // Header: where you are (or the search icon), query, chips, spinner.
         let header = gtk::Box::new(gtk::Orientation::Horizontal, 12);
@@ -365,11 +363,7 @@ impl Launcher {
         list.add_css_class("results");
         list.set_selection_mode(gtk::SelectionMode::Browse);
         list.set_activate_on_single_click(true);
-        let scroller = gtk::ScrolledWindow::builder()
-            .hscrollbar_policy(gtk::PolicyType::Never)
-            .child(&list)
-            .width_request(LIST_WIDTH)
-            .build();
+        let scroller = gtk::ScrolledWindow::builder().hscrollbar_policy(gtk::PolicyType::Never).child(&list).build();
         let preview = gtk::Box::new(gtk::Orientation::Vertical, 16);
         preview.add_css_class("preview");
         preview.set_hexpand(true);
@@ -542,6 +536,7 @@ impl Launcher {
         let kwin = if window_backend.is_none() { crate::kwin::Kwin::new() } else { None };
         let launcher = Rc::new(Self {
             window,
+            panel,
             styles,
             layer_shell,
             entry,
@@ -718,6 +713,7 @@ impl Launcher {
     fn start_services(self: &Rc<Self>) {
         self.watch_dev_dir();
         self.start_background();
+        self.start_trace();
         // Pictures (avatars, favicons) arrive after the rows: redraw them.
         let weak = Rc::downgrade(self);
         crate::images::on_ready(move || {
@@ -735,9 +731,9 @@ impl Launcher {
         }
         if clipboard_enabled {
             let weak = Rc::downgrade(self);
-            clipboard::watch(&WidgetExt::display(&self.window), move |text| {
+            clipboard::watch(&WidgetExt::display(&self.window), move |copied| {
                 if let Some(l) = weak.upgrade() {
-                    l.on_clipboard_text(text);
+                    l.on_clipboard(copied);
                 }
             });
         }
@@ -757,8 +753,13 @@ impl Launcher {
         });
     }
 
-    fn on_clipboard_text(self: &Rc<Self>, text: String) {
-        let added = self.state.borrow_mut().clipboard.add(&text);
+    fn on_clipboard(self: &Rc<Self>, copied: clipboard::Copied) {
+        let added = match copied {
+            clipboard::Copied::Text(text) => self.state.borrow_mut().clipboard.add(&text),
+            clipboard::Copied::Image(png, width, height) => {
+                self.state.borrow_mut().clipboard.add_image(&png, width, height)
+            }
+        };
         let showing =
             matches!(self.state.borrow().frames.last().map(|f| &f.kind), Some(FrameKind::Builtin(Builtin::Clipboard)));
         if added && showing {
@@ -1050,9 +1051,9 @@ impl Launcher {
         // at least record what is in it now.
         if self.state.borrow().config.clipboard.enabled {
             let weak = Rc::downgrade(self);
-            clipboard::read_now(&WidgetExt::display(&self.window), move |text| {
+            clipboard::read_now(&WidgetExt::display(&self.window), move |copied| {
                 if let Some(l) = weak.upgrade() {
-                    l.on_clipboard_text(text);
+                    l.on_clipboard(copied);
                 }
             });
         }
@@ -1117,6 +1118,11 @@ impl Launcher {
         }
         let refs: Vec<&gtk::Widget> = windows.iter().collect();
         self.styles.apply(&config, &refs);
+        let (width, height, list) = config.window_size.pixels();
+        // The window is not resizable: it takes the panel's size, plus room for the shadow.
+        self.panel.set_size_request(width - 28, height - 28);
+        self.scroller.set_width_request(list);
+        self.window.set_default_size(width, height);
     }
 
     // -----------------------------------------------------------------------
@@ -2420,10 +2426,13 @@ impl Launcher {
             }
             Op::OpenBuiltin(builtin) => self.open_builtin(builtin),
             Op::ClipCopy(id) => {
-                let text = self.state.borrow().clipboard.get(id).map(|e| e.text.clone());
-                if let Some(text) = text {
-                    self.window.clipboard().set_text(&text);
+                if self.put_clip(id) {
                     self.flash_and_hide("Copied to clipboard");
+                }
+            }
+            Op::ClipPaste(id) => {
+                if self.put_clip(id) {
+                    self.paste_clipboard();
                 }
             }
             Op::ClipPin(id) => {
@@ -3573,6 +3582,28 @@ impl Launcher {
 
     fn paste(self: &Rc<Self>, text: String, concealed: bool) {
         set_clipboard(&self.window, &text, concealed);
+        self.paste_clipboard();
+    }
+
+    /// Puts a history entry back on the clipboard, text or image.
+    fn put_clip(&self, id: u64) -> bool {
+        let s = self.state.borrow();
+        let Some(entry) = s.clipboard.get(id) else { return false };
+        match s.clipboard.image_path(entry) {
+            Some(path) => match gdk::Texture::from_filename(&path) {
+                Ok(texture) => self.window.clipboard().set_texture(&texture),
+                Err(e) => {
+                    eprintln!("backslash: cannot read {}: {e}", path.display());
+                    return false;
+                }
+            },
+            None => self.window.clipboard().set_text(&entry.text),
+        }
+        true
+    }
+
+    /// Pastes what the clipboard holds into the app the user was in.
+    fn paste_clipboard(self: &Rc<Self>) {
         let (method, terminal) = {
             let s = self.state.borrow();
             (s.paste, s.paste_target.as_deref().is_some_and(paste::is_terminal))

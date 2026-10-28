@@ -10,10 +10,11 @@ the CLI and two bundled extensions. Next steps, roughly in order.
       `backslash` as the universal fallback.
 - [x] Launch at login toggle from the launcher.
 - [x] Packages: `.deb`, `.rpm` and tarball built on tags, AUR `PKGBUILD`, Deno downloaded on demand.
-- [ ] Submit to the AUR, Nix flake, apt/dnf repositories so updates come with the system.
+- [x] Nix flake, and signed apt/dnf repositories built with each release.
+- [ ] Publish them: the AUR account, the repository key and GitHub Pages (see CONTRIBUTING).
 
 ## Built-in features
-- [x] Clipboard history with pins, pasted straight into the app you were in (images still to do).
+- [x] Clipboard history with pins and images, pasted straight into the app you were in.
 - [x] File search with recents and previews.
 - [x] Window switcher for Hyprland, Sway, niri, KDE Plasma, GNOME and X11.
 - [x] Unit and currency conversions.
@@ -46,6 +47,6 @@ the CLI and two bundled extensions. Next steps, roughly in order.
 ## Quality
 - [x] Welcome checklist on first launch, with the real state of each step on this desktop.
 - [x] Settings window: shortcut, theme, accent color, density, extensions, clipboard, quicklinks, snippets.
-- [ ] More themes and window sizes.
+- [x] More themes and window sizes.
 - [ ] Localization (French first).
-- [ ] UI tests driving the window under a virtual display in CI.
+- [x] UI tests driving the window under a virtual display in CI.
