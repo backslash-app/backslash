@@ -18,7 +18,7 @@ optdepends=(
   'wmctrl: window switcher on X11'
 )
 source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
-sha256sums=('SKIP') # replace with the tarball's checksum when publishing
+sha256sums=('4b1b2cec8424f54e55e2f4b1acff1fa63870f59463e53193f74395f85e468312')
 
 prepare() {
   cd "$pkgname-$pkgver"
