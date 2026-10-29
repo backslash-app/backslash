@@ -282,6 +282,44 @@ fn leaving_the_skeleton_drops_the_command() {
     assert_eq!(state["depth"], 1, "the view opened after leaving: {state:#}");
 }
 
+/// A no-view command that takes a while (Copy Public IP asks a server):
+/// its confirmation shows big, then the launcher hides on the search it
+/// was started from, not on the skeleton, which it would reopen on.
+#[test]
+fn slow_no_view_commands_confirm_then_leave_no_skeleton() {
+    if !enabled() || Command::new("deno").arg("--version").output().is_err() {
+        return;
+    }
+    let extensions = tempfile::tempdir().unwrap();
+    let ext = extensions.path().join("slow");
+    std::fs::create_dir_all(ext.join("commands")).unwrap();
+    std::fs::write(
+        ext.join("backslash.toml"),
+        "[extension]\nid = \"slow\"\ntitle = \"Slow\"\n\
+         [[commands]]\nname = \"copy\"\ntitle = \"Slow Copy\"\nmode = \"no-view\"\n",
+    )
+    .unwrap();
+    std::fs::write(
+        ext.join("commands/copy.ts"),
+        "import { run } from \"@backslash/api\";\n\
+         export default run(async () => {\n\
+           await new Promise((r) => setTimeout(r, 1000));\n\
+           return \"Copied 203.0.113.7\";\n\
+         });\n",
+    )
+    .unwrap();
+    let ui = Ui::start("", Some(extensions.path()));
+    ui.type_text("slow copy");
+    ui.wait_for("the command", |s| rows(s).first().is_some_and(|r| r == "Slow Copy"));
+    ui.key("Return");
+    ui.wait_for("the skeleton", |s| s["page"] == "skeleton");
+    let state = ui.wait_for("the confirmation", |s| s["hud"] == "Copied 203.0.113.7");
+    assert_eq!(state["depth"], 1, "the skeleton is still open: {state:#}");
+    let state = ui.wait_for("the window to hide", |s| s["visible"] == false);
+    assert_eq!(state["depth"], 1, "{state:#}");
+    assert_eq!(state["hud"], "", "{state:#}");
+}
+
 /// A 3×2 red PNG.
 const RED_PNG: &[u8] = &[
     0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00,
