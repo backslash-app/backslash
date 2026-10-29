@@ -3,7 +3,7 @@ resolver = "2"
 members = ["crates/backslash-core", "crates/backslash"]
 
 [workspace.package]
-version = "0.6.0"
+version = "0.6.1"
 edition = "2021"
 license = "MIT"
 repository = "https://github.com/backslash-app/backslash"
