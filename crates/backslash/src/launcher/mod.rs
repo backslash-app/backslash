@@ -55,6 +55,8 @@ pub use self::rows::now;
 /// stands in for it: short enough to feel immediate, long enough that quick
 /// commands never flash it.
 const SKELETON_AFTER: Duration = Duration::from_millis(120);
+/// How long a confirmation shows before the launcher hides.
+const HUD_FOR: Duration = Duration::from_millis(1100);
 
 pub struct Options {
     pub hidden: bool,
@@ -275,6 +277,11 @@ pub struct Launcher {
     /// "Backslash 0.5.0 is available", after the context line.
     update_pill: gtk::Button,
     toast: gtk::Label,
+    /// A big confirmation over the whole panel before it hides ("Copied 1.2.3.4").
+    hud: gtk::Box,
+    hud_text: gtk::Label,
+    /// Bumped by each confirmation: only the latest one hides the window.
+    hud_serial: Cell<u64>,
     primary: gtk::Label,
     primary_key: gtk::Box,
     actions_hint: gtk::Box,
@@ -534,9 +541,29 @@ impl Launcher {
             .child(&popover_list)
             .build();
         action_panel.append(&popover_scroll);
+        let hud = gtk::Box::new(gtk::Orientation::Vertical, 12);
+        hud.add_css_class("hud");
+        hud.set_valign(gtk::Align::Fill);
+        hud.set_halign(gtk::Align::Fill);
+        hud.set_visible(false);
+        let hud_inner = gtk::Box::new(gtk::Orientation::Vertical, 12);
+        hud_inner.set_valign(gtk::Align::Center);
+        hud_inner.set_vexpand(true);
+        let hud_icon = crate::glyphs::Glyph::new("bs-circle-check", 48);
+        hud_icon.add_css_class("hud-icon");
+        let hud_text = label("", "hud-text");
+        hud_text.set_xalign(0.5);
+        hud_text.set_justify(gtk::Justification::Center);
+        hud_text.set_wrap(true);
+        hud_text.set_wrap_mode(gtk::pango::WrapMode::WordChar);
+        hud_text.set_max_width_chars(40);
+        hud_inner.append(&hud_icon);
+        hud_inner.append(&hud_text);
+        hud.append(&hud_inner);
         let overlay = gtk::Overlay::new();
         overlay.set_child(Some(&panel));
         overlay.add_overlay(&action_panel);
+        overlay.add_overlay(&hud);
         window.set_child(Some(&overlay));
 
         let config = Config::load();
@@ -587,6 +614,9 @@ impl Launcher {
             context,
             update_pill,
             toast,
+            hud,
+            hud_text,
+            hud_serial: Cell::new(0),
             primary,
             primary_key,
             actions_hint,
@@ -1082,6 +1112,7 @@ impl Launcher {
 
     fn hide(self: &Rc<Self>) {
         self.close_action_panel();
+        self.hud.set_visible(false);
         self.window.set_visible(false);
         let reopen = {
             let mut s = self.state.borrow_mut();
@@ -2057,6 +2088,11 @@ impl Launcher {
         }
 
         match key {
+            // A confirmation on screen: Escape closes now rather than clearing the search under it.
+            gdk::Key::Escape if self.hud.is_visible() => {
+                self.hide();
+                return Stop;
+            }
             gdk::Key::Tab if self.is_root() => {
                 self.cycle_filter(1);
                 return Stop;
@@ -2682,12 +2718,22 @@ impl Launcher {
         }
     }
 
+    /// Confirms `message` big over the panel for a moment, then hides: a line
+    /// in the footer goes unnoticed when the window closes right after.
     fn flash_and_hide(self: &Rc<Self>, message: &str) {
-        self.show_toast(message, proto::ToastStyle::Success);
+        self.close_action_panel();
+        self.hud_text.set_text(message);
+        self.hud.set_visible(true);
+        // Only the latest confirmation hides the window, and only if it's
+        // still showing (not dismissed with Escape meanwhile).
+        let mine = self.hud_serial.get() + 1;
+        self.hud_serial.set(mine);
         let weak = Rc::downgrade(self);
-        glib::timeout_add_local_once(Duration::from_millis(450), move || {
+        glib::timeout_add_local_once(HUD_FOR, move || {
             if let Some(l) = weak.upgrade() {
-                l.hide();
+                if l.hud_serial.get() == mine && l.hud.is_visible() {
+                    l.hide();
+                }
             }
         });
     }
@@ -2789,10 +2835,17 @@ impl Launcher {
                         l.push(kind);
                     }
                 }
-                Ok(Effect::Close { message }) => match message {
-                    Some(m) => l.flash_and_hide(&m),
-                    None => l.hide(),
-                },
+                Ok(Effect::Close { message }) => {
+                    // A no-view command that took a while: drop its skeleton,
+                    // or the launcher would reopen on it.
+                    if shown {
+                        l.pop();
+                    }
+                    match message {
+                        Some(m) => l.flash_and_hide(&m),
+                        None => l.hide(),
+                    }
+                }
                 Ok(_) if shown => l.pop(),
                 Ok(_) => {}
                 Err(e) => {

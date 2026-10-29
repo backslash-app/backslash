@@ -47,6 +47,7 @@ impl Launcher {
             "list_scroll": scroll(self.scroller.vadjustment()),
             "detail": self.detail.text().to_string(),
             "toast": if self.toast.is_visible() { self.toast.text().to_string() } else { String::new() },
+            "hud": if self.hud.is_visible() { self.hud_text.text().to_string() } else { String::new() },
             "theme": format!("{:?}", s.config.theme),
             "actions": if panel_open {
                 json!({
