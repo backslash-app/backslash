@@ -478,6 +478,22 @@ progressbar.meta-progress progress {
 .toast.success { color: @bs_green; }
 .toast.failure { color: @bs_red; }
 
+/* A confirmation over the whole panel before it hides: "Copied 1.2.3.4". */
+.hud {
+  background-color: @bs_bg;
+  border-radius: 14px;
+  margin: 15px;
+  padding: 24px;
+}
+
+.hud .hud-icon { color: @bs_green; }
+
+.hud .hud-text {
+  color: @bs_fg;
+  font-size: 18px;
+  font-weight: 600;
+}
+
 .footer .primary.confirm {
   color: @bs_orange;
 }
