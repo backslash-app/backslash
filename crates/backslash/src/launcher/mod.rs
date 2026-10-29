@@ -2088,6 +2088,11 @@ impl Launcher {
         }
 
         match key {
+            // A confirmation on screen: Escape closes now rather than clearing the search under it.
+            gdk::Key::Escape if self.hud.is_visible() => {
+                self.hide();
+                return Stop;
+            }
             gdk::Key::Tab if self.is_root() => {
                 self.cycle_filter(1);
                 return Stop;
