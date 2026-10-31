@@ -117,10 +117,8 @@ fn answers(s: &mut State, query: &str) -> Vec<Row> {
                 if let Some(v) = rates.convert(amount, &from, &to) {
                     let result = format!("{v:.2} {to}");
                     let detail = format!("{amount} {from} = {result}");
-                    let facts = vec![
-                        ("Source".into(), "European Central Bank".into()),
-                        ("Rates of".into(), rates.date.clone()),
-                    ];
+                    let source = if rates.source.is_empty() { "European Central Bank" } else { &rates.source };
+                    let facts = vec![("Source".into(), source.into()), ("Rates of".into(), rates.date.clone())];
                     rows.push(answer("currency", result, detail, "Currency", facts));
                 }
             }
