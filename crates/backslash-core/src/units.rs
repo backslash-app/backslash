@@ -220,7 +220,8 @@ pub fn format(value: f64) -> String {
     }
 }
 
-/// Exchange rates relative to one base currency (as published by the ECB).
+/// Exchange rates relative to one base currency, as published by a central
+/// bank (the ECB's `{base, date, rates}` answer deserializes directly).
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct Rates {
     pub base: String,
@@ -230,9 +231,53 @@ pub struct Rates {
     /// Unix time when they were fetched.
     #[serde(default)]
     pub fetched: u64,
+    /// Who published them; empty means the European Central Bank.
+    #[serde(default)]
+    pub source: String,
+}
+
+/// A central bank's table as served by allratestoday.com
+/// (`/api/open/central-bank/{bank}`): each row is `1 base = value quote`.
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct BankTable {
+    pub rate_date: String,
+    pub rates: Vec<BankQuote>,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct BankQuote {
+    pub base: String,
+    pub quote: String,
+    #[serde(rename = "type")]
+    pub kind: String,
+    pub value: f64,
 }
 
 impl Rates {
+    /// Rates relative to `home` from a bank's table, whichever way the bank
+    /// quotes its pairs. Only `reference` rows count where the bank also
+    /// publishes buying and selling rates; `None` if nothing usable is left.
+    pub fn from_bank_table(table: &BankTable, home: &str, source: &str) -> Option<Rates> {
+        let mut rates = HashMap::new();
+        for q in &table.rates {
+            if q.value <= 0.0 || !["reference", "middle", "mid", "official"].contains(&q.kind.as_str()) {
+                continue;
+            }
+            if q.base == home && q.quote != home {
+                rates.insert(q.quote.clone(), q.value);
+            } else if q.quote == home && q.base != home {
+                rates.insert(q.base.clone(), 1.0 / q.value);
+            }
+        }
+        (!rates.is_empty()).then(|| Rates {
+            base: home.into(),
+            date: table.rate_date.clone(),
+            rates,
+            fetched: 0,
+            source: source.into(),
+        })
+    }
+
     fn rate(&self, code: &str) -> Option<f64> {
         if code == self.base {
             Some(1.0)
@@ -286,10 +331,32 @@ mod tests {
             date: "2026-10-27".into(),
             rates: [("USD".to_string(), 1.1), ("GBP".to_string(), 0.85)].into(),
             fetched: 0,
+            source: String::new(),
         };
         assert!((rates.convert(20.0, "EUR", "USD").unwrap() - 22.0).abs() < 1e-9);
         assert!((rates.convert(11.0, "USD", "EUR").unwrap() - 10.0).abs() < 1e-9);
         assert!((rates.convert(1.1, "USD", "GBP").unwrap() - 0.85).abs() < 1e-9);
         assert_eq!(rates.convert(1.0, "EUR", "XXX"), None);
+    }
+
+    #[test]
+    fn rates_from_bank_table() {
+        // Pairs quoted both ways, a buying rate and a nonsense value are
+        // brought to one base.
+        let table: BankTable = serde_json::from_str(
+            r#"{"bank":"boe","rate_date":"2026-10-29","rates":[
+                {"base":"GBP","quote":"USD","type":"reference","value":1.25},
+                {"base":"EUR","quote":"GBP","type":"reference","value":0.8},
+                {"base":"GBP","quote":"JPY","type":"buy","value":190.0},
+                {"base":"GBP","quote":"CHF","type":"reference","value":0.0}]}"#,
+        )
+        .unwrap();
+        let rates = Rates::from_bank_table(&table, "GBP", "Bank of England").unwrap();
+        assert_eq!(rates.base, "GBP");
+        assert_eq!(rates.date, "2026-10-29");
+        assert_eq!(rates.source, "Bank of England");
+        assert!((rates.convert(10.0, "EUR", "USD").unwrap() - 10.0).abs() < 1e-9);
+        assert_eq!(rates.rates.len(), 2);
+        assert!(Rates::from_bank_table(&table, "XXX", "").is_none());
     }
 }

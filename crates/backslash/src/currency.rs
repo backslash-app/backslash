@@ -1,15 +1,18 @@
 //! Exchange rates from the European Central Bank (via frankfurter.app, no API
-//! key), cached for 12 hours in `~/.local/state/backslash/rates.json`.
+//! key), cached for 12 hours in `~/.local/state/backslash/rates.json`. When
+//! Frankfurter cannot be reached, the Bank of England's daily rates (via
+//! allratestoday.com, no API key either) stand in.
 
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::Duration;
 
-use backslash_core::units::Rates;
+use backslash_core::units::{BankTable, Rates};
 use backslash_core::{paths, store};
 use gtk::glib;
 
 const URL: &str = "https://api.frankfurter.app/latest?base=EUR";
+const FALLBACK_URL: &str = "https://allratestoday.com/api/open/central-bank/boe";
 const MAX_AGE: u64 = 12 * 3600;
 
 pub enum RatesStatus {
@@ -112,8 +115,22 @@ impl Currency {
 
 fn fetch() -> Result<Rates, String> {
     let agent = backslash_core::http::agent(Duration::from_secs(8));
-    let mut response = agent.get(URL).call().map_err(|e| format!("cannot reach the rates service ({e})"))?;
-    let mut rates: Rates = response.body_mut().read_json().map_err(|e| format!("unexpected answer ({e})"))?;
+    let mut rates = match fetch_ecb(&agent) {
+        Ok(rates) => rates,
+        Err(e) => fetch_boe(&agent).map_err(|f| format!("{e}; {f}"))?,
+    };
     rates.fetched = crate::launcher::now();
     Ok(rates)
+}
+
+fn fetch_ecb(agent: &ureq::Agent) -> Result<Rates, String> {
+    let mut response = agent.get(URL).call().map_err(|e| format!("cannot reach the rates service ({e})"))?;
+    response.body_mut().read_json().map_err(|e| format!("unexpected answer ({e})"))
+}
+
+fn fetch_boe(agent: &ureq::Agent) -> Result<Rates, String> {
+    let mut response =
+        agent.get(FALLBACK_URL).call().map_err(|e| format!("cannot reach the fallback rates service ({e})"))?;
+    let table: BankTable = response.body_mut().read_json().map_err(|e| format!("unexpected fallback answer ({e})"))?;
+    Rates::from_bank_table(&table, "GBP", "Bank of England").ok_or_else(|| "no usable fallback rates".into())
 }
