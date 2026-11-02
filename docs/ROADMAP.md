@@ -18,12 +18,13 @@ the CLI and two bundled extensions. Next steps, roughly in order.
 - [x] Clipboard history with pins and images, pasted straight into the app you were in.
 - [x] File search with recents and previews.
 - [x] Window switcher for Hyprland, Sway, niri, KDE Plasma, GNOME and X11.
-- [x] Unit and currency conversions.
 - [x] Quicklinks and snippets, edited in the settings window.
 - [x] Light, dark and system themes with a preview panel.
 - [x] Aliases and per-item global shortcuts, `backslash open <item>`.
 
 ## Extensions
+- [x] Answers in the root search (`mode = "answer"`): the calculator, unit
+      and currency conversions moved to extensions.
 - [x] Settings view: enable/disable extensions, edit preferences, secrets
       in the system keyring (libsecret), quicklinks, snippets, hidden apps.
 - [x] Ask for missing required preferences with a form on first run.

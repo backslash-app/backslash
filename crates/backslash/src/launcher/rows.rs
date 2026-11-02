@@ -9,13 +9,11 @@ use backslash_core::registry::CommandEntry;
 use backslash_core::scripts::{Mode as ScriptMode, Script};
 use backslash_core::search::{Ranker, Searchable};
 use backslash_core::system::{clipboard, files};
-use backslash_core::{calc, units};
 use gtk::gio;
 
 use super::model::{tint_for, Builtin, Filter, ItemRef, Op, Preview, Row, RowStyle, UiAction};
 use super::State;
 use crate::apps::App;
-use crate::currency::RatesStatus;
 use crate::icons::Icon;
 
 const MAX_ROWS: usize = 60;
@@ -77,72 +75,53 @@ fn copy_actions(value: &str, full: &str) -> Vec<UiAction> {
     ]
 }
 
-fn answer(key: &str, value: String, detail: String, kind: &str, facts: Vec<(String, String)>) -> Row {
-    Row {
-        key: key.into(),
-        title: value.clone(),
-        subtitle: Some(detail.clone()),
-        icon: Icon::named("bs-calculator"),
-        tint: Some("orange"),
-        style: RowStyle::Answer,
-        actions: copy_actions(&value, &detail),
-        preview: Some(Preview {
-            icon: Icon::named("bs-calculator"),
-            tint: Some("orange".into()),
-            title: value,
-            subtitle: Some(kind.into()),
-            facts,
-            ..Default::default()
-        }),
-        ..Default::default()
-    }
+/// Rows of an answer command's items: big result cards, on top of the root
+/// search. Actions that need an open view are left out; without any, Enter
+/// copies the result.
+pub fn answer_rows(
+    items: &[proto::Item],
+    command_id: &str,
+    kind: &str,
+    icon: Option<String>,
+    hosts: &[String],
+) -> Vec<Row> {
+    let list = proto::ListView { items: items.to_vec(), ..Default::default() };
+    let mut ranker = Ranker::default();
+    list_rows(&mut ranker, &list, "", hosts)
+        .into_iter()
+        .map(|mut row| {
+            let tint = row.icon_tint.take().and_then(|t| tint_name(&t)).unwrap_or("orange");
+            if row.icon.is_none() {
+                row.icon = Icon::named(icon.as_deref().unwrap_or("bs-calculator"));
+            }
+            row.actions.retain(|a| !matches!(a.op, Op::Callback(_) | Op::LazySubmenu(_)));
+            if row.actions.is_empty() {
+                let full = row.subtitle.clone().unwrap_or_else(|| row.title.clone());
+                row.actions = copy_actions(&row.title, &full);
+            }
+            let mut preview = row.preview();
+            preview.icon = row.icon.clone();
+            preview.tint = Some(tint.into());
+            preview.subtitle = Some(kind.into());
+            row.preview = Some(preview);
+            row.key = format!("answer:{command_id}:{}", row.key);
+            row.tint = Some(tint);
+            row.style = RowStyle::Answer;
+            row.section = None;
+            row
+        })
+        .collect()
 }
 
-/// Calculator, unit and currency conversion, quicklink keyword.
+/// A tile color named by an extension, if it is one of the launcher's.
+fn tint_name(name: &str) -> Option<&'static str> {
+    ["blue", "orange", "green", "purple", "yellow", "red", "teal", "pink", "gray"].into_iter().find(|t| *t == name)
+}
+
+/// Answers of `mode = "answer"` commands, quicklink keyword.
 fn answers(s: &mut State, query: &str) -> Vec<Row> {
-    let mut rows = Vec::new();
+    let mut rows = super::answers::current_rows(s, query);
     let q = query.trim();
-    if let Some(value) = calc::evaluate(q) {
-        let result = calc::format(value);
-        rows.push(answer("calc", result.clone(), q.to_string(), "Calculator", vec![("Expression".into(), q.into())]));
-    }
-    match units::parse(q) {
-        Some(units::Request::Unit { value, from, to }) => {
-            let result = format!("{} {}", units::format(units::convert(value, from, to)), to.symbol);
-            let detail = format!("{} {} = {result}", units::format(value), from.symbol);
-            rows.push(answer("convert", result, detail, "Conversion", Vec::new()));
-        }
-        Some(units::Request::Currency { amount, from, to }) => match s.currency.status() {
-            RatesStatus::Ready(rates) => {
-                if let Some(v) = rates.convert(amount, &from, &to) {
-                    let result = format!("{v:.2} {to}");
-                    let detail = format!("{amount} {from} = {result}");
-                    let facts = vec![
-                        ("Source".into(), "European Central Bank".into()),
-                        ("Rates of".into(), rates.date.clone()),
-                    ];
-                    rows.push(answer("currency", result, detail, "Currency", facts));
-                }
-            }
-            RatesStatus::Loading => rows.push(Row {
-                key: "currency".into(),
-                title: "Fetching exchange rates…".into(),
-                subtitle: Some(format!("{amount} {from} → {to}")),
-                icon: Icon::named("bs-refresh"),
-                tint: Some("orange"),
-                ..Default::default()
-            }),
-            RatesStatus::Failed(e) => rows.push(Row {
-                key: "currency".into(),
-                title: "Exchange rates unavailable".into(),
-                subtitle: Some(e),
-                icon: Icon::named("bs-wifi-off"),
-                tint: Some("red"),
-                ..Default::default()
-            }),
-        },
-        None => {}
-    }
     // `gh tokio` with a quicklink whose keyword is `gh`.
     if let Some((keyword, rest)) = q.split_once(' ') {
         let rest = rest.trim();

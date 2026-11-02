@@ -457,8 +457,47 @@ export function menuBar(options: MenuBarOptions): MenuBarSpec {
   return { ...options, [KIND]: "menu" };
 }
 
+// ---------------------------------------------------------------------------
+// Answers in the root search
+
+export interface AnswerSpec {
+  readonly [KIND]: "answer";
+  answer: (query: string, ctx: Context) => Awaitable<Item | Item[] | null | undefined>;
+  placeholder?: string;
+}
+
+/**
+ * What a `mode = "answer"` command exports: a function called with each
+ * query typed in the root search, returning what to show on top of the
+ * results (an item, several, or nothing). Answer fast, and nothing at all
+ * for queries that are not for you: it runs on every keystroke, and
+ * `ctx.signal` aborts when the user types again.
+ *
+ * Copy, paste and open actions work there; `action` callbacks only work
+ * when the command is opened, where the same function answers as a list.
+ *
+ * ```ts
+ * export default answer((query) => {
+ *   const n = Number(query);
+ *   if (!Number.isFinite(n)) return null;
+ *   return { title: String(n * 2), actions: [copy(String(n * 2))] };
+ * });
+ * ```
+ */
+export function answer(
+  fn: AnswerSpec["answer"],
+  options: { placeholder?: string } = {},
+): AnswerSpec {
+  return { ...options, answer: fn, [KIND]: "answer" };
+}
+
 /** What a command module may export by default. */
-export type Command = View | RunSpec | MenuBarSpec | ((ctx: Context) => Awaitable<View | MenuBarSpec>);
+export type Command =
+  | View
+  | RunSpec
+  | MenuBarSpec
+  | AnswerSpec
+  | ((ctx: Context) => Awaitable<View | MenuBarSpec>);
 
 // ---------------------------------------------------------------------------
 // Actions

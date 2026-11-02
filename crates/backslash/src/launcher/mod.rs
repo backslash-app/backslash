@@ -7,6 +7,7 @@
 //! `backslash_core::host`); built-in views (clipboard, files, windows, theme)
 //! are implemented here.
 
+mod answers;
 mod appupdate;
 mod background;
 mod model;
@@ -44,12 +45,9 @@ use serde_json::{json, Map, Value};
 use self::model::{tint_for, Builtin, Filter, FormInput, FormPurpose, Frame, FrameKind, Launched, Op, Row, UiAction};
 use self::widgets::{key_hint, label, row_widget};
 use crate::apps::{self, App};
-use crate::currency::Currency;
 use crate::icons::{self, Icon};
 use crate::theme::Styles;
 use crate::{autostart, clipboard, hotkey, layer, markdown, paste, theme};
-
-pub use self::rows::now;
 
 /// How long a command may take to show its first screen before a skeleton
 /// stands in for it: short enough to feel immediate, long enough that quick
@@ -182,7 +180,8 @@ pub(super) struct State {
     files: FilesState,
     windows: Vec<WindowInfo>,
     window_backend: Option<Backend>,
-    currency: Currency,
+    /// Answers of `mode = "answer"` commands in the root search.
+    answers: answers::Answers,
     autostart: bool,
     catalog: store::CatalogState,
     /// Deno is being downloaded.
@@ -647,7 +646,7 @@ impl Launcher {
                 files: FilesState::default(),
                 windows: Vec::new(),
                 window_backend,
-                currency: Currency::new(),
+                answers: Default::default(),
                 autostart: autostart::enabled(),
                 catalog: store::CatalogState::default(),
                 runtime_busy: false,
@@ -792,14 +791,6 @@ impl Launcher {
         theme::watch_system(move || {
             if let Some(l) = weak.upgrade() {
                 l.apply_style();
-            }
-        });
-        let weak = Rc::downgrade(self);
-        self.state.borrow().currency.connect_update(move || {
-            if let Some(l) = weak.upgrade() {
-                if l.is_root() && l.window.is_visible() {
-                    l.render();
-                }
             }
         });
     }
@@ -1093,6 +1084,12 @@ impl Launcher {
             s.paste.and_then(|_| paste::focused_app(s.window_backend))
         };
         self.state.borrow_mut().paste_target = target;
+        // Answer commands start now, so the first keystroke is answered quickly.
+        self.warm_answers();
+        if self.is_root() {
+            let query = self.entry.text().to_string();
+            self.ask_answers(&query);
+        }
         self.render();
         self.window.present();
         self.entry.grab_focus();
@@ -1114,6 +1111,7 @@ impl Launcher {
         self.close_action_panel();
         self.hud.set_visible(false);
         self.window.set_visible(false);
+        self.stop_answers();
         let reopen = {
             let mut s = self.state.borrow_mut();
             s.confirm = None;
@@ -2002,7 +2000,13 @@ impl Launcher {
             }
         };
         match extension_search {
-            None => self.render(),
+            None => {
+                if self.is_root() {
+                    let query = self.entry.text().to_string();
+                    self.ask_answers(&query);
+                }
+                self.render()
+            }
             Some((session, view_id)) => {
                 // Debounce, then cancel whatever is still running.
                 self.debounce(120, move |l| l.extension_search(session, view_id));

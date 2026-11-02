@@ -367,6 +367,16 @@ pub struct StartParams {
     pub launch_type: LaunchType,
 }
 
+/// Sent to an `answer` command for each root search query. The reply is the
+/// list of [`Item`]s to show on top of the results (usually none or one).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AnswerParams {
+    pub command: String,
+    pub query: String,
+    pub preferences: Map<String, Value>,
+}
+
 /// Why a command runs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

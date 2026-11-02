@@ -28,3 +28,8 @@ title = "Story"
 name = "tray"
 title = "Tray"
 mode = "menu-bar"
+
+[[commands]]
+name = "double"
+title = "Double"
+mode = "answer"

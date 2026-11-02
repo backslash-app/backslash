@@ -26,6 +26,7 @@ is for other languages and for contributors. The Rust types live in
 | Method | Params | Result |
 |---|---|---|
 | `start` | `{ command, arguments, preferences, query, launchType }` | Effect |
+| `answer` | `{ command, query, preferences }` | Item[] (`answer` commands: what to show on top of the root search) |
 | `search` | `{ view, query }` | View (a list) |
 | `filter` | `{ view, value }` | View (the list for that filter option) |
 | `submenu` | `{ action }` | Action[] (the content of a `lazy` submenu) |
@@ -33,6 +34,12 @@ is for other languages and for contributors. The Rust types live in
 | `$/cancel` (notification) | `{ id }` | — abort request `id` |
 
 `values` is set when submitting a form: the action id is then `"<form view id>:submit"`.
+
+An `answer` command (`mode = "answer"`) is spawned when the launcher's window
+shows and killed when it hides. It gets no `start`, but one `answer` request
+per root search query, the previous one being cancelled with `$/cancel`. It
+answers with list items, usually none or one; only their `open`, `copy` and
+`paste` actions are used. Opened as a command, it gets `start` as usual.
 `launchType` is `"userInitiated"`, or `"background"` when a command runs on
 its `interval` or refreshes its tray menu by itself.
 

@@ -130,17 +130,55 @@ fn rows(state: &Value) -> Vec<String> {
         .unwrap_or_default()
 }
 
+/// An extension answering in the root search: it doubles numbers.
+fn answer_extension() -> tempfile::TempDir {
+    let extensions = tempfile::tempdir().unwrap();
+    let ext = extensions.path().join("double");
+    std::fs::create_dir_all(ext.join("commands")).unwrap();
+    std::fs::write(
+        ext.join("backslash.toml"),
+        "[extension]\nid = \"double\"\ntitle = \"Double\"\n\
+         [[commands]]\nname = \"double\"\ntitle = \"Double\"\nmode = \"answer\"\n",
+    )
+    .unwrap();
+    std::fs::write(
+        ext.join("commands/double.ts"),
+        "import { answer } from \"@backslash/api\";\n\
+         export default answer((query) => {\n\
+           const n = Number(query.replace(/^double /, \"\"));\n\
+           return query.startsWith(\"double \") && Number.isFinite(n) ? { title: String(n * 2) } : null;\n\
+         });\n",
+    )
+    .unwrap();
+    extensions
+}
+
 #[test]
-fn calculator_answers_as_you_type() {
-    if !enabled() {
+fn answer_commands_answer_as_you_type() {
+    if !enabled() || Command::new("deno").arg("--version").output().is_err() {
         return;
     }
-    let ui = Ui::start("", None);
-    ui.type_text("2+3*4");
-    ui.wait_for("the result", |s| rows(s).first().is_some_and(|r| r == "14"));
+    let extensions = answer_extension();
+    let ui = Ui::start("", Some(extensions.path()));
+    // Not approved yet: no answer.
+    ui.type_text("double 21");
+    std::thread::sleep(Duration::from_millis(1000));
+    assert!(rows(&ui.state()).first().is_none_or(|r| r != "42"));
+    // Approved (what opening it once does): it answers.
+    std::fs::write(
+        ui.dir.path().join("state/backslash/approved.json"),
+        r#"{"double": ["Answer in the root search with “Double”, which sees what you type there"]}"#,
+    )
+    .unwrap();
+    ui.key("BackSpace");
+    ui.type_text("1");
+    ui.wait_for("the answer", |s| rows(s).first().is_some_and(|r| r == "42"));
+    // The answer follows the query.
+    ui.type_text("0");
+    ui.wait_for("the new answer", |s| rows(s).first().is_some_and(|r| r == "420"));
     // Escape clears the search, then hides the window.
     ui.key("Escape");
-    ui.wait_for("an empty search", |s| s["query"] == "");
+    ui.wait_for("an empty search", |s| s["query"] == "" && rows(s).first().is_none_or(|r| r != "420"));
     ui.key("Escape");
     ui.wait_for("the window to hide", |s| s["visible"] == false);
 }

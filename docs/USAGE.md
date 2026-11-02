@@ -69,7 +69,7 @@ Run the **Enable Launch at Login** command so Backslash is always ready.
 
 | Key | Action |
 |---|---|
-| type | search apps and commands; math and conversions are computed as you type |
+| type | search apps and commands; extensions such as the calculator answer as you type |
 | <kbd>Tab</kbd> | filter: All, Apps, Commands (and an extension's own filters) |
 | <kbd>↑</kbd> <kbd>↓</kbd> / <kbd>Ctrl</kbd>+<kbd>N</kbd> <kbd>P</kbd> | move |
 | <kbd>Enter</kbd> / <kbd>Ctrl</kbd>+<kbd>Enter</kbd> | primary / secondary action |
@@ -84,10 +84,13 @@ first) or **Set Hotkey…** (e.g. <kbd>Super</kbd>+<kbd>V</kbd> for the clipboar
 history). Without the shortcuts portal, bind `backslash open builtin:clipboard`
 (or `app:…`, `cmd:extension/command`) to a key in your desktop settings.
 
+Answers as you type come from extensions (**Browse Extensions**):
+**Calculator** (`12*(3+4)`), **Unit Converter** (`5 km in miles`, `72 f to c`,
+`2 GiB en MB`) and **Currency Converter** (`20 € en $`, European Central Bank
+rates, cached).
+
 Built in:
 
-- **Calculator and conversions**: `12*(3+4)`, `5 km in miles`, `72 f to c`,
-  `2 GiB en MB`, `20 € en $` (European Central Bank rates, cached).
 - **Clipboard History**: text and images (screenshots, "Copy Image"), searchable,
   with pins; Enter pastes into the app you
   were in (xdotool on X11, the desktop's permission once on GNOME and KDE,

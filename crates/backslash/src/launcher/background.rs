@@ -13,8 +13,9 @@ use std::path::PathBuf;
 use std::rc::Rc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use backslash_core::config::Config;
 use backslash_core::host::{Incoming, RpcError, Session};
-use backslash_core::manifest::{CommandMode, Runtime};
+use backslash_core::manifest::{CommandMode, Manifest, Runtime};
 use backslash_core::protocol::{ActionKind, Effect, LaunchType, MenuView, View};
 use backslash_core::{approvals, paths, runner, runtime, sandbox, store};
 use gtk::prelude::*;
@@ -50,6 +51,18 @@ fn last_path() -> PathBuf {
 
 fn now() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs())
+}
+
+/// Whether the extension's commands may run without the user opening them:
+/// enabled, its permissions approved, required preferences set, and its
+/// runtime there.
+pub(super) fn can_run_unattended(config: &Config, m: &Manifest) -> bool {
+    let approved = approvals::requested(m).is_empty() || approvals::is_approved(m);
+    let can_start = match m.runtime {
+        Runtime::Deno => runtime::is_installed(),
+        _ => sandbox::is_available(),
+    };
+    config.is_enabled(&m.extension.id) && approved && config.preferences(m).1.is_empty() && can_start
 }
 
 /// A command that may run on its own, and when.
@@ -92,16 +105,7 @@ impl Launcher {
             if dev.as_ref().is_some_and(|d| ext.dir.canonicalize().ok().as_ref() != Some(d)) {
                 continue;
             }
-            if !s.config.is_enabled(&m.extension.id) {
-                continue;
-            }
-            let approved = approvals::requested(m).is_empty() || approvals::is_approved(m);
-            let configured = s.config.preferences(m).1.is_empty();
-            let can_start = match m.runtime {
-                Runtime::Deno => runtime::is_installed(),
-                _ => sandbox::is_available(),
-            };
-            if !(approved && configured && can_start) {
+            if !can_run_unattended(&s.config, m) {
                 continue;
             }
             for c in &m.commands {

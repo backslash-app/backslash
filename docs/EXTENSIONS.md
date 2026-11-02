@@ -51,7 +51,7 @@ title = "Search Repositories"
 description = "Your repositories, filtered as you type"
 icon = "folder-remote"
 keywords = ["git", "repo"]
-mode = "view"                       # "view" (default), "no-view" or "menu-bar"
+mode = "view"                       # "view" (default), "no-view", "menu-bar" or "answer"
 # interval = "30m"                  # no-view and menu-bar: also run on their own this often
 
 [[commands]]
@@ -258,6 +258,49 @@ notification, and the menu is refreshed afterwards.
 Trays: KDE Plasma, Xfce, Cinnamon, Budgie, waybar and most bars show them;
 GNOME needs the AppIndicator extension (Ubuntu has it).
 
+### Answers in the root search
+
+A `mode = "answer"` command answers right in the root search, as the user
+types: a calculator, a conversion, a quick lookup. Its rows show on top of
+the results, as big cards.
+
+```toml
+[[commands]]
+name = "calculator"
+title = "Calculator"
+mode = "answer"
+```
+
+```ts
+import { answer, copy } from "@backslash/api";
+
+export default answer((query) => {
+  const result = evaluate(query);     // your own code
+  if (result === undefined) return null;  // not for us: nothing shown
+  return {
+    title: result,
+    subtitle: `${query} = ${result}`,
+    detail: { metadata: [{ label: "Expression", value: query }] },
+    actions: [copy(result, "Copy Result"), copy(`${query} = ${result}`, "Copy Full Answer")],
+  };
+});
+```
+
+The function gets every query typed in the root search: return an item, a
+list of them, or `null` for queries that are not for you, and do it fast.
+The command keeps running while the launcher's window is open (started when
+it shows, stopped when it hides), so state kept in module variables lasts
+that long, and `storage` longer. A new keystroke aborts `ctx.signal`.
+
+Only `copy`, `paste` and `open` actions are kept in the root search; without
+any, Enter copies the title. Opened from the search like any command, the
+same function answers in a list, where `action` callbacks work too.
+
+Since it sees what is typed, the permission prompt says so ("Answer in the
+root search with “Calculator”, which sees what you type there"), and only
+enabled, approved extensions with their required preferences set answer.
+Toasts, the clipboard and signing in are refused while answering.
+
 ## Items
 
 ```ts
@@ -453,6 +496,8 @@ command without a view: the string is flashed and the launcher closes.
 - `Detail(markdown, metadata=, stats=, actions=)`; `markdown` may be a
   generator yielding the text so far, to stream it.
 - `Form([field.text("title", "Title", required=True), field.dropdown(…)], submit)`.
+- `Answer(fn)` for a `mode = "answer"` command: `fn(query, ctx)` returns an
+  `Item`, a list of them, or `None`, for each root search query.
 - Actions: `Open(url)`, `Copy(text)`, `Paste(text)`, `Action(title, fn)`,
   `Submenu(title, actions)`, with `shortcut=`, `confirm=`, `section=`…
   Return a view or `close()`, `pop()`, `refresh()`, `replace(view)`.
