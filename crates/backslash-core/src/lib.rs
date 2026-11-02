@@ -1,9 +1,8 @@
 //! Everything in Backslash that does not draw pixels: the extension protocol
-//! and host, manifests, search ranking, the calculator and configuration.
+//! and host, manifests, search ranking and configuration.
 //! Kept free of GTK so it is unit-testable and reusable by the CLI.
 
 pub mod approvals;
-pub mod calc;
 pub mod catalog;
 pub mod config;
 pub mod host;
@@ -23,7 +22,6 @@ pub mod selfupdate;
 pub mod signature;
 pub mod store;
 pub mod system;
-pub mod units;
 
 /// Re-exported so the launcher writes config values with the same version.
 pub use toml;

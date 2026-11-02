@@ -412,12 +412,40 @@ def start(params, cancelled):
         launch_type="background" if params.get("launchType") == "background" else "userInitiated",
     )
     command = load_command()
+    if isinstance(command, bs.Answer):
+        search = lambda query, ctx: answer_items(call(command.answer, query, ctx))
+        view = bs.List(search=search, placeholder=command.placeholder, empty={"title": "Type to get an answer"})
+        return {"type": "push", "view": render(view)}
     if isinstance(command, bs.View):
         return {"type": "push", "view": render(command)}
     result = call(command, context())
     if isinstance(result, bs.View):
         return {"type": "push", "view": render(result)}
     return {"type": "close", "message": None if result is None else str(result)}
+
+
+def answer_items(result):
+    if not result:
+        return []
+    return result if isinstance(result, list) else [result]
+
+
+def answer(params, cancelled):
+    """A root search query, for a ``mode = "answer"`` command: the items to show."""
+    # Queries are answered concurrently: this one's text is kept here, not
+    # read back from the shared session.
+    query = params.get("query") or ""
+    session.update(command=params.get("command") or "", preferences=params.get("preferences") or {}, query=query)
+    command = load_command()
+    if not isinstance(command, bs.Answer):
+        raise TypeError(f"{entry}: `command` is not an Answer")
+    ctx = context(cancelled)
+    ctx.query = query
+    items = answer_items(call(command.answer, query, ctx))
+    # Callbacks belong to an open view: only the launcher's own actions here.
+    kept = [{**i, "actions": [a for a in i.get("actions") or [] if a.kind in ("open", "copy", "paste")]}
+            for i in items]
+    return items_json(kept, "answer")
 
 
 def search(params, cancelled):
@@ -460,7 +488,7 @@ def action(params, cancelled):
     return to_effect(outcome, view_id)
 
 
-handlers = {"start": start, "search": search, "filter": filter_, "submenu": submenu, "action": action}
+handlers = {"start": start, "answer": answer, "search": search, "filter": filter_, "submenu": submenu, "action": action}
 inflight = {}
 
 

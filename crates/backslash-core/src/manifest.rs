@@ -140,6 +140,11 @@ pub enum CommandMode {
     /// Shows an icon and a menu in the system tray (a `menu` view),
     /// refreshed when Backslash starts and every `interval`.
     MenuBar,
+    /// Answers right in the root search as the user types (a calculator, a
+    /// conversion): the launcher keeps the command running while its window
+    /// is open and sends it each query (`answer` requests). Opened like a
+    /// view command, it shows a list searched by the same function.
+    Answer,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -328,6 +333,9 @@ impl Manifest {
                     }
                 }
             }
+            if command.mode == CommandMode::Answer && !command.arguments.is_empty() {
+                bail!("command `{}`: answer commands get the query, not arguments", command.name);
+            }
             let entry = command.entry_path(&self.runtime);
             if entry.is_absolute() || entry.components().any(|c| matches!(c, std::path::Component::ParentDir)) {
                 bail!("command `{}`: entry must stay inside the extension", command.name);
@@ -441,6 +449,19 @@ mod tests {
         assert!(toml::from_str::<Manifest>(&with("view", "1h")).unwrap().validate().is_err());
         assert!(toml::from_str::<Manifest>(&with("no-view", "10s")).unwrap().validate().is_err());
         assert!(toml::from_str::<Manifest>(&with("no-view", "soon")).unwrap().validate().is_err());
+        assert!(toml::from_str::<Manifest>(&with("answer", "1h")).unwrap().validate().is_err());
+    }
+
+    #[test]
+    fn answer_commands() {
+        let answer = NPM.replace("name = \"search\"", "name = \"search\"\nmode = \"answer\"");
+        let m: Manifest = toml::from_str(&answer).unwrap();
+        m.validate().unwrap();
+        assert_eq!(m.commands[0].mode, CommandMode::Answer);
+        let with_argument =
+            answer.replace("keywords = [\"node\", \"package\"]", "[[commands.arguments]]\nname = \"q\"");
+        let err = toml::from_str::<Manifest>(&with_argument).unwrap().validate().unwrap_err();
+        assert!(err.to_string().contains("not arguments"), "{err}");
     }
 
     #[test]

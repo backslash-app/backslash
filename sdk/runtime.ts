@@ -5,8 +5,10 @@
 // wire views and keeps the callbacks they reference.
 
 import { type Json, KIND, type Rpc, setRpc } from "./internal.ts";
+import { list } from "./mod.ts";
 import type {
   Action,
+  AnswerSpec,
   Command,
   Context,
   DetailSpec,
@@ -394,6 +396,22 @@ async function toEffect(outcome: Outcome, viewId: string): Promise<Json> {
   throw new Error(`Unexpected action result: ${JSON.stringify(outcome)}`);
 }
 
+// --- Answers -------------------------------------------------------------------
+
+function answerItems(result: Item | Item[] | null | undefined): Item[] {
+  if (!result) return [];
+  return Array.isArray(result) ? result : [result];
+}
+
+/** An answer command opened like any other: a list answering what is typed. */
+function answerList(spec: AnswerSpec) {
+  return list({
+    placeholder: spec.placeholder,
+    search: async (query, ctx) => answerItems(await spec.answer(query, ctx)),
+    empty: { title: "Type to get an answer" },
+  });
+}
+
 // --- Requests from the launcher ----------------------------------------------
 
 const entry = Deno.args[0];
@@ -419,11 +437,35 @@ const handlers: Record<string, (params: any, signal: AbortSignal) => Promise<Jso
     if (typeof command === "function") {
       return { type: "push", view: await render(await command(context())) };
     }
+    if (command[KIND] === "answer") {
+      return { type: "push", view: await render(answerList(command)) };
+    }
     if (command[KIND] === "run") {
       const message = await command.run(context());
       return { type: "close", message: message ?? null };
     }
     return { type: "push", view: await render(command) };
+  },
+
+  /** A root search query, for a `mode = "answer"` command: the items to show. */
+  async answer(params, signal) {
+    // Queries overlap (the previous one may still be running): this one's
+    // text is kept here, not read back from the shared session.
+    const query: string = params.query ?? "";
+    session.command = params.command ?? "";
+    session.preferences = params.preferences ?? {};
+    session.query = query;
+    const command = await loadCommand();
+    if (typeof command === "function" || command[KIND] !== "answer") {
+      throw new Error(`${entry} does not export answer(…)`);
+    }
+    // Callbacks belong to an open view: the root search only runs the
+    // launcher's own actions (and keeps no callback per keystroke).
+    const items = answerItems(await command.answer(query, { ...context(signal), query })).map((item) => ({
+      ...item,
+      actions: (item.actions ?? []).filter((a) => a[KIND] === "open" || a[KIND] === "copy" || a[KIND] === "paste"),
+    }));
+    return serializeItems(items, "answer");
   },
 
   async search({ view: viewId, query }, signal) {

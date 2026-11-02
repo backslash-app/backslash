@@ -5,7 +5,6 @@ mod autostart;
 mod catalog_cli;
 mod cli;
 mod clipboard;
-mod currency;
 mod glyphs;
 mod hotkey;
 mod icons;

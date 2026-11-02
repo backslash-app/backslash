@@ -26,7 +26,7 @@ import threading
 from typing import Any, Callable, Iterable, Optional
 
 __all__ = [
-    "Context", "List", "Detail", "Form", "Item", "Icon", "MenuBar", "MenuItem",
+    "Context", "List", "Detail", "Form", "Item", "Icon", "MenuBar", "MenuItem", "Answer",
     "Open", "Copy", "Paste", "Action", "Submenu",
     "close", "pop", "refresh", "replace",
     "field", "meta", "storage", "clipboard", "oauth",
@@ -141,6 +141,18 @@ class MenuBar(View):
     def __init__(self, items: Any, *, title: Optional[str] = None, icon: Any = None,
                  tooltip: Optional[str] = None):
         self.items, self.title, self.icon, self.tooltip = items, title, icon, tooltip
+
+
+class Answer:
+    """What a ``mode = "answer"`` command defines as ``command``: ``answer(query,
+    ctx)`` is called with each query typed in the root search and returns
+    what to show on top of the results (an ``Item``, a list of them, or
+    ``None``). Answer fast, and ``None`` for queries that are not for you.
+    ``Open``, ``Copy`` and ``Paste`` work there; ``Action`` callbacks only
+    when the command is opened, where the same function answers as a list."""
+
+    def __init__(self, answer: Callable, *, placeholder: Optional[str] = None):
+        self.answer, self.placeholder = answer, placeholder
 
 
 def MenuItem(title: str, action: Any = None, *, id: Optional[str] = None, subtitle: Optional[str] = None,

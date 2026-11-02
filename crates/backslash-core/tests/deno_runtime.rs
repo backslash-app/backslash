@@ -164,3 +164,38 @@ fn tray_menus() {
     let effect = session.request("action", json!({ "action": action.id })).unwrap().wait(T).unwrap();
     assert_eq!(effect, json!({ "type": "close", "message": "Archived" }));
 }
+
+#[test]
+fn answers_root_queries_and_opens_as_a_list() {
+    if !deno_available() {
+        eprintln!("deno not installed, skipping");
+        return;
+    }
+    // Opened like a view command: a list searched by the same function.
+    let (session, reply, _state) = start("double", json!({}));
+    let list = pushed_list(reply.unwrap());
+    assert_eq!(list.placeholder.as_deref(), Some("A number to double…"));
+    assert_eq!(list.filtering, backslash_core::protocol::Filtering::Extension);
+
+    let ask = |query: &str| {
+        session.request("answer", json!({ "command": "double", "query": query, "preferences": {} })).unwrap()
+    };
+    // Each query gets its items; the callback, which needs an open view, is left out.
+    let items: Vec<backslash_core::protocol::Item> = serde_json::from_value(ask("21").wait(T).unwrap()).unwrap();
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0].title, "42");
+    assert_eq!(items[0].actions.len(), 1);
+    assert_eq!(items[0].actions[0].kind, ActionKind::Copy { text: "42".into(), concealed: false });
+    // Not for this command: nothing.
+    assert_eq!(ask("firefox").wait(T).unwrap(), json!([]));
+    // A new query cancels the previous one.
+    let slow = ask("slow");
+    session.cancel(slow.id);
+    assert_eq!(slow.wait(T).unwrap_err().code, RpcError::CANCELLED);
+    let items: Vec<backslash_core::protocol::Item> = serde_json::from_value(ask("1.5").wait(T).unwrap()).unwrap();
+    assert_eq!(items[0].title, "3");
+    // Overlapping queries each get their own answer.
+    let (first, second) = (ask("4"), ask("x"));
+    assert_eq!(second.wait(T).unwrap(), json!([]));
+    assert_eq!(first.wait(T).unwrap()[0]["title"], "8");
+}

@@ -45,6 +45,9 @@ pub fn requested(manifest: &Manifest) -> Vec<String> {
                 lines.push(format!("Show “{}” in the system tray, updated {every}", command.title))
             }
             (CommandMode::MenuBar, None) => lines.push(format!("Show “{}” in the system tray", command.title)),
+            // It reads every root search query: worth saying.
+            (CommandMode::Answer, _) => lines
+                .push(format!("Answer in the root search with “{}”, which sees what you type there", command.title)),
             (_, Some(every)) => lines.push(format!("Run “{}” in the background {every}", command.title)),
             _ => {}
         }

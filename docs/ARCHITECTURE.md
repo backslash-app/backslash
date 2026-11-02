@@ -5,7 +5,7 @@
 │  GTK4 window            CLI (`run`, `list`, `new`, `dev`, `doctor`)              │
 │      │                       │                                                   │
 │      └──────── backslash-core (no GUI, unit tested) ──────────────────────────┐  │
-│               search (fuzzy + frecency) · calculator · manifests · config      │  │
+│               search (fuzzy + frecency) · manifests · config                   │  │
 │               registry (discovery) · host (process + JSON-RPC) · storage       │  │
 └───────────────────────────────────────┬───────────────────────────────────────┘
                                         │ JSON-RPC, one line per message, stdin/stdout
@@ -41,8 +41,8 @@
 
 | Path | Role |
 |---|---|
-| `crates/backslash-core` | Protocol types, manifest parsing, extension host, ranking, calculator, unit conversions, config, `catalog` (registry: fetch, verify, install, publish), `approvals`, `secrets`, and `system/` (clipboard history store, file search, window backends). No GTK. |
-| `crates/backslash` | GTK4 window (`launcher/`: state and navigation, rows, widgets, settings window), CLI (`cli.rs`), app discovery (`apps.rs`), icons (`glyphs.rs`: Backslash's own vector icons, `icons.rs`: tiles, avatars, accessories), pictures from the web (`images.rs`, limited to the extension's `net` hosts), themes (`theme.rs` palettes and accents + `style.css` layout), global shortcut portal (`hotkey.rs`), layer-shell (`layer.rs`), clipboard watcher, exchange rates, autostart. |
+| `crates/backslash-core` | Protocol types, manifest parsing, extension host, ranking, config, `catalog` (registry: fetch, verify, install, publish), `approvals`, `secrets`, and `system/` (clipboard history store, file search, window backends). No GTK. |
+| `crates/backslash` | GTK4 window (`launcher/`: state and navigation, rows, widgets, settings window), CLI (`cli.rs`), app discovery (`apps.rs`), icons (`glyphs.rs`: Backslash's own vector icons, `icons.rs`: tiles, avatars, accessories), pictures from the web (`images.rs`, limited to the extension's `net` hosts), themes (`theme.rs` palettes and accents + `style.css` layout), global shortcut portal (`hotkey.rs`), layer-shell (`layer.rs`), clipboard watcher, answers of `answer` commands (`launcher/answers.rs`), autostart. |
 | `sdk/` | TypeScript API (`mod.ts`) and protocol runtime (`runtime.ts`), run by Deno. |
 | `extensions/` | Bundled extensions, also the reference examples. |
 
@@ -68,8 +68,9 @@ action returns the next view. State that must survive goes in `storage`.
 ## Lifecycle of a keystroke
 
 1. Root view: GIO apps + manifest commands are ranked in-process
-   (`search::Ranker`, nucleo fuzzy matching + usage boost). Calculator
-   results are pinned on top.
+   (`search::Ranker`, nucleo fuzzy matching + usage boost). The query also
+   goes to the running `answer` commands (calculator, conversions…), whose
+   rows are pinned on top when they come back.
 2. Inside a host-filtered list: same ranker over the items the extension sent.
 3. Inside an extension-searched list: debounced 120 ms, the previous request
    gets `$/cancel` (its `AbortSignal` fires), the newest answer wins.

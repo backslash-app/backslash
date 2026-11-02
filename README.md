@@ -53,7 +53,7 @@ JWT without leaving the keyboard.
 | 🐧 **Made for Linux** | Your apps (Flatpak and Snap too), your icon theme, your light or dark mode. GNOME, KDE, Hyprland, Sway, niri… |
 | 🧩 **Extensions for everything** | A large and growing library, installed from the built-in store. Each one says what it may access, you approve it once, and the sandbox enforces it. |
 | 🛠️ **Built for developers** | Extensions in TypeScript, no build step. Scripts in any language become commands. Everything runs from the terminal too: `backslash run github/pull-requests --json`. |
-| 📋 **Useful from day one** | Calculator and conversions as you type, clipboard history, file search, window switcher, snippets and quicklinks. |
+| 📋 **Useful from day one** | Clipboard history, file search, window switcher, snippets and quicklinks. Calculator and conversions as you type, from the store. |
 | 🔓 **Yours** | Open source (MIT). No account, no telemetry, no paywall. Plain config files for your dotfiles. |
 
 ## Extensions for developers
