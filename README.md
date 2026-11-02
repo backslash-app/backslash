@@ -111,6 +111,22 @@ sets up the shortcut, theme and launch at login. The [guide](docs/USAGE.md)
 covers shortcuts on every desktop, keys, script commands, configuration and
 building from source.
 
+### Coming from Backslash 0.2 or older?
+
+Backslash has been rewritten from scratch: the old Electron app (0.1.x and
+0.2.x) no longer gets updates and won't offer this version by itself. Remove
+it, then install the new one as above.
+
+| You installed | Remove it with |
+|---|---|
+| The `.deb` | `sudo apt remove backslash && sudo update-alternatives --remove-all backslash` |
+| The `.pacman` package | `sudo pacman -R backslash` |
+| The AppImage | delete the `backslash-0.x.x.AppImage` file |
+
+Nothing to carry over: the old version didn't keep its settings between
+restarts, and its plugins don't work with the new extension API. Most of what
+they did is now built in or in the [extension store](https://github.com/backslash-app/plugins).
+
 ## Contributing
 
 Ideas, bug reports and pull requests are welcome: see
