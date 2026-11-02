@@ -106,8 +106,14 @@ jobs:
           if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release upload "$tag" dist/* --clobber --repo "$GITHUB_REPOSITORY"
           else
+            # Each version is tagged on its own commit, which reaches main
+            # squashed: later tags don't descend from it, so GitHub would start
+            # the notes from the last tag that main does contain (v0.3.0) and
+            # list every pull request since. Start them at the previous release.
+            previous=$(gh release list --repo "$GITHUB_REPOSITORY" --exclude-drafts --exclude-pre-releases \
+              --limit 100 --json tagName --jq '.[].tagName' | grep -vxF "$tag" | sort -V | tail -n 1)
             gh release create "$tag" dist/* --repo "$GITHUB_REPOSITORY" --verify-tag \
-              --title "Backslash $VERSION" --generate-notes
+              --title "Backslash $VERSION" --generate-notes ${previous:+--notes-start-tag "$previous"}
           fi
 
   aur:
