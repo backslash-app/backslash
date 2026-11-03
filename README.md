@@ -10,7 +10,6 @@ Apps, files, clipboard, math, and your whole dev stack, one keystroke away.</p>
   <a href="https://github.com/backslash-app/backslash/releases/latest"><img src="https://img.shields.io/github/v/release/backslash-app/backslash?style=flat-square&color=e81cff&label=release" alt="Latest release"/></a>
   <a href="https://github.com/backslash-app/plugins"><img src="https://img.shields.io/badge/extensions-growing_every_week-7a22d6?style=flat-square" alt="Extensions"/></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-3b1d8f?style=flat-square" alt="MIT"/></a>
-  <a href="https://discord.gg/sTzwBzDkK9"><img src="https://img.shields.io/badge/chat-Discord-5865f2?style=flat-square" alt="Discord"/></a>
 </p>
 
 <p align="center">
