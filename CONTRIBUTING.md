@@ -1,7 +1,6 @@
 # Contributing
 
-Thanks for helping! Questions and ideas are welcome on
-[Discord](https://discord.gg/sTzwBzDkK9) or in an issue.
+Thanks for helping! Questions and ideas are welcome in an issue.
 
 ## Setup
 
